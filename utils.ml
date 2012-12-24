@@ -1,5 +1,9 @@
 (** Utils *)
 
+(* ----------------------------------------------------------------------
+ * Ints and int arrays
+ * ---------------------------------------------------------------------- *)
+
 (** Hashing on ints, cf http://en.wikipedia.org/wiki/MurmurHash *)
 let murmur_hash i =
   let m = 0xd1e995
@@ -38,3 +42,16 @@ let compare_ints a1 a2 =
 
 (** Set of arrays of ints *)
 module IASet = Set.Make(struct type t = int array let compare = compare_ints end)
+
+
+(* ----------------------------------------------------------------------
+ * Utils for parsing/lexing
+ * ---------------------------------------------------------------------- *)
+
+exception PARSE_ERROR
+
+let prev_column_index = ref 0
+let current_column_index = ref 0
+let prev_line_index = ref 0
+let current_line_index = ref 0
+let current_token = ref ""

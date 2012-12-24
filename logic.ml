@@ -79,26 +79,28 @@ let check_safe rule =
   let body_vars = vars ~start:1 rule in
   Utils.ISet.for_all (fun x -> Utils.ISet.mem x body_vars) head_vars
 
-let pp_term to_s formatter t =
+let pp_term ?(to_s=Symbols.get_symbol) formatter t =
   if arity t = 0
     then Format.fprintf formatter "%s" (to_s t.(0))
     else begin
       Format.fprintf formatter "%s(" (to_s t.(0));
       for i = 1 to Array.length t - 1 do
         (if i > 1 then Format.fprintf formatter ", ");
-        Format.fprintf formatter "%s" (to_s t.(i));
+        if is_var t.(i)
+          then Format.fprintf formatter "X%d" (abs t.(i))
+          else Format.fprintf formatter "%s" (to_s t.(i));
       done;
       Format.fprintf formatter ")";
     end
 
-let pp_rule to_s formatter rule =
+let pp_rule ?(to_s=Symbols.get_symbol) formatter rule =
   if Array.length rule = 1
-    then Format.fprintf formatter "%a." (pp_term to_s) rule.(0)
+    then Format.fprintf formatter "%a." (pp_term ~to_s) rule.(0)
     else begin
-      Format.fprintf formatter "%a :-@ "  (pp_term to_s) rule.(0);
+      Format.fprintf formatter "%a :-@ "  (pp_term ~to_s) rule.(0);
       for i = 1 to Array.length rule - 1 do
         (if i > 1 then Format.fprintf formatter ",@ ");
-        Format.fprintf formatter "%a" (pp_term to_s) rule.(i);
+        Format.fprintf formatter "%a" (pp_term ~to_s) rule.(i);
       done;
       Format.fprintf formatter ".";
     end

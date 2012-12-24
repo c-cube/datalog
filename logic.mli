@@ -36,10 +36,10 @@ val subst_rule : subst -> rule -> rule
 val check_safe : rule -> bool
   (** A datalog rule is safe iff all variables in its head also occur in its body *)
 
-val pp_term : (int -> string) -> Format.formatter -> term -> unit
+val pp_term : ?to_s:(int -> string) -> Format.formatter -> term -> unit
   (** Pretty print the term, using the given mapping from symbols to strings *)
 
-val pp_rule : (int -> string) -> Format.formatter -> rule -> unit
+val pp_rule : ?to_s:(int -> string) -> Format.formatter -> rule -> unit
   (** Pretty print the rule, using the given mapping from symbols to strings *)
 
 (* ----------------------------------------------------------------------

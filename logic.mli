@@ -45,6 +45,9 @@ val check_safe : rule -> bool
 val is_fact : rule -> bool
   (** A fact is a ground rule with empty body *)
 
+val compare_rule : rule -> rule -> int
+  (** Lexicographic comparison of rules *)
+
 val eq_rule : rule -> rule -> bool
   (** Check whether rules are (syntactically) equal *)
 
@@ -73,8 +76,8 @@ module type Index =
     type elt
       (** A value indexed by a term *)
 
-    module DataHashtbl : Hashtbl.S with type key = elt
-      (** Hashtable on indexed elements *)
+    module DataSet : Set.S with type elt = elt
+      (** Set of indexed elements *)
 
     val create : unit -> t
       (** Create a new index *)
@@ -101,7 +104,7 @@ module type Index =
       (** Number of indexed elements (linear) *)
   end
 
-module Make(H : Hashtbl.HashedType) : Index with type elt = H.t
+module Make(X : Set.OrderedType) : Index with type elt = X.t
   (** Create an Index module for the given type of elements. The implementation
       is based on perfect discrimination trees. *)
 

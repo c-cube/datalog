@@ -92,13 +92,20 @@ let check_safe rule =
 let is_fact rule =
   Array.length rule = 1 && is_ground rule.(0)
 
-(** Check whether rules are (syntactically) equal *)
-let eq_rule r1 r2 =
-  let rec check r1 r2 i =
-    if i = Array.length r1 then true else
-    eq_term r1.(i) r2.(i) && check r1 r2 (i+1)
+let compare_rule r1 r2 =
+  let rec compare r1 r2 i =
+    if i = Array.length r1
+      then 0
+      else
+        let cmp = Utils.compare_ints r1.(i) r2.(i) in
+        if cmp <> 0 then cmp else compare r1 r2 (i+1)
   in
-  Array.length r1 = Array.length r2 && check r1 r2 0
+  if Array.length r1 <> Array.length r2
+    then Array.length r1 - Array.length r2
+    else compare r1 r2 0
+
+(** Check whether rules are (syntactically) equal *)
+let eq_rule r1 r2 = compare_rule r1 r2 = 0
 
 (** Hash the rule *)
 let hash_rule r =
@@ -163,8 +170,8 @@ module type Index =
     type elt
       (** A value indexed by a term *)
 
-    module DataHashtbl : Hashtbl.S with type key = elt
-      (** Hashtable on indexed elements *)
+    module DataSet : Set.S with type elt = elt
+      (** Set of indexed elements *)
 
     val create : unit -> t
       (** Create a new index *)
@@ -193,22 +200,22 @@ module type Index =
 
 (** Create an Index module for the given type of elements. The implementation
     is based on perfect discrimination trees. *)
-module Make(H : Hashtbl.HashedType) : Index with type elt = H.t =
+module Make(X : Set.OrderedType) : Index with type elt = X.t =
   struct
 
-    (** A hashtable on indexed data *)
-    module DataHashtbl = Hashtbl.Make(H)
+    (** A set of indexed data *)
+    module DataSet = Set.Make(X)
 
     (** The term index. It is a trie with, at each node, a hashset
         of elements, plus a map symbol/var -> subtrie *)
     type t = 
-    | Node of unit DataHashtbl.t * t Utils.IHashtbl.t  
+    | Node of DataSet.t ref * t Utils.IHashtbl.t  
 
     (** Indexed elements *)
-    type elt = H.t
+    type elt = X.t
 
     (** Create a new index *)
-    let create () = Node (DataHashtbl.create 2, Utils.IHashtbl.create 2)
+    let create () = Node (ref DataSet.empty, Utils.IHashtbl.create 2)
 
     (** Add the element indexed by the term *)
     let add t term elt =
@@ -216,14 +223,14 @@ module Make(H : Hashtbl.HashedType) : Index with type elt = H.t =
       (* index in subtrie [t], with a cursor at term[i]. *)
       let rec add t i = match t, i with
       | Node (set, subtries), i when i = len ->
-        DataHashtbl.replace set elt ()  (* insert in leaf *)
+        set := DataSet.add elt !set (* insert in leaf *)
       | Node (_, subtries), i ->
         try
           let subtrie = Utils.IHashtbl.find subtries term.(i) in
           add subtrie (i+1)
         with Not_found ->
           (* create a new subtrie for the i-th argument of term, then recurse *)
-          let subtrie = Node (DataHashtbl.create 2, Utils.IHashtbl.create 2) in
+          let subtrie = Node (ref DataSet.empty, Utils.IHashtbl.create 2) in
           Utils.IHashtbl.add subtries term.(i) subtrie;
           add subtrie (i+1)
       in
@@ -232,7 +239,7 @@ module Make(H : Hashtbl.HashedType) : Index with type elt = H.t =
     (** Reset to empty index *)
     let clear t = match t with
       | Node (set, subtries) ->
-        DataHashtbl.clear set;
+        set := DataSet.empty;
         Utils.IHashtbl.clear subtries
 
     (** Fold on generalizations of given ground term (with transient substitution) *)
@@ -243,7 +250,7 @@ module Make(H : Hashtbl.HashedType) : Index with type elt = H.t =
       (* search in subtrie [t], with cursor at [i]-th argument of [term] *)
       let rec search t i acc = match t, i with
       | Node (set, _), i when i = len ->
-        DataHashtbl.fold (fun elt _ acc -> k acc elt subst) set acc
+        DataSet.fold (fun elt acc -> k acc elt subst) !set acc
       | Node (_, subtries), i ->
         let sym = term.(i) in
         Utils.IHashtbl.fold
@@ -276,7 +283,7 @@ module Make(H : Hashtbl.HashedType) : Index with type elt = H.t =
       (* search in subtrie [t], with cursor at [i]-th argument of [term] *)
       let rec search t i acc = match t, i with
       | Node (set, _), i when i = len ->
-        DataHashtbl.fold (fun elt _ acc -> k acc elt subst) set acc
+        DataSet.fold (fun elt acc -> k acc elt subst) !set acc
       | Node (_, subtries), i when is_var term.(i) ->
         let var = term.(i) in
         (try
@@ -312,8 +319,7 @@ module Make(H : Hashtbl.HashedType) : Index with type elt = H.t =
     let rec fold k acc t = match t with
       | Node (set, subtries) ->
         (* fold on elements at this point *)
-        let acc = DataHashtbl.fold
-          (fun elt () acc -> k acc elt) set acc in
+        let acc = DataSet.fold (fun elt acc -> k acc elt) !set acc in
         (* fold on subtries *)
         Utils.IHashtbl.fold
           (fun _ subtrie acc -> fold k acc subtrie)
@@ -331,7 +337,7 @@ module Make(H : Hashtbl.HashedType) : Index with type elt = H.t =
     (** Check whether there are no elements in the index *)
     let rec is_empty t = match t with
       | Node (set, subtries) ->
-        DataHashtbl.length set = 0 && for_all is_empty subtries
+        DataSet.cardinal !set = 0 && for_all is_empty subtries
 
     (** Number of elements *)
     let size t = fold (fun i _ -> i + 1) 0 t
@@ -344,26 +350,33 @@ module Make(H : Hashtbl.HashedType) : Index with type elt = H.t =
 module RulesIndex = Make(
   struct
     type t = rule
+    let compare = compare_rule
+  end)
+
+(** Hashtable on rules *)
+module RuleHashtbl = Hashtbl.Make(
+  struct
+    type t = rule
     let equal = eq_rule
     let hash = hash_rule
   end)
 
 (** A database of facts and rules, with incremental fixpoint computation *)
 type db = {
-  db_rules : unit RulesIndex.DataHashtbl.t; (** repository for all rules *)
-  db_index : RulesIndex.t;                  (** index on rules *)
+  db_rules : unit RuleHashtbl.t;  (** repository for all rules *)
+  db_index : RulesIndex.t;        (** index on rules *)
 }
 
 (** Create a DB *)
 let db_create () =
-  { db_rules = RulesIndex.DataHashtbl.create 5;
+  { db_rules = RuleHashtbl.create 17;
     db_index = RulesIndex.create ();
   }
 
 (** Is the rule member of the DB? *)
 let db_mem db rule =
   assert (check_safe rule);
-  RulesIndex.DataHashtbl.mem db.db_rules rule
+  RuleHashtbl.mem db.db_rules rule
 
 (** Add the rule/fact to the DB, updating fixpoint *)
 let db_add db rule =
@@ -375,7 +388,7 @@ let db_add db rule =
     let rule = Queue.take queue in
     if db_mem db rule then () else begin
     (* rule not already present, add it *)
-    RulesIndex.DataHashtbl.replace db.db_rules rule ();
+    RuleHashtbl.replace db.db_rules rule ();
     (* generate new rules by resolution *)
     let new_rules =
       if is_fact rule
@@ -413,10 +426,10 @@ let db_add db rule =
   done
 
 (** Size of the DB *)
-let db_size db = RulesIndex.DataHashtbl.length db.db_rules
+let db_size db = RuleHashtbl.length db.db_rules
 
 (** Fold on all rules in the current DB (including fixpoint) *)
 let db_fold k acc db =
-  RulesIndex.DataHashtbl.fold
-    (fun rule _ acc -> k acc rule)
+  RuleHashtbl.fold
+    (fun rule () acc -> k acc rule)
     db.db_rules acc

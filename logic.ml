@@ -58,7 +58,7 @@ let vars ?start ?stop terms =
 
 (** Apply substitution to the term *)
 let subst_term subst t =
-  if is_ground t
+  if is_ground t || Utils.IHashtbl.length subst = 0
     then t
     else begin
       (* replace variables in a copy of t by their value in the subst *)
@@ -73,11 +73,14 @@ let subst_term subst t =
 
 (** Apply substitution to the rule. TODO remove duplicate literals afterward *)
 let subst_rule subst rule =
-  let a = Array.copy rule in
-  for i = 0 to Array.length rule - 1 do
-    a.(i) <- subst_term subst a.(i);
-  done;
-  a
+  if Utils.IHashtbl.length subst = 0 then rule
+  else begin
+    let a = Array.copy rule in
+    for i = 0 to Array.length rule - 1 do
+      a.(i) <- subst_term subst a.(i);
+    done;
+    a
+  end
 
 (** A datalog rule is safe iff all variables in its head also occur in its body *)
 let check_safe rule =
@@ -205,7 +208,7 @@ module Make(H : Hashtbl.HashedType) : Index with type elt = H.t =
     type elt = H.t
 
     (** Create a new index *)
-    let create () = Node (DataHashtbl.create 3, Utils.IHashtbl.create 3)
+    let create () = Node (DataHashtbl.create 2, Utils.IHashtbl.create 2)
 
     (** Add the element indexed by the term *)
     let add t term elt =
@@ -220,7 +223,7 @@ module Make(H : Hashtbl.HashedType) : Index with type elt = H.t =
           add subtrie (i+1)
         with Not_found ->
           (* create a new subtrie for the i-th argument of term, then recurse *)
-          let subtrie = Node (DataHashtbl.create 3, Utils.IHashtbl.create 3) in
+          let subtrie = Node (DataHashtbl.create 2, Utils.IHashtbl.create 2) in
           Utils.IHashtbl.add subtries term.(i) subtrie;
           add subtrie (i+1)
       in
@@ -235,7 +238,7 @@ module Make(H : Hashtbl.HashedType) : Index with type elt = H.t =
     (** Fold on generalizations of given ground term (with transient substitution) *)
     let retrieve_generalizations k acc t term =
       assert (is_ground term);
-      let subst = Utils.IHashtbl.create 3 in
+      let subst = Utils.IHashtbl.create 2 in
       let len = Array.length term in
       (* search in subtrie [t], with cursor at [i]-th argument of [term] *)
       let rec search t i acc = match t, i with
@@ -268,7 +271,7 @@ module Make(H : Hashtbl.HashedType) : Index with type elt = H.t =
 
     (** Fold on ground specifications of given term (with transient substitution) *)
     let retrieve_specializations k acc t term =
-      let subst = Utils.IHashtbl.create 3 in
+      let subst = Utils.IHashtbl.create 2 in
       let len = Array.length term in
       (* search in subtrie [t], with cursor at [i]-th argument of [term] *)
       let rec search t i acc = match t, i with

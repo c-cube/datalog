@@ -85,6 +85,10 @@ let check_safe rule =
   let body_vars = vars ~start:1 rule in
   Utils.ISet.for_all (fun x -> Utils.ISet.mem x body_vars) head_vars
 
+(** A fact is a ground rule with empty body *)
+let is_fact rule =
+  Array.length rule = 1 && is_ground rule.(0)
+
 (** Check whether rules are (syntactically) equal *)
 let eq_rule r1 r2 =
   let rec check r1 r2 i =
@@ -100,6 +104,14 @@ let hash_rule r =
     h := (!h + 65536) * hash_term r.(i);
   done;
   abs !h
+
+(** Remove first body element of the rule *)
+let remove_first rule =
+  assert (Array.length rule > 1);
+  let a = Array.make (Array.length rule - 1) [||] in
+  a.(0) <- rule.(0);
+  Array.blit rule 2 a 1 (Array.length rule - 2);
+  a
 
 let pp_term ?(to_s=Symbols.get_symbol) formatter t =
   if arity t = 0
@@ -147,6 +159,9 @@ module type Index =
 
     type elt
       (** A value indexed by a term *)
+
+    module DataHashtbl : Hashtbl.S with type key = elt
+      (** Hashtable on indexed elements *)
 
     val create : unit -> t
       (** Create a new index *)
@@ -318,3 +333,81 @@ module Make(H : Hashtbl.HashedType) : Index with type elt = H.t =
     (** Number of elements *)
     let size t = fold (fun i _ -> i + 1) 0 t
   end
+
+(* ----------------------------------------------------------------------
+ * The datalog bipartite resolution algorithm
+ * ---------------------------------------------------------------------- *)
+
+module RulesIndex = Make(
+  struct
+    type t = rule
+    let equal = eq_rule
+    let hash = hash_rule
+  end)
+
+(** A database of facts and rules, with incremental fixpoint computation *)
+type db = {
+  db_rules : unit RulesIndex.DataHashtbl.t; (** repository for all rules *)
+  db_index : RulesIndex.t;                  (** index on rules *)
+}
+
+(** Create a DB *)
+let db_create () =
+  { db_rules = RulesIndex.DataHashtbl.create 5;
+    db_index = RulesIndex.create ();
+  }
+
+(** Is the rule member of the DB? *)
+let db_mem db rule =
+  assert (check_safe rule);
+  RulesIndex.DataHashtbl.mem db.db_rules rule
+
+(** Add the rule/fact to the DB, updating fixpoint *)
+let db_add db rule =
+  assert (check_safe rule);
+  (* queue of new rules to insert *)
+  let queue = Queue.create () in
+  Queue.push rule queue;
+  while not (Queue.is_empty queue) do
+    let rule = Queue.take queue in
+    if db_mem db rule then () else begin
+    (* rule not already present, add it *)
+    RulesIndex.DataHashtbl.replace db.db_rules rule ();
+    (* generate new rules by resolution *)
+    let new_rules =
+      if is_fact rule
+      then begin
+        RulesIndex.add db.db_index rule.(0) rule;
+        (* insertion of a fact: resolution with all rules whose first body term
+           matches the fact *)
+        RulesIndex.retrieve_generalizations
+          (fun acc rule' subst ->
+            (* subst(rule'.body.(0)) = fact, remove the first element of the
+               body of rule', that makes a new rule *)
+            let rule'' = remove_first rule' in
+            let rule'' = subst_rule subst rule'' in
+            rule'' :: acc)
+          [] db.db_index rule.(0)
+      end else begin
+        assert (Array.length rule > 1);
+        RulesIndex.add db.db_index rule.(1) rule;
+        (* insertion of a non_unit rule: resolution with all facts that match the
+           first body term of the rule *)
+        RulesIndex.retrieve_specializations
+          (fun acc fact subst ->
+            (* subst(rule.body.(0)) = fact, remove this first literal *)
+            let rule' = remove_first rule in
+            let rule' = subst_rule subst rule' in
+            rule' :: acc)
+          [] db.db_index rule.(1)
+      end
+    in
+    List.iter (fun rule -> Queue.push rule queue) new_rules;
+    end
+  done
+
+(** Fold on all rules in the current DB (including fixpoint) *)
+let db_fold k acc db =
+  RulesIndex.DataHashtbl.fold
+    (fun rule _ acc -> k acc rule)
+    db.db_rules acc

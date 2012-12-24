@@ -14,8 +14,14 @@ let parse_file filename =
 
 (** Compute fixpoint of rules *)
 let process_rules rules =
-  Format.printf "process %d rules@." (List.length rules);
-  List.iter (Format.printf "  rule @[<h>%a@]@." (Logic.pp_rule ?to_s:None)) rules
+  Format.printf "process the following %d rules:@." (List.length rules);
+  List.iter (Format.printf "  rule @[<h>%a@]@." (Logic.pp_rule ?to_s:None)) rules;
+  Format.printf "@.computing fixpoint...@.";
+  let db = Logic.db_create () in
+  List.iter (Logic.db_add db) rules;
+  Format.printf "done.@.";
+  Logic.db_fold (fun () rule -> Format.printf "  rule @[<h>%a@]@." (Logic.pp_rule ?to_s:None) rule) () db
+
 
 let () =
   Format.printf "start datalog@.";

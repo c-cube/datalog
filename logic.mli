@@ -42,11 +42,17 @@ val subst_rule : subst -> rule -> rule
 val check_safe : rule -> bool
   (** A datalog rule is safe iff all variables in its head also occur in its body *)
 
+val is_fact : rule -> bool
+  (** A fact is a ground rule with empty body *)
+
 val eq_rule : rule -> rule -> bool
   (** Check whether rules are (syntactically) equal *)
 
 val hash_rule : rule -> int
   (** Hash the rule *)
+
+val remove_first : rule -> rule
+  (** Rule without its first body term *)
 
 val pp_term : ?to_s:(int -> string) -> Format.formatter -> term -> unit
   (** Pretty print the term, using the given mapping from symbols to strings *)
@@ -66,6 +72,9 @@ module type Index =
 
     type elt
       (** A value indexed by a term *)
+
+    module DataHashtbl : Hashtbl.S with type key = elt
+      (** Hashtable on indexed elements *)
 
     val create : unit -> t
       (** Create a new index *)
@@ -95,3 +104,22 @@ module type Index =
 module Make(H : Hashtbl.HashedType) : Index with type elt = H.t
   (** Create an Index module for the given type of elements. The implementation
       is based on perfect discrimination trees. *)
+
+(* ----------------------------------------------------------------------
+ * The datalog bipartite resolution algorithm
+ * ---------------------------------------------------------------------- *)
+
+type db
+  (** A database of facts and rules, with incremental fixpoint computation *)
+
+val db_create : unit -> db
+  (** Create a DB *)
+
+val db_mem : db -> rule -> bool
+  (** Is the rule member of the DB? *)
+
+val db_add : db -> rule -> unit
+  (** Add the rule/fact to the DB, updating fixpoint *)
+
+val db_fold : ('a -> rule -> 'a) -> 'a -> db -> 'a
+  (** Fold on all rules in the current DB (including fixpoint) *)

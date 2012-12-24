@@ -382,11 +382,14 @@ let db_add db rule =
            matches the fact *)
         RulesIndex.retrieve_generalizations
           (fun acc rule' subst ->
-            (* subst(rule'.body.(0)) = fact, remove the first element of the
-               body of rule', that makes a new rule *)
-            let rule'' = remove_first rule' in
-            let rule'' = subst_rule subst rule'' in
-            rule'' :: acc)
+            if is_fact rule'
+            then acc (* another fact *)
+            else
+              (* subst(rule'.body.(0)) = fact, remove the first element of the
+                 body of rule', that makes a new rule *)
+              let rule'' = remove_first rule' in
+              let rule'' = subst_rule subst rule'' in
+              rule'' :: acc)
           [] db.db_index rule.(0)
       end else begin
         assert (Array.length rule > 1);

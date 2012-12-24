@@ -20,7 +20,8 @@ let process_rules rules =
   let db = Logic.db_create () in
   List.iter (Logic.db_add db) rules;
   Format.printf "done.@.";
-  Logic.db_fold (fun () rule -> Format.printf "  rule @[<h>%a@]@." (Logic.pp_rule ?to_s:None) rule) () db
+  Logic.db_fold (fun () rule ->
+    if Logic.is_fact rule then Format.printf "  @[<h>%a@]@." (Logic.pp_rule ?to_s:None) rule) () db
 
 
 let () =

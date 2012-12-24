@@ -121,5 +121,8 @@ val db_mem : db -> rule -> bool
 val db_add : db -> rule -> unit
   (** Add the rule/fact to the DB, updating fixpoint *)
 
+val db_size : db -> int
+  (** Size of the DB *)
+
 val db_fold : ('a -> rule -> 'a) -> 'a -> db -> 'a
   (** Fold on all rules in the current DB (including fixpoint) *)

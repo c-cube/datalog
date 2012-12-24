@@ -6,6 +6,7 @@ module Logic = Logic
 let progress = ref false
 let print_input = ref false
 let print_result = ref false
+let print_size = ref false
 let files = ref []
 
 (** Parse file and returns the rules *)
@@ -42,10 +43,12 @@ let process_rules rules =
           1 rules);
   Format.printf "%% done.@.";
   (* print fixpoint of set after application of rules *)
-  if !print_result then 
+  (if !print_size then
+    Format.printf "%% size of saturated set: %d@." (Logic.db_size db));
+  (if !print_result then 
     Logic.db_fold (fun () rule ->
       if Logic.is_fact rule then
-        Format.printf "  @[<h>%a@]@." (Logic.pp_rule ?to_s:None) rule) () db
+        Format.printf "  @[<h>%a@]@." (Logic.pp_rule ?to_s:None) rule) () db)
 
 (** parse CLI arguments *)
 let parse_args () =
@@ -53,6 +56,7 @@ let parse_args () =
     [ ("-progress", Arg.Set progress, "print progress");
       ("-input", Arg.Set print_input, "print input rules");
       ("-output", Arg.Set print_result, "print rules after fixpoint");
+      ("-size", Arg.Set print_size, "print number of rules after fixpoint");
     ]
   in
   Arg.parse options (fun f -> files := f :: !files) "compute fixpoint of given files"

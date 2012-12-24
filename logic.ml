@@ -409,6 +409,9 @@ let db_add db rule =
     end
   done
 
+(** Size of the DB *)
+let db_size db = RulesIndex.DataHashtbl.length db.db_rules
+
 (** Fold on all rules in the current DB (including fixpoint) *)
 let db_fold k acc db =
   RulesIndex.DataHashtbl.fold

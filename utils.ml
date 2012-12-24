@@ -40,9 +40,13 @@ let compare_ints a1 a2 =
     then Array.length a1 - Array.length a2
     else check a1 a2 0
 
-(** Set of arrays of ints *)
-module IASet = Set.Make(struct type t = int array let compare = compare_ints end)
-
+(** Hash array of ints *)
+let hash_ints a =
+  let h = ref 13 in
+  for i = 0 to Array.length a - 1 do
+    h := (!h + 65536) * murmur_hash a.(i);
+  done;
+  abs !h
 
 (* ----------------------------------------------------------------------
  * Utils for parsing/lexing

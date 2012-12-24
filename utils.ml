@@ -19,3 +19,22 @@ module IHashtbl = Hashtbl.Make( struct type t = int let equal i j = i = j let ha
 
 (** Sets of int *)
 module ISet = Set.Make(struct type t = int let compare i j = i - j end)
+
+(** Comparison on arrays of ints *)
+let compare_ints a1 a2 =
+  (* lexicographic test *)
+  let rec check a1 a2 i = 
+    if i = Array.length a1
+      then 0
+      else
+        let cmp = a1.(i) - a2.(i) in
+        if cmp <> 0
+          then cmp
+          else check a1 a2 (i+1)
+  in
+  if Array.length a1 <> Array.length a2
+    then Array.length a1 - Array.length a2
+    else check a1 a2 0
+
+(** Set of arrays of ints *)
+module IASet = Set.Make(struct type t = int array let compare = compare_ints end)

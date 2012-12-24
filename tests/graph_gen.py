@@ -1,6 +1,10 @@
 #!/usr/bin/env python2
 
-"""Generate a graph example of given size"""
+"""Generate a graph example of given size. It produces a cyclic graph
+with vertices in [0...size-1] and edges from i to i+1 mod size. The
+single rule computes a transitive closure of the graph, the predicate
+reachable() describes a clique of size size.
+"""
 
 import sys
 

@@ -65,6 +65,8 @@ let process_rules rules =
     Logic.db_match db pattern
       (fun fact subst -> Format.printf "  @[<h>%a.@]@." (Logic.pp_term ?to_s:None) fact))
     !patterns;
+  (* print memory usage *)
+  Format.printf "%% max heap size (words): %d@." ((Gc.quick_stat ()).Gc.top_heap_words);
   ()
 
 (** Handler that aggregates the number of facts with this head symbol. It adds the

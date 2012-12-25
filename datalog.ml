@@ -8,6 +8,7 @@ let print_input = ref false
 let print_result = ref false
 let print_saturated = ref false
 let print_size = ref false
+let sums = ref []
 let files = ref []
 
 (** Parse file and returns the rules *)
@@ -37,6 +38,8 @@ let process_rules rules =
     List.iter (Format.printf "  rule @[<h>%a@]@." (Logic.pp_rule ?to_s:None)) rules);
   Format.printf "%% computing fixpoint...@.";
   let db = Logic.db_create () in
+  (* handlers *)
+  List.iter (fun (n,handler,_) -> Logic.db_subscribe db n handler) !sums;
   (* add rules one by one *)
   let total = List.length rules in
   ignore (List.fold_left (fun i rule -> (if !progress then pp_progress i total);
@@ -52,7 +55,19 @@ let process_rules rules =
   else if !print_result then 
     Logic.db_fold (fun () rule ->
       if Logic.is_fact rule then
-        Format.printf "  @[<h>%a@]@." (Logic.pp_rule ?to_s:None) rule) () db)
+        Format.printf "  @[<h>%a@]@." (Logic.pp_rule ?to_s:None) rule) () db);
+  (* print aggregates *)
+  List.iter (fun (_,_,printer) -> printer ()) !sums
+
+(** Handler that aggregates the number of facts with this head symbol. It adds the
+    handler to the global variable [sums] *)
+let mk_sum symbol =
+  let n = Symbols.mk_symbol symbol in
+  let count = ref 0 in
+  (* print result at exit *)
+  let printer () = Format.printf "%% number of fact with head %s: %d@." symbol !count in
+  let handler _ = incr count in
+  sums := (n, handler, printer) :: !sums
 
 (** parse CLI arguments *)
 let parse_args () =
@@ -61,6 +76,7 @@ let parse_args () =
       ("-input", Arg.Set print_input, "print input rules");
       ("-output", Arg.Set print_result, "print facts after fixpoint");
       ("-saturated", Arg.Set print_saturated, "print facts and rules after fixpoint");
+      ("-sum", Arg.String mk_sum, "aggregate number of terms for the given symbol");
       ("-size", Arg.Set print_size, "print number of rules after fixpoint");
     ]
   in

@@ -29,10 +29,6 @@ val eq_term : term -> term -> bool
 val hash_term : term -> int
   (** Hash the term *)
 
-val vars : ?start:int -> ?stop:int -> term array -> Utils.ISet.t
-  (** Set of variables of the terms in array[start...stop]. Start and
-      stop are inclusive (default is the whole array). *)
-
 val subst_term : subst -> term -> term
   (** Apply substitution to the term *)
 

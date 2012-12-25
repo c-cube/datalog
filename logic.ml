@@ -84,9 +84,22 @@ let subst_rule subst rule =
 
 (** A datalog rule is safe iff all variables in its head also occur in its body *)
 let check_safe rule =
-  let head_vars = vars ~start:0 ~stop:0 rule in
-  let body_vars = vars ~start:1 rule in
-  Utils.ISet.for_all (fun x -> Utils.ISet.mem x body_vars) head_vars
+  let rec check_head i =
+    if i = Array.length rule.(0) then true
+    else
+      let t = rule.(0).(i) in
+      if is_var t
+        then check_body t 1 && check_head (i+1)
+        else check_head (i+1)
+  and check_body var j =
+    if j = Array.length rule then false
+      else check_body_term var rule.(j) 1 || check_body var (j+1)
+  and check_body_term var term k =
+    if k = Array.length term then false
+    else if term.(k) = var then true
+    else check_body_term var term (k+1)
+  in
+  check_head 1
 
 (** A fact is a ground rule with empty body *)
 let is_fact rule =

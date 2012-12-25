@@ -30,6 +30,7 @@
 %token <string> SINGLE_QUOTED
 %token <string> LOWER_WORD
 %token <string> UPPER_WORD
+%token <string> INT
 
 %start term
 %type <Logic.term> term
@@ -69,5 +70,6 @@ args:
   | UPPER_WORD COMMA args { (get_var $1) :: $3 }
 
 const:
+  | INT { $1 }
   | LOWER_WORD { $1 }
   | SINGLE_QUOTED { $1 }

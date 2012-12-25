@@ -23,10 +23,11 @@ let parse_file filename =
 
 (** Parse files *)
 let parse_files () =
-  List.fold_left
+  let rules = List.fold_left
     (fun rules file ->
       List.rev_append (parse_file file) rules)
     [] !files
+  in List.rev rules
 
 let pp_progress i total =
   Format.printf "\r%% rule %-5d / %-5d  " i total;

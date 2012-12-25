@@ -75,6 +75,8 @@ rule token =
                                        UPPER_WORD(Lexing.lexeme lexbuf) }
       | single_quoted                { update_token (Lexing.lexeme lexbuf);
                                        SINGLE_QUOTED(Lexing.lexeme lexbuf) }
+      | non_zero_numeric             { update_token (Lexing.lexeme lexbuf);
+                                       INT(Lexing.lexeme lexbuf) }
       | '('                          { update_token (Lexing.lexeme lexbuf); LEFT_PARENTHESIS }
       | ')'                          { update_token (Lexing.lexeme lexbuf); RIGHT_PARENTHESIS }
       | '.'                          { update_token (Lexing.lexeme lexbuf); DOT }

@@ -399,42 +399,38 @@ let db_add db rule =
     (* rule not already present, add it *)
     RuleHashtbl.replace db.db_rules rule ();
     (* generate new rules by resolution *)
-    let new_rules =
-      if is_fact rule
-      then begin
-        RulesIndex.add db.db_index rule.(0) rule;
-        (* call handler for this fact, if any *)
-        (try let handler = Utils.IHashtbl.find db.db_handlers rule.(0).(0)
-             in handler rule.(0)
-        with Not_found -> ());
-        (* insertion of a fact: resolution with all rules whose first body term
-           matches the fact *)
-        RulesIndex.retrieve_generalizations
-          (fun acc rule' subst ->
-            if is_fact rule'
-            then acc (* another fact *)
-            else
-              (* subst(rule'.body.(0)) = fact, remove the first element of the
-                 body of rule', that makes a new rule *)
-              let rule'' = remove_first rule' in
-              let rule'' = subst_rule subst rule'' in
-              rule'' :: acc)
-          [] db.db_index rule.(0)
-      end else begin
-        assert (Array.length rule > 1);
-        RulesIndex.add db.db_index rule.(1) rule;
-        (* insertion of a non_unit rule: resolution with all facts that match the
-           first body term of the rule *)
-        RulesIndex.retrieve_specializations
-          (fun acc fact subst ->
-            (* subst(rule.body.(0)) = fact, remove this first literal *)
-            let rule' = remove_first rule in
-            let rule' = subst_rule subst rule' in
-            rule' :: acc)
-          [] db.db_index rule.(1)
-      end
-    in
-    List.iter (fun rule -> Queue.push rule queue) new_rules;
+    if is_fact rule
+    then begin
+      RulesIndex.add db.db_index rule.(0) rule;
+      (* call handler for this fact, if any *)
+      (try let handler = Utils.IHashtbl.find db.db_handlers rule.(0).(0)
+           in handler rule.(0)
+      with Not_found -> ());
+      (* insertion of a fact: resolution with all rules whose first body term
+         matches the fact *)
+      RulesIndex.retrieve_generalizations
+        (fun () rule' subst ->
+          if not (is_fact rule') then 
+            (* rule' is not a fact, and
+               subst(rule'.body.(0)) = fact, remove the first element of the
+               body of rule', that makes a new rule *)
+            let rule'' = remove_first rule' in
+            let rule'' = subst_rule subst rule'' in
+            Queue.push rule'' queue)
+        () db.db_index rule.(0)
+    end else begin
+      assert (Array.length rule > 1);
+      RulesIndex.add db.db_index rule.(1) rule;
+      (* insertion of a non_unit rule: resolution with all facts that match the
+         first body term of the rule *)
+      RulesIndex.retrieve_specializations
+        (fun () fact subst ->
+          (* subst(rule.body.(0)) = fact, remove this first literal *)
+          let rule' = remove_first rule in
+          let rule' = subst_rule subst rule' in
+          Queue.push rule' queue)
+        () db.db_index rule.(1)
+    end
     end
   done
 

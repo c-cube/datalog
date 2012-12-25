@@ -129,3 +129,8 @@ val db_size : db -> int
 
 val db_fold : ('a -> rule -> 'a) -> 'a -> db -> 'a
   (** Fold on all rules in the current DB (including fixpoint) *)
+
+val db_subscribe : db -> int -> (term -> unit) -> unit
+  (** [db_subscribe db symbol handler] causes [handler] to be called with
+      any new fact that has head symbol [symbol] from now on *)
+

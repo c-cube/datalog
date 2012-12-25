@@ -363,14 +363,16 @@ module RuleHashtbl = Hashtbl.Make(
 
 (** A database of facts and rules, with incremental fixpoint computation *)
 type db = {
-  db_rules : unit RuleHashtbl.t;  (** repository for all rules *)
-  db_index : RulesIndex.t;        (** index on rules *)
+  db_rules : unit RuleHashtbl.t;                  (** repository for all rules *)
+  db_index : RulesIndex.t;                        (** index on rules *)
+  db_handlers : (term -> unit) Utils.IHashtbl.t;  (** map symbol -> handler *)
 }
 
 (** Create a DB *)
 let db_create () =
   { db_rules = RuleHashtbl.create 17;
     db_index = RulesIndex.create ();
+    db_handlers = Utils.IHashtbl.create 3;
   }
 
 (** Is the rule member of the DB? *)
@@ -394,6 +396,10 @@ let db_add db rule =
       if is_fact rule
       then begin
         RulesIndex.add db.db_index rule.(0) rule;
+        (* call handler for this fact, if any *)
+        (try let handler = Utils.IHashtbl.find db.db_handlers rule.(0).(0)
+             in handler rule.(0)
+        with Not_found -> ());
         (* insertion of a fact: resolution with all rules whose first body term
            matches the fact *)
         RulesIndex.retrieve_generalizations
@@ -433,3 +439,8 @@ let db_fold k acc db =
   RuleHashtbl.fold
     (fun rule () acc -> k acc rule)
     db.db_rules acc
+
+(** [db_subscribe db symbol handler] causes [handler] to be called with
+    any new fact that has head symbol [symbol] from now on *)
+let db_subscribe db symbol handler =
+  Utils.IHashtbl.replace db.db_handlers symbol handler

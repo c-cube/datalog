@@ -1,14 +1,14 @@
 % generate problem of size 10
 reachable(X,Y) :- edge(X,Y).
 reachable(X,Y) :- edge(X,Z), reachable(Z,Y).
-edge(e0, e1).
-edge(e1, e2).
-edge(e2, e3).
-edge(e3, e4).
-edge(e4, e5).
-edge(e5, e6).
-edge(e6, e7).
-edge(e7, e8).
-edge(e8, e9).
-edge(e9, e10).
-edge(e10, e0).
+edge(0, 1).
+edge(1, 2).
+edge(2, 3).
+edge(3, 4).
+edge(4, 5).
+edge(5, 6).
+edge(6, 7).
+edge(7, 8).
+edge(8, 9).
+edge(9, 10).
+edge(10, 0).

@@ -10,10 +10,10 @@ import sys
 
 def generate(size):
     for i in xrange(size):
-        print "p(n%d) :- p(n%d), q(n%d)." % (i+1, i, i+1)
-        print "q(n%d) :- p(n%d), q(n%d)." % (i+1, i, i)
-    print "p(n0)."
-    print "q(n0)."
+        print "p(%d) :- p(%d), q(%d)." % (i+1, i, i+1)
+        print "q(%d) :- p(%d), q(%d)." % (i+1, i, i)
+    print "p(0)."
+    print "q(0)."
 
 if __name__ == '__main__':
     size = int(sys.argv[1]) if len(sys.argv) > 1 else 10

@@ -177,9 +177,7 @@ module IHashtbl =
         | _ -> ()
       done;
       !acc
-      
   end
-
 
 (*
 module IHashtbl = Hashtbl.Make( struct type t = int let equal i j = i = j let hash i = murmur_hash i end)

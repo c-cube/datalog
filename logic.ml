@@ -366,6 +366,7 @@ type db = {
   db_rules : unit RuleHashtbl.t;                  (** repository for all rules *)
   db_index : RulesIndex.t;                        (** index on rules *)
   db_handlers : (term -> unit) Utils.IHashtbl.t;  (** map symbol -> handler *)
+  db_queue : rule Queue.t;                        (** queue of rules to add *)
 }
 
 (** Create a DB *)
@@ -373,6 +374,7 @@ let db_create () =
   { db_rules = RuleHashtbl.create 17;
     db_index = RulesIndex.create ();
     db_handlers = Utils.IHashtbl.create 3;
+    db_queue = Queue.create ();
   }
 
 (** Is the rule member of the DB? *)
@@ -384,8 +386,13 @@ let db_mem db rule =
 let db_add db rule =
   assert (check_safe rule);
   (* queue of new rules to insert *)
-  let queue = Queue.create () in
+  let queue = db.db_queue in
+  (* is there already a add() going on? *)
+  let already_active = not (Queue.is_empty queue) in
+  (* add [rule] to the queue of rules to add *)
   Queue.push rule queue;
+  (* if there is already a add() going on, let it propagate the rule *)
+  if already_active then () else
   while not (Queue.is_empty queue) do
     let rule = Queue.take queue in
     if db_mem db rule then () else begin

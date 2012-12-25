@@ -63,7 +63,7 @@ let process_rules rules =
   List.iter (fun pattern ->
     Format.printf "%% facts matching pattern %a:@." (Logic.pp_term ?to_s:None) pattern;
     Logic.db_match db pattern
-      (fun fact subst -> Format.printf "  @[<h>%a@]@." (Logic.pp_term ?to_s:None) fact))
+      (fun fact subst -> Format.printf "  @[<h>%a.@]@." (Logic.pp_term ?to_s:None) fact))
     !patterns;
   ()
 

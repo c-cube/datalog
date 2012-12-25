@@ -6,6 +6,7 @@ module Logic = Logic
 let progress = ref false
 let print_input = ref false
 let print_result = ref false
+let print_saturated = ref false
 let print_size = ref false
 let files = ref []
 
@@ -45,7 +46,10 @@ let process_rules rules =
   (* print fixpoint of set after application of rules *)
   (if !print_size then
     Format.printf "%% size of saturated set: %d@." (Logic.db_size db));
-  (if !print_result then 
+  (if !print_saturated then 
+    Logic.db_fold (fun () rule ->
+      Format.printf "  @[<h>%a@]@." (Logic.pp_rule ?to_s:None) rule) () db
+  else if !print_result then 
     Logic.db_fold (fun () rule ->
       if Logic.is_fact rule then
         Format.printf "  @[<h>%a@]@." (Logic.pp_rule ?to_s:None) rule) () db)
@@ -55,7 +59,8 @@ let parse_args () =
   let options =
     [ ("-progress", Arg.Set progress, "print progress");
       ("-input", Arg.Set print_input, "print input rules");
-      ("-output", Arg.Set print_result, "print rules after fixpoint");
+      ("-output", Arg.Set print_result, "print facts after fixpoint");
+      ("-saturated", Arg.Set print_saturated, "print facts and rules after fixpoint");
       ("-size", Arg.Set print_size, "print number of rules after fixpoint");
     ]
   in

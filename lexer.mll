@@ -40,6 +40,7 @@
 
 let numeric = ['0' - '9']
 let non_zero_numeric = ['1' - '9']
+let number = ( '0' | ( non_zero_numeric numeric *) )
 let lower_alpha = ['a' - 'z']
 let upper_alpha = ['A' - 'Z']
 let alpha_numeric = ( lower_alpha | upper_alpha | numeric | '_' )
@@ -75,7 +76,7 @@ rule token =
                                        UPPER_WORD(Lexing.lexeme lexbuf) }
       | single_quoted                { update_token (Lexing.lexeme lexbuf);
                                        SINGLE_QUOTED(Lexing.lexeme lexbuf) }
-      | non_zero_numeric             { update_token (Lexing.lexeme lexbuf);
+      | number                       { update_token (Lexing.lexeme lexbuf);
                                        INT(Lexing.lexeme lexbuf) }
       | '('                          { update_token (Lexing.lexeme lexbuf); LEFT_PARENTHESIS }
       | ')'                          { update_token (Lexing.lexeme lexbuf); RIGHT_PARENTHESIS }

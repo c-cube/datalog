@@ -66,7 +66,9 @@ let process_rules rules =
       (fun fact subst -> Format.printf "  @[<h>%a.@]@." (Logic.pp_term ?to_s:None) fact))
     !patterns;
   (* print memory usage *)
-  Format.printf "%% max heap size (words): %d@." ((Gc.quick_stat ()).Gc.top_heap_words);
+  let stat = Gc.quick_stat () in
+  Format.printf "%% max_heap_size: %d; minor_collections: %d; major collections: %d@."
+    stat.Gc.top_heap_words stat.Gc.minor_collections stat.Gc.major_collections;
   ()
 
 (** Handler that aggregates the number of facts with this head symbol. It adds the

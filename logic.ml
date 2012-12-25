@@ -115,12 +115,14 @@ let hash_rule r =
   done;
   abs !h
 
-(** Remove first body element of the rule *)
-let remove_first rule =
+(** Remove first body element of the rule, after substitution *)
+let remove_first_subst subst rule =
   assert (Array.length rule > 1);
   let a = Array.make (Array.length rule - 1) [||] in
-  a.(0) <- rule.(0);
-  Array.blit rule 2 a 1 (Array.length rule - 2);
+  a.(0) <- subst_term subst rule.(0);
+  for i = 1 to Array.length rule - 2 do
+    a.(i) <- subst_term subst rule.(i+1);
+  done;
   a
 
 let pp_term ?(to_s=Symbols.get_symbol) formatter t =
@@ -414,8 +416,7 @@ let db_add db rule =
             (* rule' is not a fact, and
                subst(rule'.body.(0)) = fact, remove the first element of the
                body of rule', that makes a new rule *)
-            let rule'' = remove_first rule' in
-            let rule'' = subst_rule subst rule'' in
+            let rule'' = remove_first_subst subst rule' in
             Queue.push rule'' queue)
         () db.db_index rule.(0)
     end else begin
@@ -426,8 +427,7 @@ let db_add db rule =
       RulesIndex.retrieve_specializations
         (fun () fact subst ->
           (* subst(rule.body.(0)) = fact, remove this first literal *)
-          let rule' = remove_first rule in
-          let rule' = subst_rule subst rule' in
+          let rule' = remove_first_subst subst rule in
           Queue.push rule' queue)
         () db.db_index rule.(1)
     end

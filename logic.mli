@@ -54,8 +54,8 @@ val eq_rule : rule -> rule -> bool
 val hash_rule : rule -> int
   (** Hash the rule *)
 
-val remove_first : rule -> rule
-  (** Rule without its first body term *)
+val remove_first_subst : subst -> rule -> rule
+  (** Rule without its first body term, after applying substitution *)
 
 val pp_term : ?to_s:(int -> string) -> Format.formatter -> term -> unit
   (** Pretty print the term, using the given mapping from symbols to strings *)

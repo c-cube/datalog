@@ -9,6 +9,7 @@ let print_result = ref false
 let print_saturated = ref false
 let print_size = ref false
 let sums = ref []
+let patterns = ref []
 let files = ref []
 
 (** Parse file and returns the rules *)
@@ -57,17 +58,31 @@ let process_rules rules =
       if Logic.is_fact rule then
         Format.printf "  @[<h>%a@]@." (Logic.pp_rule ?to_s:None) rule) () db);
   (* print aggregates *)
-  List.iter (fun (_,_,printer) -> printer ()) !sums
+  List.iter (fun (_,_,printer) -> printer ()) !sums;
+  (* print patterns *)
+  List.iter (fun pattern ->
+    Format.printf "%% facts matching pattern %a:@." (Logic.pp_term ?to_s:None) pattern;
+    Logic.db_match db pattern
+      (fun fact subst -> Format.printf "  @[<h>%a@]@." (Logic.pp_term ?to_s:None) fact))
+    !patterns;
+  ()
 
 (** Handler that aggregates the number of facts with this head symbol. It adds the
     handler to the global variable [sums] *)
-let mk_sum symbol =
+let add_sum symbol =
   let n = Symbols.mk_symbol symbol in
   let count = ref 0 in
   (* print result at exit *)
   let printer () = Format.printf "%% number of fact with head %s: %d@." symbol !count in
   let handler _ = incr count in
   sums := (n, handler, printer) :: !sums
+
+(** Handler that prints facts that match the given [pattern] once the
+    set is saturated *)
+let add_pattern p =
+  let lexbuf = Lexing.from_string p in
+  let term = Parser.term Lexer.token lexbuf in
+  patterns := term :: !patterns
 
 (** parse CLI arguments *)
 let parse_args () =
@@ -76,7 +91,8 @@ let parse_args () =
       ("-input", Arg.Set print_input, "print input rules");
       ("-output", Arg.Set print_result, "print facts after fixpoint");
       ("-saturated", Arg.Set print_saturated, "print facts and rules after fixpoint");
-      ("-sum", Arg.String mk_sum, "aggregate number of terms for the given symbol");
+      ("-sum", Arg.String add_sum, "aggregate number of terms for the given symbol");
+      ("-pattern", Arg.String add_pattern, "print facts matching this pattern");
       ("-size", Arg.Set print_size, "print number of rules after fixpoint");
     ]
   in

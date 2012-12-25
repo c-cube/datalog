@@ -431,6 +431,13 @@ let db_add db rule =
     end
   done
 
+(** match the given term with facts of the DB, calling the handler on
+    each fact that match (with the corresponding substitution) *)
+let db_match db pattern handler =
+  RulesIndex.retrieve_specializations
+    (fun () fact subst -> handler fact.(0) subst)
+    () db.db_index pattern
+
 (** Size of the DB *)
 let db_size db = RuleHashtbl.length db.db_rules
 

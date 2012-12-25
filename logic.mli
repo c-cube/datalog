@@ -124,6 +124,10 @@ val db_mem : db -> rule -> bool
 val db_add : db -> rule -> unit
   (** Add the rule/fact to the DB, updating fixpoint *)
 
+val db_match : db -> term -> (term -> subst -> unit) -> unit
+  (** match the given term with facts of the DB, calling the handler on
+      each fact that match (with the corresponding substitution) *)
+
 val db_size : db -> int
   (** Size of the DB *)
 

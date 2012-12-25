@@ -52,24 +52,25 @@ let hash_ints a =
 (** Efficient hashtable on ints. It does open addressing with linear probing. *)
 module IHashtbl =
   struct
+    (** A hashtable is an array of (key, value) buckets that have a state, plus the
+        size of the table *)
     type 'a t = {
       mutable buckets : (int * 'a * state) array;
       mutable size : int;
     }
     and state = Used | Empty | Deleted
 
-    let create size = {
-      buckets = Array.make size (0, Obj.magic None, Empty);
-      size = 0;
-    }
+    (** Create a table. Size will be >= 2 *)
+    let create size =
+      let size = max 2 size in
+      { buckets = Array.make size (0, Obj.magic None, Empty);
+        size = 0; }
 
     (** clear the table, by resetting all states to Empty *)
     let clear t =
-      let rec clear_bucket i =
-        if i = Array.length t.buckets then ()
-          else (t.buckets.(i) <- (0, Obj.magic None, Empty); clear_bucket (i+1))
-      in
-      clear_bucket 0;
+      for i = 0 to Array.length t.buckets - 1 do
+        t.buckets.(i) <- (0, Obj.magic None, Empty)
+      done;
       t.size <- 0
 
     (** Insert (key -> value) in buckets, starting with the hash. *)

@@ -378,16 +378,18 @@ module RuleHashtbl = Hashtbl.Make(
 
 (** A database of facts and rules, with incremental fixpoint computation *)
 type db = {
-  db_rules : unit RuleHashtbl.t;                  (** repository for all rules *)
-  db_index : RulesIndex.t;                        (** index on rules *)
+  db_all : unit RuleHashtbl.t;                    (** repository for all rules *)
+  db_facts : RulesIndex.t;                        (** index on facts *)
+  db_rules : RulesIndex.t;                        (** index on rules *)
   db_handlers : (term -> unit) Utils.IHashtbl.t;  (** map symbol -> handler *)
   db_queue : rule Queue.t;                        (** queue of rules to add *)
 }
 
 (** Create a DB *)
 let db_create () =
-  { db_rules = RuleHashtbl.create 17;
-    db_index = RulesIndex.create ();
+  { db_all = RuleHashtbl.create 17;
+    db_facts = RulesIndex.create ();
+    db_rules = RulesIndex.create ();
     db_handlers = Utils.IHashtbl.create 3;
     db_queue = Queue.create ();
   }
@@ -395,7 +397,7 @@ let db_create () =
 (** Is the rule member of the DB? *)
 let db_mem db rule =
   assert (check_safe rule);
-  RuleHashtbl.mem db.db_rules rule
+  RuleHashtbl.mem db.db_all rule
 
 (** Add the rule/fact to the DB, updating fixpoint *)
 let db_add db rule =
@@ -412,11 +414,11 @@ let db_add db rule =
     let rule = Queue.take queue in
     if db_mem db rule then () else begin
     (* rule not already present, add it *)
-    RuleHashtbl.replace db.db_rules rule ();
+    RuleHashtbl.replace db.db_all rule ();
     (* generate new rules by resolution *)
     if is_fact rule
     then begin
-      RulesIndex.add db.db_index rule.(0) rule;
+      RulesIndex.add db.db_facts rule.(0) rule;
       (* call handler for this fact, if any *)
       (try let handler = Utils.IHashtbl.find db.db_handlers rule.(0).(0)
            in handler rule.(0)
@@ -431,10 +433,10 @@ let db_add db rule =
                body of rule', that makes a new rule *)
             let rule'' = remove_first_subst subst rule' in
             Queue.push rule'' queue)
-        () db.db_index rule.(0)
+        () db.db_rules rule.(0)
     end else begin
       assert (Array.length rule > 1);
-      RulesIndex.add db.db_index rule.(1) rule;
+      RulesIndex.add db.db_rules rule.(1) rule;
       (* insertion of a non_unit rule: resolution with all facts that match the
          first body term of the rule *)
       RulesIndex.retrieve_specializations
@@ -442,7 +444,7 @@ let db_add db rule =
           (* subst(rule.body.(0)) = fact, remove this first literal *)
           let rule' = remove_first_subst subst rule in
           Queue.push rule' queue)
-        () db.db_index rule.(1)
+        () db.db_facts rule.(1)
     end
     end
   done
@@ -452,16 +454,16 @@ let db_add db rule =
 let db_match db pattern handler =
   RulesIndex.retrieve_specializations
     (fun () fact subst -> handler fact.(0) subst)
-    () db.db_index pattern
+    () db.db_facts pattern
 
 (** Size of the DB *)
-let db_size db = RuleHashtbl.length db.db_rules
+let db_size db = RuleHashtbl.length db.db_all
 
 (** Fold on all rules in the current DB (including fixpoint) *)
 let db_fold k acc db =
   RuleHashtbl.fold
     (fun rule () acc -> k acc rule)
-    db.db_rules acc
+    db.db_all acc
 
 (** [db_subscribe db symbol handler] causes [handler] to be called with
     any new fact that has head symbol [symbol] from now on *)

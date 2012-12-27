@@ -60,16 +60,19 @@ module IHashtbl =
     }
     and state = Used | Empty | Deleted
 
+    let my_null = (0, Obj.magic None, Empty)
+    let my_deleted = (0, Obj.magic None, Deleted)
+
     (** Create a table. Size will be >= 2 *)
     let create size =
       let size = max 2 size in
-      { buckets = Array.make size (0, Obj.magic None, Empty);
+      { buckets = Array.make size my_null;
         size = 0; }
 
     (** clear the table, by resetting all states to Empty *)
     let clear t =
       for i = 0 to Array.length t.buckets - 1 do
-        t.buckets.(i) <- (0, Obj.magic None, Empty)
+        t.buckets.(i) <- my_null
       done;
       t.size <- 0
 
@@ -87,7 +90,7 @@ module IHashtbl =
 
     (** Resize the array, by inserting its content into a twice as large array *)
     let resize buckets =
-      let buckets' = Array.make (Array.length buckets * 2) (0, Obj.magic None, Empty) in
+      let buckets' = Array.make (Array.length buckets * 2) my_null in
       for i = 0 to Array.length buckets - 1 do
         match buckets.(i) with
         | (key, value, Used) ->
@@ -143,7 +146,7 @@ module IHashtbl =
       let rec probe i =
         match buckets.(i) with
         | (key', _, Used) when key = key' ->
-          buckets.(i) <- (0, Obj.magic None, Deleted); t.size <- t.size - 1  (* remove slot *)
+          buckets.(i) <- my_deleted; t.size <- t.size - 1  (* remove slot *)
         | (_, _, Deleted) | (_, _, Used) ->
           probe ((i+1) mod n) (* search further *)
         | (_, _, Empty) -> ()  (* not present *)

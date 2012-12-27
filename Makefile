@@ -1,4 +1,4 @@
-all: tests datalog
+all: datalog
 
 datalog:
 	ocamlbuild -tag noassert datalog.native

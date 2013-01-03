@@ -1,16 +1,17 @@
 CLI = datalog_cli.native
-LIB = lib.cmxa
+LIB = datalog.cmxa
+OPTIONS = -classic-display
 
 all: prod
 
 prod:
-	ocamlbuild -tag noassert $(CLI) $(LIB)
+	ocamlbuild $(OPTIONS) -tag noassert $(CLI) $(LIB)
 
 debug:
-	ocamlbuild -tag debug $(CLI)
+	ocamlbuild $(OPTIONS) -tag debug $(CLI)
 
 profile:
-	ocamlbuild -tag profile $(CLI)
+	ocamlbuild $(OPTIONS) -tag profile $(CLI)
 
 clean:
 	ocamlbuild -clean

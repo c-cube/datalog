@@ -1,8 +1,6 @@
 (** The main datalog file. It provides a CLI tool to parse rule/fact files and compute
     their fixpoint *)
 
-module Logic = Logic
-
 let progress = ref false
 let print_input = ref false
 let print_result = ref false
@@ -17,7 +15,7 @@ let parse_file filename =
   Format.printf "%% parse file %s@." filename;
   let ic = open_in filename in
   let lexbuf = Lexing.from_channel ic in
-  let rules = Parser.parse_file Lexer.token lexbuf in
+  let rules = Datalog.Parser.parse_file Datalog.Lexer.token lexbuf in
   close_in ic;
   rules
 
@@ -37,34 +35,34 @@ let pp_progress i total =
 let process_rules rules =
   Format.printf "%% process %d rules@." (List.length rules);
   (if !print_input then
-    List.iter (Format.printf "  rule @[<h>%a@]@." (Logic.pp_rule ?to_s:None)) rules);
+    List.iter (Format.printf "  rule @[<h>%a@]@." (Datalog.Logic.pp_rule ?to_s:None)) rules);
   Format.printf "%% computing fixpoint...@.";
-  let db = Logic.db_create () in
+  let db = Datalog.Logic.db_create () in
   (* handlers *)
-  List.iter (fun (n,handler,_) -> Logic.db_subscribe db n handler) !sums;
+  List.iter (fun (n,handler,_) -> Datalog.Logic.db_subscribe db n handler) !sums;
   (* add rules one by one *)
   let total = List.length rules in
   ignore (List.fold_left (fun i rule -> (if !progress then pp_progress i total);
-                          Logic.db_add db rule; i+1)
+                          Datalog.Logic.db_add db rule; i+1)
           1 rules);
   Format.printf "%% done.@.";
   (* print fixpoint of set after application of rules *)
   (if !print_size then
-    Format.printf "%% size of saturated set: %d@." (Logic.db_size db));
+    Format.printf "%% size of saturated set: %d@." (Datalog.Logic.db_size db));
   (if !print_saturated then 
-    Logic.db_fold (fun () rule ->
-      Format.printf "  @[<h>%a@]@." (Logic.pp_rule ?to_s:None) rule) () db
+    Datalog.Logic.db_fold (fun () rule ->
+      Format.printf "  @[<h>%a@]@." (Datalog.Logic.pp_rule ?to_s:None) rule) () db
   else if !print_result then 
-    Logic.db_fold (fun () rule ->
-      if Logic.is_fact rule then
-        Format.printf "  @[<h>%a@]@." (Logic.pp_rule ?to_s:None) rule) () db);
+    Datalog.Logic.db_fold (fun () rule ->
+      if Datalog.Logic.is_fact rule then
+        Format.printf "  @[<h>%a@]@." (Datalog.Logic.pp_rule ?to_s:None) rule) () db);
   (* print aggregates *)
   List.iter (fun (_,_,printer) -> printer ()) !sums;
   (* print patterns *)
   List.iter (fun pattern ->
-    Format.printf "%% facts matching pattern %a:@." (Logic.pp_term ?to_s:None) pattern;
-    Logic.db_match db pattern
-      (fun fact subst -> Format.printf "  @[<h>%a.@]@." (Logic.pp_term ?to_s:None) fact))
+    Format.printf "%% facts matching pattern %a:@." (Datalog.Logic.pp_term ?to_s:None) pattern;
+    Datalog.Logic.db_match db pattern
+      (fun fact subst -> Format.printf "  @[<h>%a.@]@." (Datalog.Logic.pp_term ?to_s:None) fact))
     !patterns;
   (* print memory usage *)
   let stat = Gc.quick_stat () in
@@ -75,7 +73,7 @@ let process_rules rules =
 (** Handler that aggregates the number of facts with this head symbol. It adds the
     handler to the global variable [sums] *)
 let add_sum symbol =
-  let n = Symbols.mk_symbol symbol in
+  let n = Datalog.Symbols.mk_symbol symbol in
   let count = ref 0 in
   (* print result at exit *)
   let printer () = Format.printf "%% number of fact with head %s: %d@." symbol !count in
@@ -86,7 +84,7 @@ let add_sum symbol =
     set is saturated *)
 let add_pattern p =
   let lexbuf = Lexing.from_string p in
-  let term = Parser.term Lexer.token lexbuf in
+  let term = Datalog.Parser.term Datalog.Lexer.token lexbuf in
   patterns := term :: !patterns
 
 (** parse CLI arguments *)

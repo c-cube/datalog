@@ -16,14 +16,14 @@ You need OCaml >= 3.12 with ocamlbuild. Just type in
 
     make
 
-to run tests,
-
-    ./run.native
-
 ## How to use it
 
-Once it is built, just type in
+There are two ways to use `datalog`:
 
-    ./datalog.native [problem_file]
+- With the command line tool, `datalog_cli.native`; just type in
+
+    ./datalog_cli.native [problem_file]
 
 A few example files, suffixed with `.pl`, can be found in `tests/`.
+
+- The library, that should be in `_build/lib.a`. It exports a `Datalog` module.

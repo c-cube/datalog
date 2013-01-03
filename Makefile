@@ -1,16 +1,16 @@
-all: datalog
+CLI = datalog_cli.native
+LIB = lib.cmxa
 
-datalog:
-	ocamlbuild -tag noassert datalog.native
+all: prod
+
+prod:
+	ocamlbuild -tag noassert $(CLI) $(LIB)
 
 debug:
-	ocamlbuild -tag debug datalog.native
+	ocamlbuild -tag debug $(CLI)
 
 profile:
-	ocamlbuild -tag profile datalog.native
-
-tests: datalog
-	ocamlbuild -I . tests/run.native
+	ocamlbuild -tag profile $(CLI)
 
 clean:
 	ocamlbuild -clean

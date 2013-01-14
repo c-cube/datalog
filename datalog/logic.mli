@@ -14,6 +14,13 @@ type rule = term array
 type subst = int Utils.IHashtbl.t
   (** A substitution is a map from (negative) ints to (positive) ints *)
 
+val mk_term : string -> [`Var of int | `Symbol of string] list -> term
+  (** Helper to build a term. Arguments are either variables or symbols; if they
+      are variables, the int must be negative. *)
+
+val mk_rule : term -> term list -> rule
+  (** Create a rule from a conclusion and a list of premises *)
+
 val is_var : int -> bool
   (** A variable is a negative int *)
 

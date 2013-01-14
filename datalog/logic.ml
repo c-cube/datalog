@@ -14,6 +14,21 @@ type rule = term array
 type subst = int Utils.IHashtbl.t
   (** A substitution is a map from (negative) ints to (positive) ints *)
 
+(** Helper to build a term. Arguments are either variables or symbols; if they
+    are variables, the int must be negative. *)
+let mk_term head args =
+  let head = Symbols.mk_symbol head in
+  let args = List.map
+    (function
+     | `Var i -> assert (i < 0); i
+     | `Symbol s -> Symbols.mk_symbol s)
+    args in
+  Array.of_list (head :: args)
+
+(** Create a rule from a conclusion and a list of premises *)
+let mk_rule head premises = Array.of_list (head :: premises)
+
+(** A variable is a negative int *)
 let is_var x = x < 0
 
 (** Is the term ground (a fact)? *)

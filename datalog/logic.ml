@@ -521,3 +521,14 @@ let db_explain db fact =
   (* once the set is collected, convert it to list *)
   search [|fact|];
   TermSet.elements !set
+
+(** Immediate premises of the fact (ie the facts that resolved with
+    a clause to give the term) *)
+let db_premises db fact =
+  let rec search acc rule =
+    let explanation = RuleHashtbl.find db.db_all rule in
+    match explanation with
+    | Axiom -> acc  (* no premises *)
+    | Resolution (rule, fact) -> let acc = fact :: acc in search acc rule
+  in
+  search [] [|fact|]

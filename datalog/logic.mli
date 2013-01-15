@@ -144,3 +144,7 @@ val db_subscribe : db -> int -> (term -> unit) -> unit
 val db_explain : db -> term -> term list
   (** Explain the given fact by returning a list of facts that imply it
       under the current rules. *)
+
+val db_premises : db -> term -> term list
+  (** Immediate premises of the fact (ie the facts that resolved with
+      a clause to give the term) *)

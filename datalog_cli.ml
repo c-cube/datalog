@@ -69,8 +69,15 @@ let process_rules rules =
   List.iter (fun pattern ->
     Datalog.Logic.db_match db pattern
       (fun fact subst ->
+        (* premises *)
+        Format.printf "  premises of @[<h>%a@]: @[<h>" (Datalog.Logic.pp_term ?to_s:None) fact;
+        let premises = Datalog.Logic.db_premises db fact in
+        List.iter (fun fact' -> Format.printf " %a"
+          (Datalog.Logic.pp_term ?to_s:None) fact') premises;
+        Format.printf "@]@.";
+        (* explanation *)
         let explanation = Datalog.Logic.db_explain db fact in
-        Format.printf "  explain @[<h>%a@] by @[<h>" (Datalog.Logic.pp_term ?to_s:None) fact;
+        Format.printf "  explain @[<h>%a@] by: @[<h>" (Datalog.Logic.pp_term ?to_s:None) fact;
         List.iter (fun fact' -> Format.printf " %a"
           (Datalog.Logic.pp_term ?to_s:None) fact') explanation;
         Format.printf "@]@."))

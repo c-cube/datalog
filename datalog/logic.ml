@@ -16,12 +16,12 @@ type subst = int Utils.IHashtbl.t
 
 (** Helper to build a term. Arguments are either variables or symbols; if they
     are variables, the int must be negative. *)
-let mk_term head args =
-  let head = Symbols.mk_symbol head in
+let mk_term ?(of_s=Symbols.mk_symbol) head args =
+  let head = of_s head in
   let args = List.map
     (function
      | `Var i -> assert (i < 0); i
-     | `Symbol s -> Symbols.mk_symbol s)
+     | `Symbol s -> of_s s)
     args in
   Array.of_list (head :: args)
 

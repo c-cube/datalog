@@ -43,8 +43,11 @@ let is_ground t =
 (** Number of subterms of the term. Ex for p(a,b,c) it returns 3 *)
 let arity t = Array.length t - 1
 
+(** compare terms *)
+let compare_term = Utils.compare_ints
+
 (** Are the terms equal? *)
-let eq_term t1 t2 = Utils.compare_ints t1 t2 = 0
+let eq_term t1 t2 = compare_term t1 t2 = 0
 
 (** Hash the term *)
 let hash_term t = Utils.hash_ints t
@@ -391,13 +394,18 @@ module RuleHashtbl = Hashtbl.Make(
     let hash = hash_rule
   end)
 
+(** Explanation for a rule or fact *)
+type explanation =
+  | Axiom
+  | Resolution of rule * term
+
 (** A database of facts and rules, with incremental fixpoint computation *)
 type db = {
-  db_all : unit RuleHashtbl.t;                    (** repository for all rules *)
+  db_all : explanation RuleHashtbl.t;             (** repository for all rules (-> explanation) *)
   db_facts : RulesIndex.t;                        (** index on facts *)
   db_rules : RulesIndex.t;                        (** index on rules *)
   db_handlers : (term -> unit) Utils.IHashtbl.t;  (** map symbol -> handler *)
-  db_queue : rule Queue.t;                        (** queue of rules to add *)
+  db_queue : (rule * explanation) Queue.t;        (** queue of rules to add (with explanation) *)
 }
 
 (** Create a DB *)
@@ -422,14 +430,14 @@ let db_add db rule =
   (* is there already a add() going on? *)
   let already_active = not (Queue.is_empty queue) in
   (* add [rule] to the queue of rules to add *)
-  Queue.push rule queue;
+  Queue.push (rule, Axiom) queue;
   (* if there is already a add() going on, let it propagate the rule *)
   if already_active then () else
   while not (Queue.is_empty queue) do
-    let rule = Queue.take queue in
+    let rule, explanation = Queue.take queue in
     if db_mem db rule then () else begin
     (* rule not already present, add it *)
-    RuleHashtbl.replace db.db_all rule ();
+    RuleHashtbl.replace db.db_all rule explanation;
     (* generate new rules by resolution *)
     if is_fact rule
     then begin
@@ -437,7 +445,9 @@ let db_add db rule =
       (* call handler for this fact, if any *)
       (try let handler = Utils.IHashtbl.find db.db_handlers rule.(0).(0)
            in handler rule.(0)
-      with Not_found -> ());
+      with
+      | Not_found -> ()
+      | e -> Format.eprintf "Datalog: exception while calling handler for %d@." rule.(0).(0));
       (* insertion of a fact: resolution with all rules whose first body term
          matches the fact *)
       RulesIndex.retrieve_generalizations
@@ -447,7 +457,8 @@ let db_add db rule =
                subst(rule'.body.(0)) = fact, remove the first element of the
                body of rule', that makes a new rule *)
             let rule'' = remove_first_subst subst rule' in
-            Queue.push rule'' queue)
+            let explanation = Resolution (rule', rule.(0)) in
+            Queue.push (rule'', explanation) queue)
         () db.db_rules rule.(0)
     end else begin
       assert (Array.length rule > 1);
@@ -458,7 +469,8 @@ let db_add db rule =
         (fun () fact subst ->
           (* subst(rule.body.(0)) = fact, remove this first literal *)
           let rule' = remove_first_subst subst rule in
-          Queue.push rule' queue)
+          let explanation = Resolution (rule, fact.(0)) in
+          Queue.push (rule', explanation) queue)
         () db.db_facts rule.(1)
     end
     end
@@ -477,10 +489,35 @@ let db_size db = RuleHashtbl.length db.db_all
 (** Fold on all rules in the current DB (including fixpoint) *)
 let db_fold k acc db =
   RuleHashtbl.fold
-    (fun rule () acc -> k acc rule)
+    (fun rule _ acc -> k acc rule)
     db.db_all acc
 
 (** [db_subscribe db symbol handler] causes [handler] to be called with
     any new fact that has head symbol [symbol] from now on *)
 let db_subscribe db symbol handler =
   Utils.IHashtbl.replace db.db_handlers symbol handler
+
+(** Explain the given fact by returning a list of facts that imply it
+    under the current rules. *)
+let db_explain db fact =
+  let module TermSet = Set.Make(struct type t = term let compare = compare_term end) in
+  let explored = ref RulesIndex.DataSet.empty
+  and set = ref TermSet.empty in
+  (* recursively collect explanations *)
+  let rec search rule =
+    if RulesIndex.DataSet.mem rule !explored then ()
+    else begin
+      explored := RulesIndex.DataSet.add rule !explored;
+      let explanation = RuleHashtbl.find db.db_all rule in
+      match explanation with
+      | Axiom when is_fact rule -> set := TermSet.add rule.(0) !set
+      | Axiom -> ()
+      | Resolution (rule, fact) -> begin
+        search rule;
+        search [|fact|]
+      end
+    end
+  in
+  (* once the set is collected, convert it to list *)
+  search [|fact|];
+  TermSet.elements !set

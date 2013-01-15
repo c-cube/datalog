@@ -125,7 +125,7 @@ val db_mem : db -> rule -> bool
   (** Is the rule member of the DB? *)
 
 val db_add : db -> rule -> unit
-  (** Add the rule/fact to the DB, updating fixpoint *)
+  (** Add the rule/fact to the DB as an axiom, updating fixpoint *)
 
 val db_match : db -> term -> (term -> subst -> unit) -> unit
   (** match the given term with facts of the DB, calling the handler on
@@ -141,3 +141,6 @@ val db_subscribe : db -> int -> (term -> unit) -> unit
   (** [db_subscribe db symbol handler] causes [handler] to be called with
       any new fact that has head symbol [symbol] from now on *)
 
+val db_explain : db -> term -> term list
+  (** Explain the given fact by returning a list of facts that imply it
+      under the current rules. *)

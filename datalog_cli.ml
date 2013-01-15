@@ -8,6 +8,7 @@ let print_saturated = ref false
 let print_size = ref false
 let sums = ref []
 let patterns = ref []
+let explains = ref []
 let files = ref []
 
 (** Parse file and returns the rules *)
@@ -64,6 +65,16 @@ let process_rules rules =
     Datalog.Logic.db_match db pattern
       (fun fact subst -> Format.printf "  @[<h>%a.@]@." (Datalog.Logic.pp_term ?to_s:None) fact))
     !patterns;
+  (* print explanations *)
+  List.iter (fun pattern ->
+    Datalog.Logic.db_match db pattern
+      (fun fact subst ->
+        let explanation = Datalog.Logic.db_explain db fact in
+        Format.printf "  explain @[<h>%a@] by @[<h>" (Datalog.Logic.pp_term ?to_s:None) fact;
+        List.iter (fun fact' -> Format.printf " %a"
+          (Datalog.Logic.pp_term ?to_s:None) fact') explanation;
+        Format.printf "@]@."))
+    !explains;
   (* print memory usage *)
   let stat = Gc.quick_stat () in
   Format.printf "%% max_heap_size: %d; minor_collections: %d; major collections: %d@."
@@ -87,6 +98,12 @@ let add_pattern p =
   let term = Datalog.Parser.term Datalog.Lexer.token lexbuf in
   patterns := term :: !patterns
 
+(** Add the pattern to the list of patterns to explain *)
+let add_explain p =
+  let lexbuf = Lexing.from_string p in
+  let term = Datalog.Parser.term Datalog.Lexer.token lexbuf in
+  explains := term :: !explains
+
 (** parse CLI arguments *)
 let parse_args () =
   let options =
@@ -96,6 +113,7 @@ let parse_args () =
       ("-saturated", Arg.Set print_saturated, "print facts and rules after fixpoint");
       ("-sum", Arg.String add_sum, "aggregate number of terms for the given symbol");
       ("-pattern", Arg.String add_pattern, "print facts matching this pattern");
+      ("-explain", Arg.String add_explain, "explain facts matching this pattern");
       ("-size", Arg.Set print_size, "print number of rules after fixpoint");
     ]
   in

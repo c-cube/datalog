@@ -1,2 +1,0 @@
-- explanations: given a fact, return a set of axiom facts that explain why
-  the first fact is present (possibly just the fact itself if it is an axiom)

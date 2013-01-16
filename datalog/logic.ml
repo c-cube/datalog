@@ -447,7 +447,9 @@ let db_add db rule =
            in handler rule.(0)
       with
       | Not_found -> ()
-      | e -> Format.eprintf "Datalog: exception while calling handler for %d@." rule.(0).(0));
+      | e -> (
+        Format.eprintf "Datalog: exception while calling handler for %d@." rule.(0).(0);
+        raise e));
       (* insertion of a fact: resolution with all rules whose first body term
          matches the fact *)
       RulesIndex.retrieve_generalizations

@@ -16,8 +16,8 @@
     with Not_found ->
       let i = !vars_num in
       decr vars_num;
-      Hashtbl.replace vars name i;
-      i
+      Hashtbl.replace vars name (`Var i);
+      `Var i
 
 %}
 
@@ -33,13 +33,13 @@
 %token <string> INT
 
 %start term
-%type <Logic.term> term
+%type <Logic.Default.term> term
 
 %start rule
-%type <Logic.rule> rule
+%type <Logic.Default.rule> rule
 
 %start parse_file
-%type <Logic.rule list> parse_file
+%type <Logic.Default.rule list> parse_file
 
 %%
 
@@ -51,22 +51,22 @@ rules:
   | rule rules { $1 :: $2 }
 
 rule:
-  | term DOT { [| $1 |] }
-  | term IF terms DOT { Array.of_list ($1 :: $3) }
+  | term DOT { Logic.Default.mk_rule $1 [] }
+  | term IF terms DOT { Logic.Default.mk_rule $1 $3 }
 
 terms:
   | term { [$1] }
   | term COMMA terms { $1 :: $3 }
 
 term:
-  | LOWER_WORD { [| Symbols.mk_symbol $1 |] }
+  | LOWER_WORD { Logic.Default.mk_term $1 [] }
   | LOWER_WORD LEFT_PARENTHESIS args RIGHT_PARENTHESIS
-    { Array.of_list (Symbols.mk_symbol $1 :: $3) }
+    { Logic.Default.mk_term $1 $3 }
 
 args:
-  | const { [Symbols.mk_symbol $1] }
+  | const { [`Symbol $1] }
   | UPPER_WORD { [get_var $1] }
-  | const COMMA args { (Symbols.mk_symbol $1) :: $3 } 
+  | const COMMA args { (`Symbol $1) :: $3 } 
   | UPPER_WORD COMMA args { (get_var $1) :: $3 }
 
 const:

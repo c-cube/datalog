@@ -7,16 +7,18 @@ let print_result = ref false
 let print_saturated = ref false
 let print_size = ref false
 let sums = ref []
-let patterns = ref []
+let patterns = (ref [] : Logic.Default.term list ref)
 let explains = ref []
 let files = ref []
+
+module DLogic = Logic.Default
 
 (** Parse file and returns the rules *)
 let parse_file filename =
   Format.printf "%% parse file %s@." filename;
   let ic = open_in filename in
   let lexbuf = Lexing.from_channel ic in
-  let rules = Datalog.Parser.parse_file Datalog.Lexer.token lexbuf in
+  let rules = Parser.parse_file Lexer.token lexbuf in
   close_in ic;
   rules
 
@@ -36,50 +38,48 @@ let pp_progress i total =
 let process_rules rules =
   Format.printf "%% process %d rules@." (List.length rules);
   (if !print_input then
-    List.iter (Format.printf "  rule @[<h>%a@]@." (Datalog.Logic.pp_rule ?to_s:None)) rules);
+    List.iter (Format.printf "  rule @[<h>%a@]@." DLogic.pp_rule) rules);
   Format.printf "%% computing fixpoint...@.";
-  let db = Datalog.Logic.db_create () in
+  let db = DLogic.db_create () in
   (* handlers *)
-  List.iter (fun (n,handler,_) -> Datalog.Logic.db_subscribe db n handler) !sums;
+  List.iter (fun (symbol,handler,_) -> DLogic.db_subscribe db symbol handler) !sums;
   (* add rules one by one *)
   let total = List.length rules in
   ignore (List.fold_left (fun i rule -> (if !progress then pp_progress i total);
-                          Datalog.Logic.db_add db rule; i+1)
+                          DLogic.db_add db rule; i+1)
           1 rules);
   Format.printf "%% done.@.";
   (* print fixpoint of set after application of rules *)
   (if !print_size then
-    Format.printf "%% size of saturated set: %d@." (Datalog.Logic.db_size db));
+    Format.printf "%% size of saturated set: %d@." (DLogic.db_size db));
   (if !print_saturated then 
-    Datalog.Logic.db_fold (fun () rule ->
-      Format.printf "  @[<h>%a@]@." (Datalog.Logic.pp_rule ?to_s:None) rule) () db
+    DLogic.db_fold (fun () rule ->
+      Format.printf "  @[<h>%a@]@." DLogic.pp_rule rule) () db
   else if !print_result then 
-    Datalog.Logic.db_fold (fun () rule ->
-      if Datalog.Logic.is_fact rule then
-        Format.printf "  @[<h>%a@]@." (Datalog.Logic.pp_rule ?to_s:None) rule) () db);
+    DLogic.db_fold (fun () rule ->
+      if DLogic.is_fact rule then
+        Format.printf "  @[<h>%a@]@." DLogic.pp_rule rule) () db);
   (* print aggregates *)
   List.iter (fun (_,_,printer) -> printer ()) !sums;
   (* print patterns *)
   List.iter (fun pattern ->
-    Format.printf "%% facts matching pattern %a:@." (Datalog.Logic.pp_term ?to_s:None) pattern;
-    Datalog.Logic.db_match db pattern
-      (fun fact subst -> Format.printf "  @[<h>%a.@]@." (Datalog.Logic.pp_term ?to_s:None) fact))
+    Format.printf "%% facts matching pattern %a:@." DLogic.pp_term pattern;
+    DLogic.db_match db pattern
+      (fun fact subst -> Format.printf "  @[<h>%a.@]@." DLogic.pp_term fact))
     !patterns;
   (* print explanations *)
   List.iter (fun pattern ->
-    Datalog.Logic.db_match db pattern
+    DLogic.db_match db pattern
       (fun fact subst ->
         (* premises *)
-        Format.printf "  premises of @[<h>%a@]: @[<h>" (Datalog.Logic.pp_term ?to_s:None) fact;
-        let premises = Datalog.Logic.db_premises db fact in
-        List.iter (fun fact' -> Format.printf " %a"
-          (Datalog.Logic.pp_term ?to_s:None) fact') premises;
+        Format.printf "  premises of @[<h>%a@]: @[<h>" DLogic.pp_term fact;
+        let premises = DLogic.db_premises db fact in
+        List.iter (fun fact' -> Format.printf " %a" DLogic.pp_term fact') premises;
         Format.printf "@]@.";
         (* explanation *)
-        let explanation = Datalog.Logic.db_explain db fact in
-        Format.printf "  explain @[<h>%a@] by: @[<h>" (Datalog.Logic.pp_term ?to_s:None) fact;
-        List.iter (fun fact' -> Format.printf " %a"
-          (Datalog.Logic.pp_term ?to_s:None) fact') explanation;
+        let explanation = DLogic.db_explain db fact in
+        Format.printf "  explain @[<h>%a@] by: @[<h>" DLogic.pp_term fact;
+        List.iter (fun fact' -> Format.printf " %a" DLogic.pp_term fact') explanation;
         Format.printf "@]@."))
     !explains;
   (* print memory usage *)
@@ -91,24 +91,23 @@ let process_rules rules =
 (** Handler that aggregates the number of facts with this head symbol. It adds the
     handler to the global variable [sums] *)
 let add_sum symbol =
-  let n = Datalog.Symbols.mk_symbol symbol in
   let count = ref 0 in
   (* print result at exit *)
   let printer () = Format.printf "%% number of fact with head %s: %d@." symbol !count in
   let handler _ = incr count in
-  sums := (n, handler, printer) :: !sums
+  sums := (symbol, handler, printer) :: !sums
 
 (** Handler that prints facts that match the given [pattern] once the
     set is saturated *)
 let add_pattern p =
   let lexbuf = Lexing.from_string p in
-  let term = Datalog.Parser.term Datalog.Lexer.token lexbuf in
+  let term = Parser.term Lexer.token lexbuf in
   patterns := term :: !patterns
 
 (** Add the pattern to the list of patterns to explain *)
 let add_explain p =
   let lexbuf = Lexing.from_string p in
-  let term = Datalog.Parser.term Datalog.Lexer.token lexbuf in
+  let term = Parser.term Lexer.token lexbuf in
   explains := term :: !explains
 
 (** parse CLI arguments *)

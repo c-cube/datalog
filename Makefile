@@ -5,14 +5,15 @@ OPTIONS = -classic-display
 all: prod
 
 prod:
-	ocamlbuild $(OPTIONS) -tag noassert $(CLI) $(LIB)
+	ocamlbuild $(OPTIONS) -tag noassert $(LIB) $(CLI)
 
 debug:
-	ocamlbuild $(OPTIONS) -tag debug $(CLI)
+	ocamlbuild $(OPTIONS) -tag debug $(LIB) $(CLI)
 
 profile:
-	ocamlbuild $(OPTIONS) -tag profile $(CLI)
+	ocamlbuild $(OPTIONS) -tag profile $(LIB) $(CLI)
 
 clean:
 	ocamlbuild -clean
 
+.PHONY: all clean

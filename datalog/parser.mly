@@ -26,6 +26,7 @@
 %token DOT
 %token IF
 %token COMMA
+%token NOT
 %token EOI
 %token <string> SINGLE_QUOTED
 %token <string> LOWER_WORD
@@ -52,11 +53,13 @@ rules:
 
 rule:
   | term DOT { Logic.Default.mk_rule $1 [] }
-  | term IF terms DOT { Logic.Default.mk_rule $1 $3 }
+  | term IF lits DOT { Logic.Default.mk_rule $1 $3 }
 
-terms:
-  | term { [$1] }
-  | term COMMA terms { $1 :: $3 }
+lits:
+  | NOT term { [$2, false] }
+  | term { [$1, true] }
+  | NOT term COMMA lits { ($2, false) :: $4 }
+  | term COMMA lits { ($1, true) :: $3 }
 
 term:
   | LOWER_WORD { Logic.Default.mk_term $1 [] }

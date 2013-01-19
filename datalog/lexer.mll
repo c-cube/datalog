@@ -81,6 +81,7 @@ rule token =
       | '('                          { update_token (Lexing.lexeme lexbuf); LEFT_PARENTHESIS }
       | ')'                          { update_token (Lexing.lexeme lexbuf); RIGHT_PARENTHESIS }
       | '.'                          { update_token (Lexing.lexeme lexbuf); DOT }
+      | '~'                          { update_token (Lexing.lexeme lexbuf); NOT }
       | ":-"                         { update_token (Lexing.lexeme lexbuf); IF }
       | ","                          { update_token (Lexing.lexeme lexbuf); COMMA }
       | _                            { prev_column_index := !current_column_index;

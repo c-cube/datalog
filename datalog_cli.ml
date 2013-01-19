@@ -95,7 +95,7 @@ let add_sum symbol =
   let count = ref 0 in
   (* print result at exit *)
   let printer () = Format.printf "%% number of fact with head %s: %d@." symbol !count in
-  let handler _ = incr count in
+  let handler _ _ = incr count in
   sums := (symbol, handler, printer) :: !sums
 
 (** Handler that prints facts that match the given [pattern] once the

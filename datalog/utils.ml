@@ -6,15 +6,16 @@
 
 (** Hashing on ints, cf http://en.wikipedia.org/wiki/MurmurHash *)
 let murmur_hash i =
-  let m = 0xd1e995
-  and r = 24
-  and seed = 0x47b28c in
-  let hash = seed lxor 32 in
+  let m = 0x1bd1e995 in  (* 0x5bd1e995 in 31 bits *)
+  let r = 24 in
+  let seed = 0x9747b28c in
+  let hash = seed lxor 4 in
   let k = i * m in
   let k = k lxor (k lsr r) in
   let k = k * m in
   let hash = (hash * m) lxor k in
   let hash = hash lxor (hash lsr 13) in
+  let hash = hash * m in
   let hash = hash lxor (hash lsr 15) in
   abs hash
 
@@ -55,25 +56,20 @@ module IHashtbl =
     (** A hashtable is an array of (key, value) buckets that have a state, plus the
         size of the table *)
     type 'a t = {
-      mutable buckets : (int * 'a * state) array;
+      mutable buckets : 'a bucket array;
       mutable size : int;
     }
-    and state = Used | Empty | Deleted
-
-    let my_null = (0, Obj.magic None, Empty)
-    let my_deleted = (0, Obj.magic None, Deleted)
+    and 'a bucket = Empty | Deleted of int | Used of (int * 'a)
 
     (** Create a table. Size will be >= 2 *)
     let create size =
       let size = max 2 size in
-      { buckets = Array.make size my_null;
+      { buckets = Array.make size Empty;
         size = 0; }
 
     (** clear the table, by resetting all states to Empty *)
     let clear t =
-      for i = 0 to Array.length t.buckets - 1 do
-        t.buckets.(i) <- my_null
-      done;
+      Array.fill t.buckets 0 (Array.length t.buckets) Empty;
       t.size <- 0
 
     (** Insert (key -> value) in buckets, starting with the hash. *)
@@ -82,18 +78,18 @@ module IHashtbl =
       (* lookup an empty slot to insert the key->value in. *)
       let rec lookup i =
         match buckets.(i) with
-        | (_, _, Empty) -> buckets.(i) <- (key, value, Used)
-        | (key', _, _) when key' = key -> ()
+        | Empty -> buckets.(i) <- Used (key, value)
+        | Used (key', _) | Deleted key'  when key' = key -> ()
         | _ -> lookup ((i+1) mod n)
       in
       lookup (h mod n)
 
     (** Resize the array, by inserting its content into a twice as large array *)
     let resize buckets =
-      let buckets' = Array.make (Array.length buckets * 2) my_null in
+      let buckets' = Array.make (Array.length buckets * 2) Empty in
       for i = 0 to Array.length buckets - 1 do
         match buckets.(i) with
-        | (key, value, Used) ->
+        | Used (key, value) ->
           insert buckets' (murmur_hash key) key value  (* insert key -> value into new array *)
         | _ -> ()
       done;
@@ -107,11 +103,11 @@ module IHashtbl =
       let rec probe i num =
         if num = n then raise Not_found
         else match buckets.(i) with
-        | (key', value, Used) when key = key' ->
+        | Used (key', value) when key = key' ->
           value  (* found value for this key *)
-        | (_, _, Deleted) | (_, _, Used) ->
+        | Deleted _ | Used _ ->
           probe ((i+1) mod n) (num + 1) (* try next bucket *)
-        | (_, _, Empty) -> raise Not_found
+        | Empty -> raise Not_found
       in
       probe (h mod n) 0
 
@@ -120,17 +116,19 @@ module IHashtbl =
 
     (** put [key] -> [value] in the hashtable *)
     let replace t key value =
-      (if float_of_int t.size /. float_of_int (Array.length t.buckets) > max_load then t.buckets <- resize t.buckets);
+      let load = float_of_int t.size /. float_of_int (Array.length t.buckets) in
+      (if load > max_load then t.buckets <- resize t.buckets);
       let n = Array.length t.buckets in
       let h = murmur_hash key in
       let buckets = t.buckets in
       let rec probe i =
         match buckets.(i) with
-        | (key', _, Used) when key = key' ->
-          buckets.(i) <- (key, value, Used)  (* replace value *)
-        | (_, _, Deleted) |(_, _, Empty) ->
-          buckets.(i) <- (key, value, Used); t.size <- t.size + 1 (* insert and increment size *)
-        | (_, _, Used) ->
+        | Used (key', _) when key = key' ->
+          buckets.(i) <- Used (key, value)  (* replace value *)
+        | Deleted _ | Empty ->
+          buckets.(i) <- Used (key, value);
+          t.size <- t.size + 1 (* insert and increment size *)
+        | Used (_, _) ->
           probe ((i+1) mod n) (* go further *)
       in
       probe (h mod n)
@@ -145,11 +143,11 @@ module IHashtbl =
       let buckets = t.buckets in
       let rec probe i =
         match buckets.(i) with
-        | (key', _, Used) when key = key' ->
-          buckets.(i) <- my_deleted; t.size <- t.size - 1  (* remove slot *)
-        | (_, _, Deleted) | (_, _, Used) ->
+        | Used (key', _) when key = key' ->
+          buckets.(i) <- Deleted key; t.size <- t.size - 1  (* remove slot *)
+        | Deleted _ | Used _ ->
           probe ((i+1) mod n) (* search further *)
-        | (_, _, Empty) -> ()  (* not present *)
+        | Empty -> ()  (* not present *)
       in
       probe (h mod n)
 
@@ -166,7 +164,7 @@ module IHashtbl =
       let buckets = t.buckets in
       for i = 0 to Array.length buckets - 1 do
         match buckets.(i) with
-        | (key, value, Used) -> k key value
+        | Used (key, value) -> k key value
         | _ -> ()
       done
 
@@ -176,7 +174,7 @@ module IHashtbl =
       let buckets = t.buckets in
       for i = 0 to Array.length buckets - 1 do
         match buckets.(i) with
-        | (key, value, Used) -> acc := f key value !acc
+        | Used (key, value) -> acc := f key value !acc
         | _ -> ()
       done;
       !acc

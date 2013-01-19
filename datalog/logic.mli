@@ -1,150 +1,132 @@
-(** Representation for Datalog terms and rules *)
+(** Representation for Datalog terms and rules, and the main algorithm *)
 
-(* ----------------------------------------------------------------------
- * Terms and rules
- * ---------------------------------------------------------------------- *)
+(** Module type for logic *)
+module type S = sig
 
-type term = int array
-  (** A datalog atom, i.e. pred(arg_1, ..., arg_n). The first element of the
-      array is the predicate, then arguments follow *)
+  (* ----------------------------------------------------------------------
+   * Terms and rules
+   * ---------------------------------------------------------------------- *)
 
-type rule = term array
-  (** A datalog rule, i.e. head :- body_1, ..., body_n *)
+  type symbol
+    (** Abstract type of symbols *)
 
-type subst = int Utils.IHashtbl.t
-  (** A substitution is a map from (negative) ints to (positive) ints *)
+  type term
+    (** A datalog atom, i.e. pred(arg_1, ..., arg_n). The first element of the
+        array is the predicate, then arguments follow *)
 
-val mk_term : ?of_s:(string -> int) -> string -> [`Var of int | `Symbol of string] list -> term
-  (** Helper to build a term. Arguments are either variables or symbols; if they
-      are variables, the int must be negative. *)
+  type rule
+    (** A datalog rule, i.e. head :- body_1, ..., body_n *)
 
-val mk_rule : term -> term list -> rule
-  (** Create a rule from a conclusion and a list of premises *)
+  type subst
+    (** A substitution maps variables to symbols *)
 
-val is_var : int -> bool
-  (** A variable is a negative int *)
+  val mk_term : symbol -> [`Var of int | `Symbol of symbol] list -> term
+    (** Helper to build a term. Arguments are either variables or symbols; if they
+        variables indexes *must* be negative (otherwise it will raise Invalid_argument *)
 
-val is_ground : term -> bool
-  (** Is the term ground (a fact)? *)
+  val mk_term_s : string -> [`Var of int | `Symbol of string] list -> term
+    (** Same as [mk_term], but converts strings to symbols on-the-fly *)
 
-val arity : term -> int
-  (** Number of subterms of the term. Ex for p(a,b,c) it returns 3 *)
+  val open_term : term -> symbol * [`Var of int | `Symbol of symbol] list
+    (** Deconstruct a term *)
 
-val eq_term : term -> term -> bool
-  (** Are the terms equal? *)
+  val mk_rule : term -> term list -> rule
+    (** Create a rule from a conclusion and a list of premises *)
 
-val hash_term : term -> int
-  (** Hash the term *)
+  val open_rule : rule -> term * term list
+    (** Deconstruct a rule *)
 
-val subst_term : subst -> term -> term
-  (** Apply substitution to the term *)
+  val is_var : int -> bool
+    (** A variable is a negative int *)
 
-val subst_rule : subst -> rule -> rule
-  (** Apply substitution to the rule *)
+  val is_ground : term -> bool
+    (** Is the term ground (a fact)? *)
 
-val check_safe : rule -> bool
-  (** A datalog rule is safe iff all variables in its head also occur in its body *)
+  val arity : term -> int
+    (** Number of subterms of the term. Ex for p(a,b,c) it returns 3 *)
 
-val is_fact : rule -> bool
-  (** A fact is a ground rule with empty body *)
+  val eq_term : term -> term -> bool
+    (** Are the terms equal? *)
 
-val compare_rule : rule -> rule -> int
-  (** Lexicographic comparison of rules *)
+  val hash_term : term -> int
+    (** Hash the term *)
 
-val eq_rule : rule -> rule -> bool
-  (** Check whether rules are (syntactically) equal *)
+  val subst_term : subst -> term -> term
+    (** Apply substitution to the term *)
 
-val hash_rule : rule -> int
-  (** Hash the rule *)
+  val subst_rule : subst -> rule -> rule
+    (** Apply substitution to the rule *)
 
-val remove_first_subst : subst -> rule -> rule
-  (** Rule without its first body term, after applying substitution *)
+  val check_safe : rule -> bool
+    (** A datalog rule is safe iff all variables in its head also occur in its body *)
 
-val pp_term : ?to_s:(int -> string) -> Format.formatter -> term -> unit
-  (** Pretty print the term, using the given mapping from symbols to strings *)
+  val is_fact : rule -> bool
+    (** A fact is a ground rule with empty body *)
 
-val pp_rule : ?to_s:(int -> string) -> Format.formatter -> rule -> unit
-  (** Pretty print the rule, using the given mapping from symbols to strings *)
+  val compare_rule : rule -> rule -> int
+    (** Lexicographic comparison of rules *)
 
-(* ----------------------------------------------------------------------
- * Generalization/Specialization index on terms
- * ---------------------------------------------------------------------- *)
+  val eq_rule : rule -> rule -> bool
+    (** Check whether rules are (syntactically) equal *)
 
-(** Type for an indexing structure on terms *)
-module type Index =
-  sig
-    type t
-      (** A term index *)
+  val hash_rule : rule -> int
+    (** Hash the rule *)
 
-    type elt
-      (** A value indexed by a term *)
+  val pp_term : Format.formatter -> term -> unit
+    (** Pretty print the term *)
 
-    module DataSet : Set.S with type elt = elt
-      (** Set of indexed elements *)
+  val pp_rule : Format.formatter -> rule -> unit
+    (** Pretty print the rule *)
 
-    val create : unit -> t
-      (** Create a new index *)
+  (* ----------------------------------------------------------------------
+   * The datalog bipartite resolution algorithm
+   * ---------------------------------------------------------------------- *)
 
-    val add : t -> term -> elt -> unit
-      (** Add an element indexed by the term *)
+  type db
+    (** A database of facts and rules, with incremental fixpoint computation *)
 
-    val clear : t -> unit
-      (** Reset to empty index *)
+  val db_create : unit -> db
+    (** Create a DB *)
 
-    val retrieve_generalizations : ('a -> elt -> subst -> 'a) -> 'a -> t -> term -> 'a
-      (** Fold on generalizations of given ground term (with transient substitution) *)
+  val db_mem : db -> rule -> bool
+    (** Is the rule member of the DB? *)
 
-    val retrieve_specializations : ('a -> elt -> subst -> 'a) -> 'a -> t -> term -> 'a
-      (** Fold on ground specifications of given term (with transient substitution) *)
+  val db_add : db -> rule -> unit
+    (** Add the rule/fact to the DB as an axiom, updating fixpoint *)
 
-    val fold : ('a -> elt -> 'a) -> 'a -> t -> 'a
-      (** Fold on all indexed elements *)
+  val db_match : db -> term -> (term -> subst -> unit) -> unit
+    (** match the given term with facts of the DB, calling the handler on
+        each fact that match (with the corresponding substitution) *)
 
-    val is_empty : t -> bool
-      (** Is the index empty? *)
+  val db_size : db -> int
+    (** Size of the DB *)
 
-    val size : t -> int
-      (** Number of indexed elements (linear) *)
-  end
+  val db_fold : ('a -> rule -> 'a) -> 'a -> db -> 'a
+    (** Fold on all rules in the current DB (including fixpoint) *)
 
-module Make(X : Set.OrderedType) : Index with type elt = X.t
-  (** Create an Index module for the given type of elements. The implementation
-      is based on perfect discrimination trees. *)
+  val db_subscribe : db -> symbol -> (term -> unit) -> unit
+    (** [db_subscribe db symbol handler] causes [handler] to be called with
+        any new fact that has head symbol [symbol] from now on *)
 
-(* ----------------------------------------------------------------------
- * The datalog bipartite resolution algorithm
- * ---------------------------------------------------------------------- *)
+  val db_explain : db -> term -> term list
+    (** Explain the given fact by returning a list of facts that imply it
+        under the current rules. *)
 
-type db
-  (** A database of facts and rules, with incremental fixpoint computation *)
+  val db_premises : db -> term -> term list
+    (** Immediate premises of the fact (ie the facts that resolved with
+        a clause to give the term) *)
+end
 
-val db_create : unit -> db
-  (** Create a DB *)
+(** Signature for a symbol type. It must be hashable, comparable and
+    in bijection with strings *)
+module type SymbolType = sig
+  include Hashtbl.HashedType
+  val to_string : t -> string
+  val of_string : string -> t
+end
 
-val db_mem : db -> rule -> bool
-  (** Is the rule member of the DB? *)
+(** Build a Datalog module *)
+module Make(Symbol : SymbolType) : S with type symbol = Symbol.t
 
-val db_add : db -> rule -> unit
-  (** Add the rule/fact to the DB as an axiom, updating fixpoint *)
-
-val db_match : db -> term -> (term -> subst -> unit) -> unit
-  (** match the given term with facts of the DB, calling the handler on
-      each fact that match (with the corresponding substitution) *)
-
-val db_size : db -> int
-  (** Size of the DB *)
-
-val db_fold : ('a -> rule -> 'a) -> 'a -> db -> 'a
-  (** Fold on all rules in the current DB (including fixpoint) *)
-
-val db_subscribe : db -> int -> (term -> unit) -> unit
-  (** [db_subscribe db symbol handler] causes [handler] to be called with
-      any new fact that has head symbol [symbol] from now on *)
-
-val db_explain : db -> term -> term list
-  (** Explain the given fact by returning a list of facts that imply it
-      under the current rules. *)
-
-val db_premises : db -> term -> term list
-  (** Immediate premises of the fact (ie the facts that resolved with
-      a clause to give the term) *)
+(** Default term base, where symbols are just strings *)
+module Default : S with type symbol = string

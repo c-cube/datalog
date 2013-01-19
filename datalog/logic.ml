@@ -111,9 +111,9 @@ module type S = sig
     (** Explain the given fact by returning a list of facts that imply it
         under the current rules. *)
 
-  val db_premises : db -> term -> term list
+  val db_premises : db -> term -> rule * term list
     (** Immediate premises of the fact (ie the facts that resolved with
-        a clause to give the term) *)
+        a clause to give the term), plus the rule that has been used. *)
 end
 
 (** Signature for a symbol type. It must be hashable, comparable and
@@ -689,12 +689,12 @@ module Make(Symbol : SymbolType) = struct
     TermSet.elements !set
 
   (** Immediate premises of the fact (ie the facts that resolved with
-      a clause to give the term) *)
+      a clause to give the term), plus the rule that has been used. *)
   let db_premises db fact =
     let rec search acc rule =
       let explanation = RuleHashtbl.find db.db_all rule in
       match explanation with
-      | Axiom -> acc  (* no premises *)
+      | Axiom -> rule, acc  (* no premises *)
       | Resolution (rule, fact) -> let acc = fact :: acc in search acc rule
     in
     search [] [|fact|]

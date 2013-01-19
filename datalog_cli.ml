@@ -73,8 +73,9 @@ let process_rules rules =
       (fun fact subst ->
         (* premises *)
         Format.printf "  premises of @[<h>%a@]: @[<h>" DLogic.pp_term fact;
-        let premises = DLogic.db_premises db fact in
-        List.iter (fun fact' -> Format.printf " %a" DLogic.pp_term fact') premises;
+        let rule, premises = DLogic.db_premises db fact in
+        List.iter (fun fact' -> Format.printf "%a, " DLogic.pp_term fact') premises;
+        Format.printf " with @[<h>%a@]" DLogic.pp_rule rule;
         Format.printf "@]@.";
         (* explanation *)
         let explanation = DLogic.db_explain db fact in

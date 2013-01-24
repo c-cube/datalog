@@ -668,8 +668,8 @@ module Make(Symbol : SymbolType) = struct
           () db.db_rules rule.(0)
       end else if sign_lit rule 0 then begin
         (* first body literal is positive *)
-        assert (Array.length rule > 1);
-        RulesIndex.add db.db_rules rule.(1) rule;
+        assert (Array.length rule > 2);
+        RulesIndex.add db.db_rules rule.(2) rule;
         (* insertion of a non_unit rule: resolution with all facts that match the
            first body term of the rule *)
         RulesIndex.retrieve_specializations
@@ -678,7 +678,7 @@ module Make(Symbol : SymbolType) = struct
             let rule' = remove_first_subst subst rule in
             let explanation = Resolution (rule, fact.(0)) in
             Queue.push (rule', explanation) queue)
-          () db.db_facts rule.(1)
+          () db.db_facts rule.(2)
       end else begin
         (* first body literal is negative TODO *)
         failwith "not implemented"

@@ -68,15 +68,10 @@ Or
 
     $ ./datalog_cli.native tests/graph200.pl -size -sum reachable
     % start datalog
-    % parse file tests/clique10.pl
-    % process 15 rules
+    % parse file tests/graph200.pl
+    % process 203 rules
     % computing fixpoint...
     % done.
-    % facts matching pattern same_clique(1, X1):
-    same_clique(1, 0).
-    same_clique(1, 1).
-    same_clique(1, 3).
-    same_clique(1, 2).
-    same_clique(1, 5).
-    same_clique(1, 4).
-    % max_heap_size: 126976; minor_collections: 0; major collections: 0
+    % size of saturated set: 40805
+    % number of fact with head reachable: 40401
+    % max_heap_size: 1777664; minor_collections: 38; major collections: 9

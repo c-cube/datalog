@@ -6,6 +6,9 @@ NAME = datalog
 
 CLI = datalog_cli.native
 LIB = datalog.cmxa datalog.cma
+DOC = datalog.docdir/index.html
+TARGETS = $(DOC) $(LIB) $(CLI)
+
 INSTALL_LIB = datalog.cmxa datalog.cma datalog.a datalog.cmi datalog.mli
 
 # compilation options
@@ -14,16 +17,13 @@ OPTIONS ?= -classic-display
 all: prod
 
 prod:
-	ocamlbuild $(OPTIONS) -tag noassert $(LIB)
-	ocamlbuild $(OPTIONS) -tag noassert -I _build/datalog/ $(CLI)
+	ocamlbuild $(OPTIONS) -tag noassert $(TARGETS)
 
 debug:
-	ocamlbuild $(OPTIONS) -tag debug $(LIB) $(CLI)
-	ocamlbuild $(OPTIONS) -tag debug _build/$(LIB) $(CLI)
+	ocamlbuild $(OPTIONS) -tag debug $(TARGETS)
 
 profile:
-	ocamlbuild $(OPTIONS) -tag profile $(LIB) $(CLI)
-	ocamlbuild $(OPTIONS) -tag profile _build/$(LIB) $(CLI)
+	ocamlbuild $(OPTIONS) -tag profile $(TARGETS)
 
 clean:
 	ocamlbuild -clean

@@ -1,0 +1,6 @@
+name="datalog"
+version="0.1"
+description="Simple Datalog fixpoint computation library"
+requires=""
+archive(byte) = "datalog.cma"
+archive(native) = "datalog.cmxa"

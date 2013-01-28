@@ -1,6 +1,7 @@
+NAME = datalog
 CLI = datalog_cli.native
-LIB = datalog.cmxa
-OPTIONS = -classic-display
+LIB = datalog.cmxa datalog.cma datalog.a datalog.cmi
+OPTIONS ?= -classic-display
 
 all: prod
 
@@ -16,4 +17,7 @@ profile:
 clean:
 	ocamlbuild -clean
 
-.PHONY: all clean
+install: prod
+	ocamlfind install $(NAME) META $(addprefix _build/,$(LIB))
+
+.PHONY: all clean install

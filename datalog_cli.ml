@@ -1,24 +1,26 @@
 (** The main datalog file. It provides a CLI tool to parse rule/fact files and compute
     their fixpoint *)
 
+module DLogic = Datalog.Logic.Default
+module DParser = Datalog.Parser
+module DLexer = Datalog.Lexer
+
 let progress = ref false
 let print_input = ref false
 let print_result = ref false
 let print_saturated = ref false
 let print_size = ref false
 let sums = ref []
-let patterns = (ref [] : Logic.Default.term list ref)
+let patterns = (ref [] : DLogic.term list ref)
 let explains = ref []
 let files = ref []
-
-module DLogic = Logic.Default
 
 (** Parse file and returns the rules *)
 let parse_file filename =
   Format.printf "%% parse file %s@." filename;
   let ic = open_in filename in
   let lexbuf = Lexing.from_channel ic in
-  let rules = Parser.parse_file Lexer.token lexbuf in
+  let rules = DParser.parse_file DLexer.token lexbuf in
   close_in ic;
   rules
 
@@ -102,13 +104,13 @@ let add_sum symbol =
     set is saturated *)
 let add_pattern p =
   let lexbuf = Lexing.from_string p in
-  let term = Parser.term Lexer.token lexbuf in
+  let term = DParser.term DLexer.token lexbuf in
   patterns := term :: !patterns
 
 (** Add the pattern to the list of patterns to explain *)
 let add_explain p =
   let lexbuf = Lexing.from_string p in
-  let term = Parser.term Lexer.token lexbuf in
+  let term = DParser.term DLexer.token lexbuf in
   explains := term :: !explains
 
 (** parse CLI arguments *)

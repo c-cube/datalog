@@ -25,14 +25,17 @@ by typing:
 
 There are two ways to use `datalog`:
 
-- With the command line tool, `datalog_cli.native`; just type in
+- With the command line tool, `datalog_cli.native`, or `datalog_cli` if you
+installed it on your system; just type in
 
-    $ ./datalog_cli.native [problem_file]
+    $ datalog_cli [problem_file]
 
-- The library, that should be in `_build/lib.a`. It exports a `Datalog` module; the most
-important interface file is in `datalog/logic.mli`. The type for symbols is abstract, the library
-provides a functor `Datalog.Logic.Make`, but a default implementation with strings as symbols
-is available as `Datalog.Logic.Default`.
+- The library, that should be in `_build/datalog.a`. It is also registered to
+  OCamlfind (in the `datalog` subdirectory). It exports a `Datalog`module, the
+  interface of which is described in `datalog.mli`. A functor is provided
+  in `Datalog.Logic.Make` to use your own datatype for symbols (constants);
+  however, a default implementation with strings as symbols is available as
+  `Datalog.Logic.Default` (which is used by the parser `Datalog.Parser`).
 
 A few example files, suffixed with `.pl`, can be found in `tests/`. For instance, you
 can try:
@@ -54,7 +57,7 @@ can try:
     edge(9, 10).
     edge(10, 7).
 
-    $ ./datalog_cli.native tests/clique10.pl -pattern 'same_clique(1,X)' 
+    $ datalog_cli tests/clique10.pl -pattern 'same_clique(1,X)' 
     % start datalog
     % parse file tests/clique10.pl
     % process 15 rules
@@ -71,7 +74,7 @@ can try:
 
 Or
 
-    $ ./datalog_cli.native tests/graph200.pl -size -sum reachable
+    $ datalog_cli tests/graph200.pl -size -sum reachable
     % start datalog
     % parse file tests/graph200.pl
     % process 203 rules

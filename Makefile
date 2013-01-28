@@ -6,7 +6,7 @@ NAME = datalog
 
 CLI = datalog_cli.native
 LIB = datalog.cmxa datalog.cma
-INSTALL_LIB = datalog.cmxa datalog.cma datalog.cmi datalog.mli
+INSTALL_LIB = datalog.cmxa datalog.cma datalog.a datalog.cmi datalog.mli
 
 # compilation options
 OPTIONS ?= -classic-display

@@ -12,9 +12,14 @@ See the `LICENSE` file.
 
 ## Build
 
-You need OCaml >= 3.12 with ocamlbuild. Just type in
+You need OCaml >= 3.12 with ocamlbuild. Just type in the root directory:
 
     $ make
+
+Then, you can install the library and the command line tool, `datalog_cli`,
+by typing:
+
+    $ sudo make install
 
 ## How to use it
 

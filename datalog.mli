@@ -30,9 +30,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
     of a set of rules *)
 module Logic : sig
   module type S = sig
-    (* ----------------------------------------------------------------------
-     * Terms and rules
-     * ---------------------------------------------------------------------- *)
+    (** {2 Terms and rules} *)
 
     type symbol
       (** Abstract type of symbols *)
@@ -46,6 +44,8 @@ module Logic : sig
 
     type subst
       (** A substitution maps variables to symbols *)
+
+    (** {3 Constructors and destructors} *)
 
     val mk_term : symbol -> [`Var of int | `Symbol of symbol] list -> term
       (** Helper to build a term. Arguments are either variables or symbols; if they
@@ -71,6 +71,8 @@ module Logic : sig
 
     val arity : term -> int
       (** Number of subterms of the term. Ex for p(a,b,c) it returns 3 *)
+
+    (** {3 Comparisons} *)
 
     val eq_term : term -> term -> bool
       (** Are the terms equal? *)
@@ -99,15 +101,15 @@ module Logic : sig
     val hash_rule : rule -> int
       (** Hash the rule *)
 
+    (** {3 Pretty-printing} *)
+
     val pp_term : Format.formatter -> term -> unit
       (** Pretty print the term *)
 
     val pp_rule : Format.formatter -> rule -> unit
       (** Pretty print the rule *)
 
-    (* ----------------------------------------------------------------------
-     * The datalog bipartite resolution algorithm
-     * ---------------------------------------------------------------------- *)
+    (** {2 The Datalog unit resolution algorithm} *)
 
     type db
       (** A database of facts and rules, with incremental fixpoint computation *)

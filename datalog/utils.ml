@@ -33,7 +33,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 let murmur_hash i =
   let m = 0x1bd1e995 in  (* 0x5bd1e995 in 31 bits *)
   let r = 24 in
-  let seed = 0x9747b28c in
+  let seed = 0x1747b28c in  (* 0x9747b28c in 31 bits *)
   let hash = seed lxor 4 in
   let k = i * m in
   let k = k lxor (k lsr r) in

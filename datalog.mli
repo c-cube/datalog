@@ -80,11 +80,8 @@ module Logic : sig
     val hash_term : term -> int
       (** Hash the term *)
 
-    val subst_term : subst -> term -> term
-      (** Apply substitution to the term *)
-
-    val subst_rule : subst -> rule -> rule
-      (** Apply substitution to the rule *)
+    val compare_term : term -> term -> int
+      (** Arbitrary comparison of terms (lexicographic) *)
 
     val check_safe : rule -> bool
       (** A datalog rule is safe iff all variables in its head also occur in its body *)
@@ -101,6 +98,14 @@ module Logic : sig
     val hash_rule : rule -> int
       (** Hash the rule *)
 
+    (** {3 Comparisons} *)
+
+    val subst_term : subst -> term -> term
+      (** Apply substitution to the term *)
+
+    val subst_rule : subst -> rule -> rule
+      (** Apply substitution to the rule *)
+
     (** {3 Pretty-printing} *)
 
     val pp_term : Format.formatter -> term -> unit
@@ -108,6 +113,9 @@ module Logic : sig
 
     val pp_rule : Format.formatter -> rule -> unit
       (** Pretty print the rule *)
+
+    val pp_subst : Format.formatter -> subst -> unit
+      (** Pretty print the substitution *)
 
     (** {2 The Datalog unit resolution algorithm} *)
 

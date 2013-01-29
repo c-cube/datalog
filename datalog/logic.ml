@@ -75,11 +75,8 @@ module type S = sig
   val hash_term : term -> int
     (** Hash the term *)
 
-  val subst_term : subst -> term -> term
-    (** Apply substitution to the term *)
-
-  val subst_rule : subst -> rule -> rule
-    (** Apply substitution to the rule *)
+  val compare_term : term -> term -> int
+    (** Arbitrary comparison of terms (lexicographic) *)
 
   val check_safe : rule -> bool
     (** A datalog rule is safe iff all variables in its head also occur in its body *)
@@ -96,14 +93,23 @@ module type S = sig
   val hash_rule : rule -> int
     (** Hash the rule *)
 
+  val subst_term : subst -> term -> term
+    (** Apply substitution to the term *)
+
+  val subst_rule : subst -> rule -> rule
+    (** Apply substitution to the rule *)
+
   val pp_term : Format.formatter -> term -> unit
     (** Pretty print the term *)
 
   val pp_rule : Format.formatter -> rule -> unit
     (** Pretty print the rule *)
 
+  val pp_subst : Format.formatter -> subst -> unit
+    (** Pretty print the substitution *)
+
   (* ----------------------------------------------------------------------
-   * The datalog bipartite resolution algorithm
+   * The Datalog unit resolution algorithm
    * ---------------------------------------------------------------------- *)
 
   type db
@@ -369,6 +375,17 @@ module Make(Symbol : SymbolType) = struct
         done;
         Format.fprintf formatter ".";
       end
+
+  let pp_subst formatter subst =
+    let to_s s = Symbol.to_string (i_to_s s) in
+    Format.fprintf formatter "@[{";
+    let first = ref true in
+    Utils.IHashtbl.iter
+      (fun i j ->
+        (if !first then first := false else Format.fprintf formatter ", ");
+        Format.fprintf formatter "X%d -> %s@;" (abs i) (to_s j))
+      subst;
+    Format.fprintf formatter "}@]";
 
   (* ----------------------------------------------------------------------
    * Generalization/Specialization index on terms

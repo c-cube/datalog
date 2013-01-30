@@ -51,15 +51,9 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
     current_token := token;
     update_column_index (!current_column_index + String.length token)
 
-
   let lexing_error (error: string) (token: string) =
-    Format.eprintf "%s at line %d, column %d, token '%s'@."
-      error !current_line_index !current_column_index token;
-    raise PARSE_ERROR
-
-  let parse_error () =
-    Format.eprintf "parse error at line %d, column %d, token '%s'@."
-      !current_line_index !current_line_index !current_token;
+    Format.eprintf "%s %s, token '%s'@."
+      error (Utils.print_location ()) token;
     raise PARSE_ERROR
 }
 

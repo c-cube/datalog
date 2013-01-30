@@ -129,13 +129,13 @@ let add_sum symbol =
     set is saturated *)
 let add_pattern p =
   let lexbuf = Lexing.from_string p in
-  let term = DParser.term DLexer.token lexbuf in
+  let term = DParser.parse_term DLexer.token lexbuf in
   patterns := term :: !patterns
 
 (** Add the pattern to the list of patterns to explain *)
 let add_explain p =
   let lexbuf = Lexing.from_string p in
-  let term = DParser.term DLexer.token lexbuf in
+  let term = DParser.parse_term DLexer.token lexbuf in
   explains := term :: !explains
 
 (** parse CLI arguments *)

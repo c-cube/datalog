@@ -172,9 +172,9 @@ end
 (** Parser for Datalog files (syntax is a subset of prolog) *)
 module Parser : sig
   type token
-  val term :
+  val parse_term :
     (Lexing.lexbuf  -> token) -> Lexing.lexbuf -> Logic.Default.term
-  val rule :
+  val parse_rule :
     (Lexing.lexbuf  -> token) -> Lexing.lexbuf -> Logic.Default.rule
   val parse_file :
     (Lexing.lexbuf  -> token) -> Lexing.lexbuf -> Logic.Default.rule list

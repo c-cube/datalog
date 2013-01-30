@@ -56,11 +56,11 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 %token <string> UPPER_WORD
 %token <string> INT
 
-%start term
-%type <Logic.Default.term> term
+%start parse_term
+%type <Logic.Default.term> parse_term
 
-%start rule
-%type <Logic.Default.rule> rule
+%start parse_rule
+%type <Logic.Default.rule> parse_rule
 
 %start parse_file
 %type <Logic.Default.rule list> parse_file
@@ -68,7 +68,13 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 %%
 
 parse_file:
-  | rules EOI { $1 }
+  | rules EOI { Utils.reset (); $1 }
+
+parse_term:
+  | term EOI { Utils.reset (); $1 }
+
+parse_rule:
+  | rule EOI { Utils.reset (); $1 }
 
 rules:
   | rule { let r = [$1] in reset_vars (); r }

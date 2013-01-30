@@ -45,9 +45,14 @@ let parse_file filename =
   Format.printf "%% parse file %s@." filename;
   let ic = open_in filename in
   let lexbuf = Lexing.from_channel ic in
-  let clauses = DParser.parse_file DLexer.token lexbuf in
-  close_in ic;
-  clauses
+  try
+    let clauses = DParser.parse_file DLexer.token lexbuf in
+    close_in ic;
+    clauses
+  with Parsing.Parse_error ->
+    (* error, signal it and return no clause *)
+    Format.eprintf "%% error parsing %s (%s)@." filename (Utils.print_location ());
+    []
 
 (** Parse files *)
 let parse_files () =

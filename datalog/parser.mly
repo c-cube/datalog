@@ -56,42 +56,42 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 %token <string> UPPER_WORD
 %token <string> INT
 
-%start parse_term
-%type <Logic.Default.term> parse_term
+%start parse_literal
+%type <Logic.Default.literal> parse_literal
 
-%start parse_rule
-%type <Logic.Default.rule> parse_rule
+%start parse_clause
+%type <Logic.Default.clause> parse_clause
 
 %start parse_file
-%type <Logic.Default.rule list> parse_file
+%type <Logic.Default.clause list> parse_file
 
 %%
 
 parse_file:
-  | rules EOI { Utils.reset (); $1 }
+  | clauses EOI { Utils.reset (); $1 }
 
-parse_term:
-  | term EOI { Utils.reset (); $1 }
+parse_literal:
+  | literal EOI { Utils.reset (); $1 }
 
-parse_rule:
-  | rule EOI { Utils.reset (); $1 }
+parse_clause:
+  | clause EOI { Utils.reset (); $1 }
 
-rules:
-  | rule { let r = [$1] in reset_vars (); r }
-  | rule rules { $1 :: $2 }
+clauses:
+  | clause { let r = [$1] in reset_vars (); r }
+  | clause clauses { $1 :: $2 }
 
-rule:
-  | term DOT { Logic.Default.mk_rule $1 [] }
-  | term IF terms DOT { Logic.Default.mk_rule $1 $3 }
+clause:
+  | literal DOT { Logic.Default.mk_clause $1 [] }
+  | literal IF literals DOT { Logic.Default.mk_clause $1 $3 }
 
-terms:
-  | term { [$1] }
-  | term COMMA terms { $1 :: $3 }
+literals:
+  | literal { [$1] }
+  | literal COMMA literals { $1 :: $3 }
 
-term:
-  | LOWER_WORD { Logic.Default.mk_term $1 [] }
+literal:
+  | LOWER_WORD { Logic.Default.mk_literal $1 [] }
   | LOWER_WORD LEFT_PARENTHESIS args RIGHT_PARENTHESIS
-    { Logic.Default.mk_term $1 $3 }
+    { Logic.Default.mk_literal $1 $3 }
 
 args:
   | const { [`Symbol $1] }

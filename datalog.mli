@@ -25,94 +25,94 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 (** {2 Interface file} *)
 
-(** Main module, that exposes datatypes for logic terms and rules,
+(** Main module, that exposes datatypes for logic literals and clauses,
     functions to manipulate them, and functions to compute the fixpoint
-    of a set of rules *)
+    of a set of clauses *)
 module Logic : sig
   module type S = sig
-    (** {2 Terms and rules} *)
+    (** {2 Literals and clauses} *)
 
     type symbol
       (** Abstract type of symbols *)
 
-    type term
+    type literal
       (** A datalog atom, i.e. pred(arg_1, ..., arg_n). The first element of the
           array is the predicate, then arguments follow *)
 
-    type rule
-      (** A datalog rule, i.e. head :- body_1, ..., body_n *)
+    type clause
+      (** A datalog clause, i.e. head :- body_1, ..., body_n *)
 
     type subst
       (** A substitution maps variables to symbols *)
 
     (** {3 Constructors and destructors} *)
 
-    val mk_term : symbol -> [`Var of int | `Symbol of symbol] list -> term
-      (** Helper to build a term. Arguments are either variables or symbols; if they
+    val mk_literal : symbol -> [`Var of int | `Symbol of symbol] list -> literal
+      (** Helper to build a literal. Arguments are either variables or symbols; if they
           variables indexes *must* be negative (otherwise it will raise Invalid_argument *)
 
-    val mk_term_s : string -> [`Var of int | `Symbol of string] list -> term
-      (** Same as [mk_term], but converts strings to symbols on-the-fly *)
+    val mk_literal_s : string -> [`Var of int | `Symbol of string] list -> literal
+      (** Same as [mk_literal], but converts strings to symbols on-the-fly *)
 
-    val open_term : term -> symbol * [`Var of int | `Symbol of symbol] list
-      (** Deconstruct a term *)
+    val open_literal : literal -> symbol * [`Var of int | `Symbol of symbol] list
+      (** Deconstruct a literal *)
 
-    val mk_rule : term -> term list -> rule
-      (** Create a rule from a conclusion and a list of premises *)
+    val mk_clause : literal -> literal list -> clause
+      (** Create a clause from a conclusion and a list of premises *)
 
-    val open_rule : rule -> term * term list
-      (** Deconstruct a rule *)
+    val open_clause : clause -> literal * literal list
+      (** Deconstruct a clause *)
 
     val is_var : int -> bool
       (** A variable is a negative int *)
 
-    val is_ground : term -> bool
-      (** Is the term ground (a fact)? *)
+    val is_ground : literal -> bool
+      (** Is the literal ground (a fact)? *)
 
-    val arity : term -> int
-      (** Number of subterms of the term. Ex for p(a,b,c) it returns 3 *)
-
-    (** {3 Comparisons} *)
-
-    val eq_term : term -> term -> bool
-      (** Are the terms equal? *)
-
-    val hash_term : term -> int
-      (** Hash the term *)
-
-    val compare_term : term -> term -> int
-      (** Arbitrary comparison of terms (lexicographic) *)
-
-    val check_safe : rule -> bool
-      (** A datalog rule is safe iff all variables in its head also occur in its body *)
-
-    val is_fact : rule -> bool
-      (** A fact is a ground rule with empty body *)
-
-    val compare_rule : rule -> rule -> int
-      (** Lexicographic comparison of rules *)
-
-    val eq_rule : rule -> rule -> bool
-      (** Check whether rules are (syntactically) equal *)
-
-    val hash_rule : rule -> int
-      (** Hash the rule *)
+    val arity : literal -> int
+      (** Number of subliterals of the literal. Ex for p(a,b,c) it returns 3 *)
 
     (** {3 Comparisons} *)
 
-    val subst_term : subst -> term -> term
-      (** Apply substitution to the term *)
+    val eq_literal : literal -> literal -> bool
+      (** Are the literals equal? *)
 
-    val subst_rule : subst -> rule -> rule
-      (** Apply substitution to the rule *)
+    val hash_literal : literal -> int
+      (** Hash the literal *)
+
+    val compare_literal : literal -> literal -> int
+      (** Arbitrary comparison of literals (lexicographic) *)
+
+    val check_safe : clause -> bool
+      (** A datalog clause is safe iff all variables in its head also occur in its body *)
+
+    val is_fact : clause -> bool
+      (** A fact is a ground clause with empty body *)
+
+    val compare_clause : clause -> clause -> int
+      (** Lexicographic comparison of clauses *)
+
+    val eq_clause : clause -> clause -> bool
+      (** Check whether clauses are (syntactically) equal *)
+
+    val hash_clause : clause -> int
+      (** Hash the clause *)
+
+    (** {3 Comparisons} *)
+
+    val subst_literal : subst -> literal -> literal
+      (** Apply substitution to the literal *)
+
+    val subst_clause : subst -> clause -> clause
+      (** Apply substitution to the clause *)
 
     (** {3 Pretty-printing} *)
 
-    val pp_term : Format.formatter -> term -> unit
-      (** Pretty print the term *)
+    val pp_literal : Format.formatter -> literal -> unit
+      (** Pretty print the literal *)
 
-    val pp_rule : Format.formatter -> rule -> unit
-      (** Pretty print the rule *)
+    val pp_clause : Format.formatter -> clause -> unit
+      (** Pretty print the clause *)
 
     val pp_subst : Format.formatter -> subst -> unit
       (** Pretty print the substitution *)
@@ -120,38 +120,38 @@ module Logic : sig
     (** {2 The Datalog unit resolution algorithm} *)
 
     type db
-      (** A database of facts and rules, with incremental fixpoint computation *)
+      (** A database of facts and clauses, with incremental fixpoint computation *)
 
     val db_create : unit -> db
       (** Create a DB *)
 
-    val db_mem : db -> rule -> bool
-      (** Is the rule member of the DB? *)
+    val db_mem : db -> clause -> bool
+      (** Is the clause member of the DB? *)
 
-    val db_add : db -> rule -> unit
-      (** Add the rule/fact to the DB as an axiom, updating fixpoint *)
+    val db_add : db -> clause -> unit
+      (** Add the clause/fact to the DB as an axiom, updating fixpoint *)
 
-    val db_match : db -> term -> (term -> subst -> unit) -> unit
-      (** match the given term with facts of the DB, calling the handler on
+    val db_match : db -> literal -> (literal -> subst -> unit) -> unit
+      (** match the given literal with facts of the DB, calling the handler on
           each fact that match (with the corresponding substitution) *)
 
     val db_size : db -> int
       (** Size of the DB *)
 
-    val db_fold : ('a -> rule -> 'a) -> 'a -> db -> 'a
-      (** Fold on all rules in the current DB (including fixpoint) *)
+    val db_fold : ('a -> clause -> 'a) -> 'a -> db -> 'a
+      (** Fold on all clauses in the current DB (including fixpoint) *)
 
-    val db_subscribe : db -> symbol -> (term -> unit) -> unit
+    val db_subscribe : db -> symbol -> (literal -> unit) -> unit
       (** [db_subscribe db symbol handler] causes [handler] to be called with
           any new fact that has head symbol [symbol] from now on *)
 
-    val db_explain : db -> term -> term list
+    val db_explain : db -> literal -> literal list
       (** Explain the given fact by returning a list of facts that imply it
-          under the current rules. *)
+          under the current clauses. *)
 
-    val db_premises : db -> term -> rule * term list
+    val db_premises : db -> literal -> clause * literal list
       (** Immediate premises of the fact (ie the facts that resolved with
-          a clause to give the term), plus the rule that has been used. *)
+          a clause to give the literal), plus the clause that has been used. *)
   end
 
   (** Signature for a symbol type. It must be hashable, comparable and
@@ -165,19 +165,19 @@ module Logic : sig
   (** Build a Datalog module *)
   module Make(Symbol : SymbolType) : S with type symbol = Symbol.t
 
-  (** Default term base, where symbols are just strings *)
+  (** Default literal base, where symbols are just strings *)
   module Default : S with type symbol = string
 end
 
 (** Parser for Datalog files (syntax is a subset of prolog) *)
 module Parser : sig
   type token
-  val parse_term :
-    (Lexing.lexbuf  -> token) -> Lexing.lexbuf -> Logic.Default.term
-  val parse_rule :
-    (Lexing.lexbuf  -> token) -> Lexing.lexbuf -> Logic.Default.rule
+  val parse_literal :
+    (Lexing.lexbuf  -> token) -> Lexing.lexbuf -> Logic.Default.literal
+  val parse_clause :
+    (Lexing.lexbuf  -> token) -> Lexing.lexbuf -> Logic.Default.clause
   val parse_file :
-    (Lexing.lexbuf  -> token) -> Lexing.lexbuf -> Logic.Default.rule list
+    (Lexing.lexbuf  -> token) -> Lexing.lexbuf -> Logic.Default.clause list
 end
 
 (** Lexer for parsing Datalog files *)

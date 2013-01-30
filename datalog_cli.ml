@@ -23,7 +23,7 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 *)
 
-(** The main datalog file. It provides a CLI tool to parse rule/fact files and compute
+(** The main datalog file. It provides a CLI tool to parse clause/fact files and compute
     their fixpoint *)
 
 module DLogic = Logic.Default
@@ -36,78 +36,78 @@ let print_result = ref false
 let print_saturated = ref false
 let print_size = ref false
 let sums = ref []
-let patterns = (ref [] : DLogic.term list ref)
+let patterns = (ref [] : DLogic.literal list ref)
 let explains = ref []
 let files = ref []
 
-(** Parse file and returns the rules *)
+(** Parse file and returns the clauses *)
 let parse_file filename =
   Format.printf "%% parse file %s@." filename;
   let ic = open_in filename in
   let lexbuf = Lexing.from_channel ic in
-  let rules = DParser.parse_file DLexer.token lexbuf in
+  let clauses = DParser.parse_file DLexer.token lexbuf in
   close_in ic;
-  rules
+  clauses
 
 (** Parse files *)
 let parse_files () =
-  let rules = List.fold_left
-    (fun rules file ->
-      List.rev_append (parse_file file) rules)
+  let clauses = List.fold_left
+    (fun clauses file ->
+      List.rev_append (parse_file file) clauses)
     [] !files
-  in List.rev rules
+  in List.rev clauses
 
 let pp_progress i total =
-  Format.printf "\r%% rule %-5d / %-5d  " i total;
+  Format.printf "\r%% clause %-5d / %-5d  " i total;
   Format.print_flush ()
 
-(** Compute fixpoint of rules *)
-let process_rules rules =
-  Format.printf "%% process %d rules@." (List.length rules);
+(** Compute fixpoint of clauses *)
+let process_clauses clauses =
+  Format.printf "%% process %d clauses@." (List.length clauses);
   (if !print_input then
-    List.iter (Format.printf "  rule @[<h>%a@]@." DLogic.pp_rule) rules);
+    List.iter (Format.printf "  clause @[<h>%a@]@." DLogic.pp_clause) clauses);
   Format.printf "%% computing fixpoint...@.";
   let db = DLogic.db_create () in
   (* handlers *)
   List.iter (fun (symbol,handler,_) -> DLogic.db_subscribe db symbol handler) !sums;
-  (* add rules one by one *)
-  let total = List.length rules in
-  ignore (List.fold_left (fun i rule -> (if !progress then pp_progress i total);
-                          DLogic.db_add db rule; i+1)
-          1 rules);
+  (* add clauses one by one *)
+  let total = List.length clauses in
+  ignore (List.fold_left (fun i clause -> (if !progress then pp_progress i total);
+                          DLogic.db_add db clause; i+1)
+          1 clauses);
   Format.printf "%% done.@.";
-  (* print fixpoint of set after application of rules *)
+  (* print fixpoint of set after application of clauses *)
   (if !print_size then
     Format.printf "%% size of saturated set: %d@." (DLogic.db_size db));
   (if !print_saturated then
-    DLogic.db_fold (fun () rule ->
-      Format.printf "  @[<h>%a@]@." DLogic.pp_rule rule) () db
+    DLogic.db_fold (fun () clause ->
+      Format.printf "  @[<h>%a@]@." DLogic.pp_clause clause) () db
   else if !print_result then
-    DLogic.db_fold (fun () rule ->
-      if DLogic.is_fact rule then
-        Format.printf "  @[<h>%a@]@." DLogic.pp_rule rule) () db);
+    DLogic.db_fold (fun () clause ->
+      if DLogic.is_fact clause then
+        Format.printf "  @[<h>%a@]@." DLogic.pp_clause clause) () db);
   (* print aggregates *)
   List.iter (fun (_,_,printer) -> printer ()) !sums;
   (* print patterns *)
   List.iter (fun pattern ->
-    Format.printf "%% facts matching pattern %a:@." DLogic.pp_term pattern;
+    Format.printf "%% facts matching pattern %a:@." DLogic.pp_literal pattern;
     DLogic.db_match db pattern
-      (fun fact subst -> Format.printf "  @[<h>%a.@]@." DLogic.pp_term fact))
+      (fun fact subst -> Format.printf "  @[<h>%a.@]@." DLogic.pp_literal fact))
     !patterns;
   (* print explanations *)
   List.iter (fun pattern ->
     DLogic.db_match db pattern
       (fun fact subst ->
         (* premises *)
-        Format.printf "  premises of @[<h>%a@]: @[<h>" DLogic.pp_term fact;
-        let rule, premises = DLogic.db_premises db fact in
-        List.iter (fun fact' -> Format.printf "%a, " DLogic.pp_term fact') premises;
-        Format.printf " with @[<h>%a@]" DLogic.pp_rule rule;
+        Format.printf "  premises of @[<h>%a@]: @[<h>" DLogic.pp_literal fact;
+        let clause, premises = DLogic.db_premises db fact in
+        List.iter (fun fact' -> Format.printf "%a, " DLogic.pp_literal fact') premises;
+        Format.printf " with @[<h>%a@]" DLogic.pp_clause clause;
         Format.printf "@]@.";
         (* explanation *)
         let explanation = DLogic.db_explain db fact in
-        Format.printf "  explain @[<h>%a@] by: @[<h>" DLogic.pp_term fact;
-        List.iter (fun fact' -> Format.printf " %a" DLogic.pp_term fact') explanation;
+        Format.printf "  explain @[<h>%a@] by: @[<h>" DLogic.pp_literal fact;
+        List.iter (fun fact' -> Format.printf " %a" DLogic.pp_literal fact') explanation;
         Format.printf "@]@."))
     !explains;
   (* print memory usage *)
@@ -129,26 +129,26 @@ let add_sum symbol =
     set is saturated *)
 let add_pattern p =
   let lexbuf = Lexing.from_string p in
-  let term = DParser.parse_term DLexer.token lexbuf in
-  patterns := term :: !patterns
+  let literal = DParser.parse_literal DLexer.token lexbuf in
+  patterns := literal :: !patterns
 
 (** Add the pattern to the list of patterns to explain *)
 let add_explain p =
   let lexbuf = Lexing.from_string p in
-  let term = DParser.parse_term DLexer.token lexbuf in
-  explains := term :: !explains
+  let literal = DParser.parse_literal DLexer.token lexbuf in
+  explains := literal :: !explains
 
 (** parse CLI arguments *)
 let parse_args () =
   let options =
     [ ("-progress", Arg.Set progress, "print progress");
-      ("-input", Arg.Set print_input, "print input rules");
+      ("-input", Arg.Set print_input, "print input clauses");
       ("-output", Arg.Set print_result, "print facts after fixpoint");
-      ("-saturated", Arg.Set print_saturated, "print facts and rules after fixpoint");
-      ("-sum", Arg.String add_sum, "aggregate number of terms for the given symbol");
+      ("-saturated", Arg.Set print_saturated, "print facts and clauses after fixpoint");
+      ("-sum", Arg.String add_sum, "aggregate number of literals for the given symbol");
       ("-pattern", Arg.String add_pattern, "print facts matching this pattern");
       ("-explain", Arg.String add_explain, "explain facts matching this pattern");
-      ("-size", Arg.Set print_size, "print number of rules after fixpoint");
+      ("-size", Arg.Set print_size, "print number of clauses after fixpoint");
     ]
   in
   Arg.parse options (fun f -> files := f :: !files) "compute fixpoint of given files"
@@ -156,5 +156,5 @@ let parse_args () =
 let () =
   Format.printf "%% start datalog@.";
   parse_args ();
-  let rules = parse_files () in
-  process_rules rules
+  let clauses = parse_files () in
+  process_clauses clauses

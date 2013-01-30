@@ -119,6 +119,8 @@ module Logic : sig
 
     (** {2 The Datalog unit resolution algorithm} *)
 
+    exception UnsafeClause
+
     type db
       (** A database of facts and clauses, with incremental fixpoint computation *)
 
@@ -129,7 +131,8 @@ module Logic : sig
       (** Is the clause member of the DB? *)
 
     val db_add : db -> clause -> unit
-      (** Add the clause/fact to the DB as an axiom, updating fixpoint *)
+      (** Add the clause/fact to the DB as an axiom, updating fixpoint.
+          UnsafeRule will be raised if the rule is not safe (see {!check_safe}) *)
 
     val db_match : db -> literal -> (literal -> subst -> unit) -> unit
       (** match the given literal with facts of the DB, calling the handler on

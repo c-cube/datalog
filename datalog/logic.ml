@@ -27,9 +27,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 (** Module type for logic *)
 module type S = sig
-  (* ----------------------------------------------------------------------
-   * Literals and clauses
-   * ---------------------------------------------------------------------- *)
+  (** {2 Literals and clauses} *)
 
   type symbol
     (** Abstract type of symbols *)
@@ -39,11 +37,12 @@ module type S = sig
         array is the predicate, then arguments follow *)
 
   type clause
-    (** A datalog clause, i.e. head :- body_1, ..., body_n. n may be
-        equal to 0, in which case the clause may be called a "fact". *)
+    (** A datalog clause, i.e. head :- body_1, ..., body_n *)
 
   type subst
     (** A substitution maps variables to symbols *)
+
+  (** {3 Constructors and destructors} *)
 
   val mk_literal : symbol -> [`Var of int | `Symbol of symbol] list -> literal
     (** Helper to build a literal. Arguments are either variables or symbols; if they
@@ -68,7 +67,9 @@ module type S = sig
     (** Is the literal ground (a fact)? *)
 
   val arity : literal -> int
-    (** Number of subterms of the literal. Ex for p(a,b,c) it returns 3 *)
+    (** Number of subliterals of the literal. Ex for p(a,b,c) it returns 3 *)
+
+  (** {3 Comparisons} *)
 
   val eq_literal : literal -> literal -> bool
     (** Are the literals equal? *)
@@ -94,11 +95,15 @@ module type S = sig
   val hash_clause : clause -> int
     (** Hash the clause *)
 
+  (** {3 Comparisons} *)
+
   val subst_literal : subst -> literal -> literal
     (** Apply substitution to the literal *)
 
   val subst_clause : subst -> clause -> clause
     (** Apply substitution to the clause *)
+
+  (** {3 Pretty-printing} *)
 
   val pp_literal : Format.formatter -> literal -> unit
     (** Pretty print the literal *)
@@ -109,9 +114,9 @@ module type S = sig
   val pp_subst : Format.formatter -> subst -> unit
     (** Pretty print the substitution *)
 
-  (* ----------------------------------------------------------------------
-   * The Datalog unit resolution algorithm
-   * ---------------------------------------------------------------------- *)
+  (** {2 The Datalog unit resolution algorithm} *)
+
+  exception UnsafeClause
 
   type db
     (** A database of facts and clauses, with incremental fixpoint computation *)
@@ -123,7 +128,8 @@ module type S = sig
     (** Is the clause member of the DB? *)
 
   val db_add : db -> clause -> unit
-    (** Add the clause/fact to the DB as an axiom, updating fixpoint *)
+    (** Add the clause/fact to the DB as an axiom, updating fixpoint.
+        UnsafeRule will be raised if the rule is not safe (see {!check_safe}) *)
 
   val db_match : db -> literal -> (literal -> subst -> unit) -> unit
     (** match the given literal with facts of the DB, calling the handler on
@@ -586,6 +592,8 @@ module Make(Symbol : SymbolType) = struct
    * The datalog bipartite resolution algorithm
    * ---------------------------------------------------------------------- *)
 
+  exception UnsafeClause
+
   module ClausesIndex = Make(
     struct
       type t = clause
@@ -630,7 +638,7 @@ module Make(Symbol : SymbolType) = struct
 
   (** Add the clause/fact to the DB, updating fixpoint *)
   let db_add db clause =
-    assert (check_safe clause);
+    (if not (check_safe clause) then raise UnsafeClause);
     (* queue of new clauses to insert *)
     let queue = db.db_queue in
     (* is there already a add() going on? *)

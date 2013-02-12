@@ -42,7 +42,7 @@ module Logic : sig
     type clause
       (** A datalog clause, i.e. head :- body_1, ..., body_n *)
 
-    type soft_lit = [`Var of int | `Symbol of symbol] list
+    type soft_lit = symbol * [`Var of int | `Symbol of symbol] list
     type soft_clause = soft_lit * soft_lit list
 
     type subst
@@ -58,16 +58,20 @@ module Logic : sig
       (** Helper to build a literal. Arguments are either variables or symbols; if they
           variables indexes *must* be negative (otherwise it will raise Invalid_argument *)
 
+    val of_soft_lit : soft_lit -> literal
+
     val mk_literal_s : string -> [`Var of int | `Symbol of string] list -> literal
       (** Same as [mk_literal], but converts strings to symbols on-the-fly *)
 
-    val open_literal : literal -> symbol * [`Var of int | `Symbol of symbol] list
+    val open_literal : literal -> soft_lit
       (** Deconstruct a literal *)
 
     val mk_clause : literal -> literal list -> clause
       (** Create a clause from a conclusion and a list of premises *)
 
-    val open_clause : clause -> literal * literal list
+    val of_soft_clause : soft_clause -> clause
+
+    val open_clause : clause -> soft_clause
       (** Deconstruct a clause *)
 
     val is_var : int -> bool

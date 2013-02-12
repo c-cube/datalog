@@ -39,7 +39,7 @@ module type S = sig
   type clause
     (** A datalog clause, i.e. head :- body_1, ..., body_n *)
 
-  type soft_lit = [`Var of int | `Symbol of symbol] list
+  type soft_lit = symbol * [`Var of int | `Symbol of symbol] list
   type soft_clause = soft_lit * soft_lit list
 
   type subst
@@ -55,16 +55,20 @@ module type S = sig
     (** Helper to build a literal. Arguments are either variables or symbols; if they
         variables indexes *must* be negative (otherwise it will raise Invalid_argument *)
 
+  val of_soft_lit : soft_lit -> literal
+
   val mk_literal_s : string -> [`Var of int | `Symbol of string] list -> literal
     (** Same as [mk_literal], but converts strings to symbols on-the-fly *)
 
-  val open_literal : literal -> symbol * [`Var of int | `Symbol of symbol] list
+  val open_literal : literal -> soft_lit
     (** Deconstruct a literal *)
 
   val mk_clause : literal -> literal list -> clause
     (** Create a clause from a conclusion and a list of premises *)
 
-  val open_clause : clause -> literal * literal list
+  val of_soft_clause : soft_clause -> clause
+
+  val open_clause : clause -> soft_clause
     (** Deconstruct a clause *)
 
   val is_var : int -> bool
@@ -268,7 +272,7 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
   type clause = literal array
     (** A datalog clause, i.e. head :- body_1, ..., body_n *)
 
-  type soft_lit = [`Var of int | `Symbol of symbol] list
+  type soft_lit = symbol * [`Var of int | `Symbol of symbol] list
   type soft_clause = soft_lit * soft_lit list
 
   type subst =
@@ -293,6 +297,9 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
       args in
     Symbol.unlock ();
     Array.of_list (head :: args)
+
+  let of_soft_lit sl = match sl with
+    | hd, args -> mk_literal hd args
 
   (** Same as [mk_literal], but converts strings to symbols on-the-fly *)
   let mk_literal_s head args =
@@ -319,10 +326,18 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
   (** Create a clause from a conclusion and a list of premises *)
   let mk_clause head premises = Array.of_list (head :: premises)
 
+  let of_soft_clause sc = match sc with
+    | concl, premises ->
+      let concl = of_soft_lit concl in
+      let premises = List.map of_soft_lit premises in
+      mk_clause concl premises
+
   (** Deconstruct a clause *)
   let open_clause clause =
     let head = clause.(0) in
+    let head = open_literal head in
     let body = Array.to_list (Array.sub clause 1 (Array.length clause - 1)) in
+    let body = List.map open_literal body in
     head, body
 
   (** A variable is a negative int *)

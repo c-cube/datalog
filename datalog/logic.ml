@@ -39,6 +39,9 @@ module type S = sig
   type clause
     (** A datalog clause, i.e. head :- body_1, ..., body_n *)
 
+  type soft_lit = [`Var of int | `Symbol of symbol] list
+  type soft_clause = soft_lit * soft_lit list
+
   type subst
     (** A substitution maps variables to symbols *)
 
@@ -264,6 +267,9 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
 
   type clause = literal array
     (** A datalog clause, i.e. head :- body_1, ..., body_n *)
+
+  type soft_lit = [`Var of int | `Symbol of symbol] list
+  type soft_clause = soft_lit * soft_lit list
 
   type subst =
     | SubstEmpty

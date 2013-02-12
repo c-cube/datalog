@@ -42,6 +42,10 @@ module type S = sig
   type subst
     (** A substitution maps variables to symbols *)
 
+  type 'a bind = ('a * int)
+    (** A context in which to interpret variables in a literal or clause.
+        The context is an offset that is implicitely applied to variables *)
+
   (** {3 Constructors and destructors} *)
 
   val mk_literal : symbol -> [`Var of int | `Symbol of symbol] list -> literal
@@ -95,12 +99,33 @@ module type S = sig
   val hash_clause : clause -> int
     (** Hash the clause *)
 
-  (** {3 Comparisons} *)
+  (** {3 Unification, matching and substitutions} *)
 
-  val subst_literal : subst -> literal -> literal
+  exception UnifFailure
+
+  val empty_subst : subst
+    (** The empty substitution *)
+
+  (* TODO external API to build substitutions *)
+
+  val offset : clause -> int
+    (** Offset to avoid collisions with the given clause *)
+
+  val matching : ?subst:subst -> literal bind -> literal bind -> subst
+    (** [matching pattern l] matches [pattern] against [l]; variables in [l]
+        cannot be bound. Raise UnifFailure if they do not match. *)
+
+  val unify : ?subst:subst -> literal bind -> literal bind -> subst
+    (** [unify l1 l2] tries to unify [l1] with [l2].
+         Raise UnifFailure if they do not match. *)
+
+  val alpha_equiv : ?subst:subst -> literal bind -> literal bind -> subst
+    (** If the literals are alpha equivalent, return the corresponding renaming *)
+
+  val subst_literal : subst -> literal bind -> literal
     (** Apply substitution to the literal *)
 
-  val subst_clause : subst -> clause -> clause
+  val subst_clause : subst -> clause bind -> clause
     (** Apply substitution to the clause *)
 
   (** {3 Pretty-printing} *)
@@ -121,6 +146,11 @@ module type S = sig
   type db
     (** A database of facts and clauses, with incremental fixpoint computation *)
 
+  type explanation =
+    | Axiom
+    | Resolution of clause * literal
+    (** Explanation for a clause or fact *)
+
   val db_create : unit -> db
     (** Create a DB *)
 
@@ -131,7 +161,11 @@ module type S = sig
     (** Add the clause/fact to the DB as an axiom, updating fixpoint.
         UnsafeRule will be raised if the rule is not safe (see {!check_safe}) *)
 
-  val db_match : db -> literal -> (literal -> subst -> unit) -> unit
+  val db_goal : db -> literal -> unit
+    (** Add a goal to the DB. The goal is used to trigger backward chaining
+        (calling goal handlers that could help solve the goal) *)
+
+  val db_match : db -> literal -> (literal bind -> subst -> unit) -> unit
     (** match the given literal with facts of the DB, calling the handler on
         each fact that match (with the corresponding substitution) *)
 
@@ -141,17 +175,25 @@ module type S = sig
   val db_fold : ('a -> clause -> 'a) -> 'a -> db -> 'a
     (** Fold on all clauses in the current DB (including fixpoint) *)
 
-  val db_subscribe : db -> symbol -> (literal -> unit) -> unit
-    (** [db_subscribe db symbol handler] causes [handler] to be called with
-        any new fact that has head symbol [symbol] from now on *)
+  type fact_handler = literal -> unit
+  type goal_handler = literal -> unit
+
+  val db_subscribe_fact : db -> symbol -> fact_handler -> unit
+  val db_subscribe_goal : db -> goal_handler -> unit
+
+  val db_goals : db -> (literal -> unit) -> unit
+    (** Iterate on all current goals *)
 
   val db_explain : db -> literal -> literal list
     (** Explain the given fact by returning a list of facts that imply it
-        under the current clauses. *)
+        under the current clauses, or raise Not_found *)
 
   val db_premises : db -> literal -> clause * literal list
     (** Immediate premises of the fact (ie the facts that resolved with
         a clause to give the literal), plus the clause that has been used. *)
+
+  val db_explanations : db -> clause -> explanation list
+    (** Get all the explanations that explain why this clause is true *)
 end
 
 (** Signature for a symbol type. It must be hashable, comparable and
@@ -160,11 +202,11 @@ module type SymbolType = sig
   include Hashtbl.HashedType
   val to_string : t -> string
   val of_string : string -> t
-    val lock : unit -> unit
-    val unlock : unit -> unit
+  val lock : unit -> unit
+  val unlock : unit -> unit
 end
 
-module Make(Symbol : SymbolType) = struct
+module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
   (* ----------------------------------------------------------------------
    * Literals and clauses
    * ---------------------------------------------------------------------- *)
@@ -223,8 +265,15 @@ module Make(Symbol : SymbolType) = struct
   type clause = literal array
     (** A datalog clause, i.e. head :- body_1, ..., body_n *)
 
-  type subst = int Utils.IHashtbl.t
-    (** A substitution is a map from (negative) ints to (positive) ints *)
+  type subst =
+    | SubstEmpty
+    | SubstBind of (int * int * int * int * subst)
+    (** A substitution is a map from (negative) ints (variables) with context
+        to ints with context (variable or symbol) *)
+
+  type 'a bind = ('a * int)
+    (** A context in which to interpret variables in a literal or clause.
+        The context is an offset that is implicitely applied to variables *)
 
   (** Helper to build a literal. Arguments are either variables or symbols; if they
       are variables, the int must be negative. *)
@@ -294,32 +343,6 @@ module Make(Symbol : SymbolType) = struct
   (** Hash the literal *)
   let hash_literal t = Utils.hash_ints t
 
-  (** Apply substitution to the literal *)
-  let subst_literal subst t =
-    if is_ground t || Utils.IHashtbl.length subst = 0
-      then t
-      else begin
-        (* replace variables in a copy of t by their value in the subst *)
-        let a = Array.copy t in
-        for i = 1 to Array.length t - 1 do
-          if is_var a.(i) then
-            a.(i) <- try Utils.IHashtbl.find subst a.(i)
-                     with Not_found -> a.(i)
-        done;
-        a
-      end
-
-  (** Apply substitution to the clause. TODO remove duplicate literals afterward *)
-  let subst_clause subst clause =
-    if Utils.IHashtbl.length subst = 0 then clause
-    else begin
-      let a = Array.copy clause in
-      for i = 0 to Array.length clause - 1 do
-        a.(i) <- subst_literal subst a.(i);
-      done;
-      a
-    end
-
   (** A datalog clause is safe iff all variables in its head also occur in its body *)
   let check_safe clause =
     let rec check_head i =
@@ -366,15 +389,154 @@ module Make(Symbol : SymbolType) = struct
     done;
     abs !h
 
+  (** {3 Unification, matching and substitutions} *)
+
+  exception UnifFailure
+
+  let empty_subst = SubstEmpty
+
+  let is_empty_subst = function | SubstEmpty -> true | _ -> false
+
+  (** Offset to avoid collisions with the given clause *)
+  let offset clause =
+    (* explore literals of the clause, looking for the lowest var *)
+    let rec fold_lit terms offset i = 
+      if i = Array.length terms then offset
+      else fold_lit terms (min offset terms.(i)) (i+1)
+    and fold_lits lits offset i =
+      if i = Array.length lits then offset
+      else fold_lits lits (fold_lit lits.(i) offset 1) (i+1)
+    in
+    let offset = fold_lits clause 0 0 in
+    (* lowest var - 1, no collision! *)
+    offset - 1
+
+  (** Find the binding for [var] in context [offset] *)
+  let rec get_var subst var offset =
+    match subst with
+    | SubstBind (t1, o1, t2, o2, subst') ->
+      if t1 = var && o1 = offset
+        then get_var subst t2 o2
+        else get_var subst' var offset
+    | SubstEmpty -> (var, offset)
+
+  (** Bind [v] to [t], with offsets *)
+  let bind_subst subst v o_v t o_t =
+    assert (is_var v);
+    if v = t && o_v = o_t
+      then subst
+      else SubstBind (v, o_v, t, o_t, subst)
+
+  (** [matching pattern l] matches [pattern] against [l]; variables in [l]
+      cannot be bound. Raise UnifFailure if they do not match. *)
+  let matching ?(subst=empty_subst) (l1, o1) (l2, o2) =
+    if l1.(0) <> l2.(0) || Array.length l1 <> Array.length l2
+    then raise UnifFailure
+    else
+      let rec match_pairs subst i =
+        if i = Array.length l1 then subst else
+        let t1, o1' = get_var subst l1.(i) o1
+        and t2, o2' = get_var subst l2.(i) o2 in
+        let subst' = match_pair subst t1 o1' t2 o2' in
+        match_pairs subst' (i+1)
+      and match_pair subst t1 o1' t2 o2' =
+        match t1, t2 with
+        | _ when t1 = t2 && (t1 >= 0 || o1' = o2') ->
+          subst (* same symbol or variable *)
+        | _ when t1 >= 0 && t2 >= 0 ->
+          raise UnifFailure (* incompatible symbols *)
+        | _ when t1 < 0 ->
+          bind_subst subst t1 o1' t2 o2' (* bind var *)
+        | _ ->
+          assert (t2 < 0 && t1 >= 0);
+          raise UnifFailure (* cannot bind t2 *)
+      in match_pairs subst 1
+
+  (** [unify l1 l2] tries to unify [l1] with [l2].
+       Raise UnifFailure if they do not match. *)
+  let unify ?(subst=empty_subst) (l1, o1) (l2, o2) =
+    if l1.(0) <> l2.(0) || Array.length l1 <> Array.length l2
+    then raise UnifFailure
+    else
+      let rec unif_pairs subst i =
+        if i = Array.length l1 then subst else
+        let t1, o1' = get_var subst l1.(i) o1
+        and t2, o2' = get_var subst l2.(i) o2 in
+        let subst' = unif_pair subst t1 o1' t2 o2' in
+        unif_pairs subst' (i+1)
+      and unif_pair subst t1 o1' t2 o2' =
+        match t1, t2 with
+        | _ when t1 = t2 && (t1 >= 0 || o1' = o2') ->
+          subst (* same symbol or variable *)
+        | _ when t1 >= 0 && t2 >= 0 ->
+          raise UnifFailure (* incompatible symbols *)
+        | _ when t1 < 0 ->
+          bind_subst subst t1 o1' t2 o2' (* bind var *)
+        | _ when t2 < 0 ->
+          bind_subst subst t2 o2' t1 o1' (* bind var *)
+        | _ -> assert false
+      in unif_pairs subst 1
+
+  (** If the literals are alpha equivalent, return the corresponding renaming *)
+  let alpha_equiv ?(subst=empty_subst) (l1,o1) (l2,o2) =
+    if l1.(0) <> l2.(0) || Array.length l1 <> Array.length l2
+    then raise UnifFailure
+    else
+      let rec unif_pairs subst i =
+        if i = Array.length l1 then subst else
+        let t1, o1' = get_var subst l1.(i) o1
+        and t2, o2' = get_var subst l2.(i) o2 in
+        let subst' = unif_pair subst t1 o1' t2 o2' in
+        unif_pairs subst' (i+1)
+      and unif_pair subst t1 o1' t2 o2' =
+        match t1, t2 with
+        | _ when t1 = t2 && (t1 >= 0 || o1' = o2') ->
+          subst (* same symbol or variable *)
+        | _ when t1 < 0 && t2 < 0 ->
+          bind_subst subst t1 o1' t2 o2' (* bind var *)
+        | _ ->
+          raise UnifFailure (* incompatible symbols or vars *)
+      in unif_pairs subst 1
+
+  (** shift literal by offset *)
+  let shift_lit lit offset =
+    if offset = 0 then lit
+    else Array.map (fun t -> if is_var t then t+offset else t) lit
+
+  let shift_clause c offset =
+    if offset = 0 then c
+    else Array.map (fun lit -> shift_lit lit offset) c
+
+  (** Apply substitution to the literal *)
+  let subst_literal subst (lit,offset) =
+    if is_ground lit || (is_empty_subst subst && offset = 0) then lit
+    else if is_empty_subst subst then shift_lit lit offset
+    else Array.map
+      (fun t ->
+        let t', o_t' = get_var subst t offset in
+        (* shift [t'] if [t'] is a var *)
+        if is_var t' then t' + o_t' else t')
+      lit
+
+  (** Apply substitution to the clause. TODO remove duplicate literals afterward *)
+  let subst_clause subst (clause,offset) =
+    if is_empty_subst subst && offset = 0 then clause
+    else if is_empty_subst subst then shift_clause clause offset
+    else Array.map
+      (fun lit -> subst_literal subst (lit,offset))
+      clause
+
   (** Remove first body element of the clause, after substitution *)
-  let remove_first_subst subst clause =
+  let remove_first_subst subst (clause,offset) =
     assert (Array.length clause > 1);
     let a = Array.make (Array.length clause - 1) [||] in
-    a.(0) <- subst_literal subst clause.(0);
+    a.(0) <- subst_literal subst (clause.(0),offset);
     for i = 1 to Array.length clause - 2 do
-      a.(i) <- subst_literal subst clause.(i+1);
+      a.(i) <- subst_literal subst (clause.(i+1),offset);
     done;
     a
+
+  (** {3 Pretty-printing} *)
 
   let pp_literal formatter t =
     (* symbol index (int) to string *)
@@ -408,11 +570,14 @@ module Make(Symbol : SymbolType) = struct
     let to_s s = with_lock (fun () -> Symbol.to_string (i_to_s s)) in
     Format.fprintf formatter "@[{";
     let first = ref true in
-    Utils.IHashtbl.iter
-      (fun i j ->
-        (if !first then first := false else Format.fprintf formatter ", ");
-        Format.fprintf formatter "X%d -> %s@;" (abs i) (to_s j))
-      subst;
+    let rec iter subst = match subst with
+    | SubstEmpty -> ()
+    | SubstBind (v,o_v,t,o_t,subst') ->
+      (if !first then first := false else Format.fprintf formatter ", ");
+      Format.fprintf formatter "X%d[%d] -> %s[%d]@;" (abs v) o_v (to_s t) o_t;
+      iter subst'
+    in
+    iter subst;
     Format.fprintf formatter "}@]";
 
   (* ----------------------------------------------------------------------
@@ -436,7 +601,7 @@ module Make(Symbol : SymbolType) = struct
       type elt
         (** A value indexed by a literal *)
 
-      module DataSet : Set.S with type elt = elt
+      module DataSet : Set.S with type elt = literal * elt
         (** Set of indexed elements *)
 
       val create : unit -> t
@@ -448,32 +613,49 @@ module Make(Symbol : SymbolType) = struct
       val clear : t -> unit
         (** Reset to empty index *)
 
-      val retrieve_generalizations : ('a -> elt -> subst -> 'a) -> 'a -> t -> literal -> 'a
-        (** Fold on generalizations of given literal (with transient substitution) *)
+      val retrieve_generalizations : ('a -> literal -> elt -> subst -> 'a) -> 'a ->
+                                     t bind -> literal bind -> 'a
+        (** Fold on generalizations of given literal *)
 
-      val retrieve_specializations : ('a -> elt -> subst -> 'a) -> 'a -> t -> literal -> 'a
-        (** Fold on specifications of given literal (with transient substitution) *)
+      val retrieve_specializations : ('a -> literal -> elt -> subst -> 'a) -> 'a ->
+                                     t bind -> literal bind -> 'a
+        (** Fold on specializations of given literal *)
 
-      val fold : ('a -> elt -> 'a) -> 'a -> t -> 'a
+      val retrieve_unify : ('a -> literal -> elt -> subst -> 'a) -> 'a ->
+                           t bind -> literal bind -> 'a
+        (** Fold on content that is unifiable with given literal *)
+
+      val retrieve_renaming : ('a -> literal -> elt -> subst -> 'a) -> 'a ->
+                              t bind -> literal bind -> 'a
+        (** Fold on elements that are alpha-equivalent to given literal *)
+
+      val fold : ('a -> literal -> elt -> 'a) -> 'a -> t -> 'a
         (** Fold on all indexed elements *)
 
       val is_empty : t -> bool
         (** Is the index empty? *)
 
       val size : t -> int
-        (** Number of indexed elements (linear) *)
+        (** Number of indexed elements (linear time) *)
     end
 
   (** Create an Index module for the given type of elements. The implementation
-      is based on perfect discrimination trees. *)
+      is based on non-perfect discrimination trees. *)
   module Make(X : Set.OrderedType) : Index with type elt = X.t =
     struct
 
-      (** A set of indexed data *)
-      module DataSet = Set.Make(X)
+      (** A set of literal+indexed data *)
+      module DataSet = Set.Make(struct
+        type t = literal * X.t
+        let compare (lit1, data1) (lit2, data2) =
+          let cmp = compare_literal lit1 lit2 in
+          if cmp <> 0 then cmp else X.compare data1 data2
+        end)
 
       (** The literal index. It is a trie with, at each node, a hashset
-          of elements, plus a map symbol/var -> subtrie *)
+          of elements, plus a map symbol/var -> subtrie.
+          All variables are mapped to [-1], because the tree is non-perfect.
+          This makes matching slower, but consumes less memory. *)
       type t =
       | Node of DataSet.t ref * t Utils.IHashtbl.t
 
@@ -489,15 +671,16 @@ module Make(Symbol : SymbolType) = struct
         (* index in subtrie [t], with a cursor at literal[i]. *)
         let rec add t i = match t, i with
         | Node (set, subtries), i when i = len ->
-          set := DataSet.add elt !set (* insert in leaf *)
+          set := DataSet.add (literal,elt) !set (* insert in leaf *)
         | Node (_, subtries), i ->
+          let term = if is_var literal.(i) then -1 else literal.(i) in
           try
-            let subtrie = Utils.IHashtbl.find subtries literal.(i) in
+            let subtrie = Utils.IHashtbl.find subtries term in
             add subtrie (i+1)
           with Not_found ->
             (* create a new subtrie for the i-th argument of literal, then recurse *)
             let subtrie = Node (ref DataSet.empty, Utils.IHashtbl.create 2) in
-            Utils.IHashtbl.add subtries literal.(i) subtrie;
+            Utils.IHashtbl.add subtries term subtrie;
             add subtrie (i+1)
         in
         add t 0
@@ -508,75 +691,108 @@ module Make(Symbol : SymbolType) = struct
           set := DataSet.empty;
           Utils.IHashtbl.clear subtries
 
-      (** Fold on generalizations of given ground literal (with transient substitution) *)
-      let retrieve_generalizations k acc t literal =
-        assert (is_ground literal);
-        let subst = Utils.IHashtbl.create 2 in
+      (** Fold on generalizations of given ground literal *)
+      let retrieve_generalizations k acc (t,o_t) (literal,o_lit) =
         let len = Array.length literal in
         (* search in subtrie [t], with cursor at [i]-th argument of [literal] *)
         let rec search t i acc = match t, i with
         | Node (set, _), i when i = len ->
-          DataSet.fold (fun elt acc -> k acc elt subst) !set acc
+          DataSet.fold
+            (fun (lit',elt) acc ->
+              try
+                let subst = matching (lit',o_t) (literal,o_lit) in
+                k acc lit' elt subst
+              with UnifFailure -> acc)
+            !set acc
         | Node (_, subtries), i ->
-          let sym = literal.(i) in
-          Utils.IHashtbl.fold
-            (fun sym' subtrie acc ->
-              if is_var sym'
-              then (* try to bind variable to current symbol *)
-                try
-                  (* var already bound, continue iff bound to same symbol *)
-                  if Utils.IHashtbl.find subst sym' = sym
-                    then search subtrie (i+1) acc
-                    else acc
-                with Not_found ->
-                  (* bind sym' to sym and recurse *)
-                  Utils.IHashtbl.add subst sym' sym;
-                  let acc' = search subtrie (i+1) acc in
-                  Utils.IHashtbl.remove subst sym';
-                  acc'
-              else if sym = sym'
-                (* same symbol, go in the subtrie *)
-                then search subtrie (i+1) acc
-              else acc)
-            subtries acc
+          if is_var literal.(i)
+            then try_with subtries acc (-1) i
+            else
+              let acc' = try_with subtries acc (-1) i in
+              try_with subtries acc' literal.(i) i
+        (* try to search in the subtree annotated with given symbol/var *)
+        and try_with subtries acc sym i =
+          try let t' = Utils.IHashtbl.find subtries sym in
+              search t' (i+1) acc
+          with Not_found -> acc
         in
         search t 0 acc
 
-      (** Fold on ground specifications of given literal (with transient substitution) *)
-      let retrieve_specializations k acc t literal =
-        let subst = Utils.IHashtbl.create 2 in
+      (** Fold on specializations of given literal *)
+      let retrieve_specializations k acc (t,o_t) (literal,o_lit) =
         let len = Array.length literal in
         (* search in subtrie [t], with cursor at [i]-th argument of [literal] *)
         let rec search t i acc = match t, i with
         | Node (set, _), i when i = len ->
-          DataSet.fold (fun elt acc -> k acc elt subst) !set acc
-        | Node (_, subtries), i when is_var literal.(i) ->
-          let var = literal.(i) in
-          (try
-            (* t[i] = var that is already bound, follow the corresponding branch, if any *)
-            let sym' = Utils.IHashtbl.find subst var in
-            try
-              let subtrie = Utils.IHashtbl.find subtries sym' in
-              search subtrie (i+1) acc
-            with Not_found -> acc
-          with Not_found ->
-            (* follow every ground branch, binding variable *)
-            Utils.IHashtbl.fold
-              (fun sym subtrie acc ->
-                (* only follow branches leading to ground literals *)
-                if is_var sym then acc else begin
-                  (* bind var to sym and recurse *)
-                  Utils.IHashtbl.add subst var sym;
-                  let acc' = search subtrie (i+1) acc in
-                  Utils.IHashtbl.remove subst var;
-                  acc'
-                end)
-            subtries acc)
+          DataSet.fold
+            (fun (lit',elt) acc ->
+              try
+                let subst = matching (literal,o_lit) (lit',o_t) in
+                k acc lit' elt subst
+              with UnifFailure -> acc)
+            !set acc
         | Node (_, subtries), i ->
-          (* just follow the corresponding branch, if there is one *)
-          try
-            let subtrie = Utils.IHashtbl.find subtries literal.(i) in
-            search subtrie (i+1) acc
+          if is_var literal.(i)
+            then  (* fold on all subtries *)
+              Utils.IHashtbl.fold
+                (fun _ subtrie acc -> search subtrie (i+1) acc)
+                subtries acc
+            else try_with subtries acc literal.(i) i
+        (* try to search in the subtree annotated with given symbol/var *)
+        and try_with subtries acc sym i =
+          try let t' = Utils.IHashtbl.find subtries sym in
+              search t' (i+1) acc
+          with Not_found -> acc
+        in
+        search t 0 acc
+
+      (** Fold on content that is unifiable with given literal *)
+      let retrieve_unify k acc (t,o_t) (literal, o_lit) =
+        let len = Array.length literal in
+        (* search in subtrie [t], with cursor at [i]-th argument of [literal] *)
+        let rec search t i acc = match t, i with
+        | Node (set, _), i when i = len ->
+          DataSet.fold
+            (fun (lit',elt) acc ->
+              try
+                let subst = unify (literal,o_lit) (lit',o_t) in
+                k acc lit' elt subst
+              with UnifFailure -> acc)
+            !set acc
+        | Node (_, subtries), i ->
+          if is_var literal.(i)
+            then  (* fold on all subtries *)
+              Utils.IHashtbl.fold
+                (fun _ subtrie acc -> search subtrie (i+1) acc)
+                subtries acc
+            else (* try both subtrie with same symbol, and subtrie with variable *)
+              let acc' = try_with subtries acc literal.(i) i in
+              try_with subtries acc' (-1) i
+        (* try to search in the subtree annotated with given symbol/var *)
+        and try_with subtries acc sym i =
+          try let t' = Utils.IHashtbl.find subtries sym in
+              search t' (i+1) acc
+          with Not_found -> acc
+        in
+        search t 0 acc
+
+      (** Fold on content that is unifiable with given literal *)
+      let retrieve_renaming k acc (t,o_t) (literal, o_lit) =
+        let len = Array.length literal in
+        (* search in subtrie [t], with cursor at [i]-th argument of [literal] *)
+        let rec search t i acc = match t, i with
+        | Node (set, _), i when i = len ->
+          DataSet.fold
+            (fun (lit',elt) acc ->
+              try
+                let subst = alpha_equiv (literal,o_lit) (lit',o_t) in
+                k acc lit' elt subst
+              with UnifFailure -> acc)
+            !set acc
+        | Node (_, subtries), i ->
+          let sym = if is_var literal.(i) then (-1) else literal.(i) in
+          try let t' = Utils.IHashtbl.find subtries sym in
+              search t' (i+1) acc
           with Not_found -> acc
         in
         search t 0 acc
@@ -585,7 +801,9 @@ module Make(Symbol : SymbolType) = struct
       let rec fold k acc t = match t with
         | Node (set, subtries) ->
           (* fold on elements at this point *)
-          let acc = DataSet.fold (fun elt acc -> k acc elt) !set acc in
+          let acc = DataSet.fold
+            (fun (lit,elt) acc -> k acc lit elt)
+            !set acc in
           (* fold on subtries *)
           Utils.IHashtbl.fold
             (fun _ subtrie acc -> fold k acc subtrie)
@@ -606,7 +824,7 @@ module Make(Symbol : SymbolType) = struct
           DataSet.cardinal !set = 0 && for_all is_empty subtries
 
       (** Number of elements *)
-      let size t = fold (fun i _ -> i + 1) 0 t
+      let size t = fold (fun i _ _ -> i + 1) 0 t
     end
 
   (* ----------------------------------------------------------------------
@@ -615,11 +833,15 @@ module Make(Symbol : SymbolType) = struct
 
   exception UnsafeClause
 
-  module ClausesIndex = Make(
-    struct
-      type t = clause
-      let compare = compare_clause
-    end)
+  module ClausesIndex = Make(struct
+    type t = clause
+    let compare = compare_clause
+  end)
+
+  module GoalIndex = Make(struct
+    type t = unit
+    let compare a b = 0
+  end)
 
   (** Hashtable on clauses *)
   module ClauseHashtbl = Hashtbl.Make(
@@ -634,21 +856,35 @@ module Make(Symbol : SymbolType) = struct
     | Axiom
     | Resolution of clause * literal
 
+  type fact_handler = literal -> unit
+  type goal_handler = literal -> unit
+
+  type queue_item =
+    [ `AddClause of clause * explanation
+    | `AddGoal of literal
+    ]
+
   (** A database of facts and clauses, with incremental fixpoint computation *)
   type db = {
     db_all : explanation ClauseHashtbl.t;             (** maps all clauses to their explanations *)
     db_facts : ClausesIndex.t;                        (** index on facts *)
-    db_clauses : ClausesIndex.t;                      (** index on clauses *)
-    db_handlers : (literal -> unit) Utils.IHashtbl.t; (** map symbol -> handler *)
-    db_queue : (clause * explanation) Queue.t;        (** queue of clauses to add (+ explanation) *)
+    db_goals : GoalIndex.t;                           (** set of goals *)
+    db_selected : ClausesIndex.t;                     (** index on clauses' selected premises *)
+    db_heads : ClausesIndex.t;                        (** index on clauses' heads *)
+    db_fact_handlers : (int, fact_handler) Hashtbl.t; (** map symbol -> fact handlers *)
+    mutable db_goal_handlers : goal_handler list;     (** goal handlers *)
+    db_queue : queue_item Queue.t;                    (** queue of items to process *)
   }
 
   (** Create a DB *)
   let db_create () =
     { db_all = ClauseHashtbl.create 17;
       db_facts = ClausesIndex.create ();
-      db_clauses = ClausesIndex.create ();
-      db_handlers = Utils.IHashtbl.create 3;
+      db_goals = GoalIndex.create ();
+      db_selected = ClausesIndex.create ();
+      db_heads = ClausesIndex.create ();
+      db_fact_handlers = Hashtbl.create 3;
+      db_goal_handlers = [];
       db_queue = Queue.create ();
     }
 
@@ -657,71 +893,119 @@ module Make(Symbol : SymbolType) = struct
     assert (check_safe clause);
     ClauseHashtbl.mem db.db_all clause
 
+  let add_clause db clause explanation =
+    (* check if clause already present; in any case add the explanation *)
+    let already_present = db_mem db clause in
+    ClauseHashtbl.add db.db_all clause explanation;
+    if already_present then ()
+    (* generate new clauses by resolution *)
+    else if is_fact clause then begin
+      ClausesIndex.add db.db_facts clause.(0) clause;
+      (* call handler for this fact, if any *)
+      let handlers = Hashtbl.find_all db.db_fact_handlers clause.(0).(0) in
+      List.iter (fun h ->
+        try h clause.(0)
+        with e ->
+          Format.eprintf "Datalog: exception while calling handler for %d@."
+            clause.(0).(0);
+          raise e)
+        handlers;
+      (* insertion of a fact: resolution with all clauses whose
+         first body literal matches the fact. No offset is needed, because
+         the fact is ground. *)
+      ClausesIndex.retrieve_generalizations
+        (fun () _ clause' subst ->
+          (* subst(clause'.(1)) = clause.(0) , remove the first element of the
+             body of subst(clause'), that makes a new clause *)
+          let clause'' = remove_first_subst subst (clause',0) in
+          let explanation = Resolution (clause', clause.(0)) in
+          Queue.push (`AddClause (clause'', explanation)) db.db_queue)
+        () (db.db_selected,0) (clause.(0),0)
+    end else begin
+      assert (Array.length clause > 1);
+      (* check if some goal unifies with head of clause *)
+      let offset = offset clause in
+      GoalIndex.retrieve_unify
+        (fun () goal () subst ->
+          (* subst(goal) = subst(clause.(0)), so subst(clause.(1)) is a goal *)
+          let new_goal = subst_literal subst (clause.(1),0) in
+          Queue.push (`AddGoal new_goal) db.db_queue)
+        () (db.db_goals,offset) (clause.(0),0);
+      (* add to index *)
+      ClausesIndex.add db.db_selected clause.(1) clause;
+      ClausesIndex.add db.db_heads clause.(0) clause;
+      (* insertion of a non_unit clause: resolution with all facts that match the
+         first body literal of the clause *)
+      ClausesIndex.retrieve_specializations
+        (fun () fact _ subst ->
+          (* subst(clause.body.(0)) = fact, remove this first literal *)
+          let clause' = remove_first_subst subst (clause,0) in
+          let explanation = Resolution (clause, fact) in
+          Queue.push (`AddClause (clause', explanation)) db.db_queue)
+        () (db.db_facts,offset) (clause.(1),0)
+    end
+
+  let add_goal db lit =
+    try
+      let offset = offset [|lit|] in
+      GoalIndex.retrieve_renaming
+        (fun () _ _ _ -> raise Exit)
+        () (db.db_goals,offset) (lit,0);
+      (* goal is not present! call handlers and add it *)
+      List.iter (fun h -> h lit) db.db_goal_handlers;
+      GoalIndex.add db.db_goals lit ();
+      (* find clauses that may help solving this goal *)
+      ClausesIndex.retrieve_unify
+        (fun () head clause subst ->
+          (* subst(clause.(0)) = subst(lit), so subst(clause.(1)) is a new goal *)
+          let new_goal = subst_literal subst (clause.(1),offset) in
+          Queue.push (`AddGoal new_goal) db.db_queue)
+        () (db.db_heads,offset) (lit,0)
+    with Exit ->
+      (* goal already present (in an alpha-equivalent form) *)
+      ()
+
+  (** Push the item in the queue, and process items in the queue
+      if no other function call is already doing it *)
+  let process_items db item =
+    let empty = Queue.is_empty db.db_queue in
+    Queue.push item db.db_queue;
+    (* how to process one queue item *)
+    let process_item item = 
+      match item with
+      | `AddClause (c, explanation) -> add_clause db c explanation
+      | `AddGoal goal -> add_goal db goal
+    in
+    (* if the queue was not empty, that means that another call
+        below in the stack is already processing items. We only
+        need to do it if it is not the case *)
+    if empty then begin
+      while not (Queue.is_empty db.db_queue) do
+        let item = Queue.pop db.db_queue in
+        process_item item
+      done
+    end
+
   (** Add the clause/fact to the DB, updating fixpoint *)
   let db_add db clause =
     (if not (check_safe clause) then raise UnsafeClause);
-    (* queue of new clauses to insert *)
-    let queue = db.db_queue in
-    (* is there already a add() going on? *)
-    let already_active = not (Queue.is_empty queue) in
-    (* add [clause] to the queue of clauses to add *)
-    Queue.push (clause, Axiom) queue;
-    (* if there is already a add() going on, let it propagate the clause *)
-    if already_active then () else
-    while not (Queue.is_empty queue) do
-      let clause, explanation = Queue.take queue in
-      if db_mem db clause then () else begin
-      (* clause not already present, add it *)
-      ClauseHashtbl.replace db.db_all clause explanation;
-      (* generate new clauses by resolution *)
-      if is_fact clause
-      then begin
-        ClausesIndex.add db.db_facts clause.(0) clause;
-        (* call handler for this fact, if any *)
-        (try let handler = Utils.IHashtbl.find db.db_handlers clause.(0).(0)
-             in handler clause.(0)
-        with
-        | Not_found -> ()
-        | e -> (
-          Format.eprintf "Datalog: exception while calling handler for %d@." clause.(0).(0);
-          raise e));
-        (* insertion of a fact: resolution with all clauses whose first body literal
-           matches the fact *)
-        ClausesIndex.retrieve_generalizations
-          (fun () clause' subst ->
-            if not (is_fact clause') then
-              (* clause' is not a fact, and
-                 subst(clause'.body.(0)) = fact, remove the first element of the
-                 body of clause', that makes a new clause *)
-              let clause'' = remove_first_subst subst clause' in
-              let explanation = Resolution (clause', clause.(0)) in
-              Queue.push (clause'', explanation) queue)
-          () db.db_clauses clause.(0)
-      end else begin
-        assert (Array.length clause > 1);
-        ClausesIndex.add db.db_clauses clause.(1) clause;
-        (* insertion of a non_unit clause: resolution with all facts that match the
-           first body literal of the clause *)
-        ClausesIndex.retrieve_specializations
-          (fun () fact subst ->
-            (* subst(clause.body.(0)) = fact, remove this first literal *)
-            let clause' = remove_first_subst subst clause in
-            let explanation = Resolution (clause, fact.(0)) in
-            Queue.push (clause', explanation) queue)
-          () db.db_facts clause.(1)
-      end
-      end
-    done
+    process_items db (`AddClause (clause, Axiom))
+
+  (** Add a goal to the DB. The goal is used to trigger backward chaining
+      (calling goal handlers that could help solve the goal) *)
+  let db_goal db lit =
+    process_items db (`AddGoal lit)
 
   (** match the given literal with facts of the DB, calling the handler on
       each fact that match (with the corresponding substitution) *)
   let db_match db pattern handler =
     ClausesIndex.retrieve_specializations
-      (fun () fact subst -> handler fact.(0) subst)
-      () db.db_facts pattern
+      (fun () fact _ subst -> handler (fact,0) subst)
+      () (db.db_facts,0) (pattern,1)
 
   (** Size of the DB *)
-  let db_size db = ClauseHashtbl.length db.db_all
+  let db_size db =
+    ClausesIndex.size db.db_facts + ClausesIndex.size db.db_selected
 
   (** Fold on all clauses in the current DB (including fixpoint) *)
   let db_fold k acc db =
@@ -729,11 +1013,18 @@ module Make(Symbol : SymbolType) = struct
       (fun clause _ acc -> k acc clause)
       db.db_all acc
 
-  (** [db_subscribe db symbol handler] causes [handler] to be called with
-      any new fact that has head symbol [symbol] from now on *)
-  let db_subscribe db symbol handler =
+  let db_subscribe_fact db symbol handler =
     let i = s_to_i symbol in
-    Utils.IHashtbl.replace db.db_handlers i handler
+    Hashtbl.add db.db_fact_handlers i handler
+
+  let db_subscribe_goal db handler =
+    db.db_goal_handlers <- handler :: db.db_goal_handlers
+
+  (** Iterate on all current goals *)
+  let db_goals db k =
+    GoalIndex.fold
+      (fun () goal () -> k goal)
+      () db.db_goals
 
   (** Explain the given fact by returning a list of facts that imply it
       under the current clauses. *)
@@ -743,9 +1034,10 @@ module Make(Symbol : SymbolType) = struct
     and set = ref LitSet.empty in
     (* recursively collect explanations *)
     let rec search clause =
-      if ClausesIndex.DataSet.mem clause !explored then ()
+      let elt = clause.(0), clause in
+      if ClausesIndex.DataSet.mem elt !explored then ()
       else begin
-        explored := ClausesIndex.DataSet.add clause !explored;
+        explored := ClausesIndex.DataSet.add elt !explored;
         let explanation = ClauseHashtbl.find db.db_all clause in
         match explanation with
         | Axiom when is_fact clause -> set := LitSet.add clause.(0) !set
@@ -770,6 +1062,10 @@ module Make(Symbol : SymbolType) = struct
       | Resolution (clause, fact) -> let acc = fact :: acc in search acc clause
     in
     search [] [|fact|]
+
+  (** Get all the explanations that explain why this clause is true *)
+  let db_explanations db clause =
+    ClauseHashtbl.find_all db.db_all clause
 end
 
 (** Default literal base, where symbols are just strings *)

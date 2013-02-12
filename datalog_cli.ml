@@ -74,7 +74,7 @@ let process_clauses clauses =
   Format.printf "%% computing fixpoint...@.";
   let db = DLogic.db_create () in
   (* handlers *)
-  List.iter (fun (symbol,handler,_) -> DLogic.db_subscribe db symbol handler) !sums;
+  List.iter (fun (symbol,handler,_) -> DLogic.db_subscribe_fact db symbol handler) !sums;
   (* add clauses one by one *)
   let total = List.length clauses in
   ignore (List.fold_left (fun i clause -> (if !progress then pp_progress i total);
@@ -97,12 +97,12 @@ let process_clauses clauses =
   List.iter (fun pattern ->
     Format.printf "%% facts matching pattern %a:@." DLogic.pp_literal pattern;
     DLogic.db_match db pattern
-      (fun fact subst -> Format.printf "  @[<h>%a.@]@." DLogic.pp_literal fact))
+      (fun (fact,_) subst -> Format.printf "  @[<h>%a.@]@." DLogic.pp_literal fact))
     !patterns;
   (* print explanations *)
   List.iter (fun pattern ->
     DLogic.db_match db pattern
-      (fun fact subst ->
+      (fun (fact,_) subst ->
         (* premises *)
         Format.printf "  premises of @[<h>%a@]: @[<h>" DLogic.pp_literal fact;
         let clause, premises = DLogic.db_premises db fact in

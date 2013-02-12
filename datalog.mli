@@ -45,6 +45,10 @@ module Logic : sig
     type subst
       (** A substitution maps variables to symbols *)
 
+    type 'a bind = ('a * int)
+      (** A context in which to interpret variables in a literal or clause.
+          The context is an offset that is implicitely applied to variables *)
+
     (** {3 Constructors and destructors} *)
 
     val mk_literal : symbol -> [`Var of int | `Symbol of symbol] list -> literal
@@ -98,12 +102,33 @@ module Logic : sig
     val hash_clause : clause -> int
       (** Hash the clause *)
 
-    (** {3 Comparisons} *)
+    (** {3 Unification, matching and substitutions} *)
 
-    val subst_literal : subst -> literal -> literal
+    exception UnifFailure
+
+    val empty_subst : subst
+      (** The empty substitution *)
+
+    (* TODO external API to build substitutions *)
+
+    val offset : clause -> int
+      (** Offset to avoid collisions with the given clause *)
+
+    val matching : ?subst:subst -> literal bind -> literal bind -> subst
+      (** [matching pattern l] matches [pattern] against [l]; variables in [l]
+          cannot be bound. Raise UnifFailure if they do not match. *)
+
+    val unify : ?subst:subst -> literal bind -> literal bind -> subst
+      (** [unify l1 l2] tries to unify [l1] with [l2].
+           Raise UnifFailure if they do not match. *)
+
+    val alpha_equiv : ?subst:subst -> literal bind -> literal bind -> subst
+      (** If the literals are alpha equivalent, return the corresponding renaming *)
+
+    val subst_literal : subst -> literal bind -> literal
       (** Apply substitution to the literal *)
 
-    val subst_clause : subst -> clause -> clause
+    val subst_clause : subst -> clause bind -> clause
       (** Apply substitution to the clause *)
 
     (** {3 Pretty-printing} *)
@@ -124,6 +149,11 @@ module Logic : sig
     type db
       (** A database of facts and clauses, with incremental fixpoint computation *)
 
+    type explanation =
+      | Axiom
+      | Resolution of clause * literal
+      (** Explanation for a clause or fact *)
+
     val db_create : unit -> db
       (** Create a DB *)
 
@@ -134,7 +164,11 @@ module Logic : sig
       (** Add the clause/fact to the DB as an axiom, updating fixpoint.
           UnsafeRule will be raised if the rule is not safe (see {!check_safe}) *)
 
-    val db_match : db -> literal -> (literal -> subst -> unit) -> unit
+    val db_goal : db -> literal -> unit
+      (** Add a goal to the DB. The goal is used to trigger backward chaining
+          (calling goal handlers that could help solve the goal) *)
+
+    val db_match : db -> literal -> (literal bind -> subst -> unit) -> unit
       (** match the given literal with facts of the DB, calling the handler on
           each fact that match (with the corresponding substitution) *)
 
@@ -144,17 +178,25 @@ module Logic : sig
     val db_fold : ('a -> clause -> 'a) -> 'a -> db -> 'a
       (** Fold on all clauses in the current DB (including fixpoint) *)
 
-    val db_subscribe : db -> symbol -> (literal -> unit) -> unit
-      (** [db_subscribe db symbol handler] causes [handler] to be called with
-          any new fact that has head symbol [symbol] from now on *)
+    type fact_handler = literal -> unit
+    type goal_handler = literal -> unit
+
+    val db_subscribe_fact : db -> symbol -> fact_handler -> unit
+    val db_subscribe_goal : db -> goal_handler -> unit
+
+    val db_goals : db -> (literal -> unit) -> unit
+      (** Iterate on all current goals *)
 
     val db_explain : db -> literal -> literal list
       (** Explain the given fact by returning a list of facts that imply it
-          under the current clauses. *)
+          under the current clauses, or raise Not_found *)
 
     val db_premises : db -> literal -> clause * literal list
       (** Immediate premises of the fact (ie the facts that resolved with
           a clause to give the literal), plus the clause that has been used. *)
+
+    val db_explanations : db -> clause -> explanation list
+      (** Get all the explanations that explain why this clause is true *)
   end
 
   (** Signature for a symbol type. It must be hashable, comparable and

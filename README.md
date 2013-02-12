@@ -5,6 +5,21 @@ with small relations, with frequent updates of the relations. Therefore, it
 tries to achieve good behavior in presence of incremental modifications of the
 relations.
 
+This version, `backward`, features a backward-chaining operation. It resembles
+top-down algorithms because goals (possibly non-ground literals) can be
+added to the `db`; it means that if `G` is a goal and `A :- B1,B2,...,Bn` is a clause,
+if `A` and `B1` are unifiable with `subst`, then `subst(B1)` is also a goal.
+Handlers (semantic attachments) can be provided by the user, to be called on
+every goal. The point is that the handlers can add facts that **solve** the
+goal by adding facts that match it.
+
+For instance, a handler may solve goals of the form `lower_than(i,j)` (where
+`i` and `j` are integers) by adding the fact `lower_than(i,j)` if `i < j` is
+really true. Another example: if symbols are strings, then the goal
+`concat("foo", "bar", X)` may be solved by adding the fact
+`concat("foo", "bar", "foobar")`.
+Thus, goals are a way to call semantic attachments in a goal-oriented way.
+
 ## License
 
 The code is distributed under the [BSD license](http://opensource.org/licenses/BSD-2-Clause).

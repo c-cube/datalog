@@ -160,6 +160,8 @@ module type SymbolType = sig
   include Hashtbl.HashedType
   val to_string : t -> string
   val of_string : string -> t
+    val lock : unit -> unit
+    val unlock : unit -> unit
 end
 
 module Make(Symbol : SymbolType) = struct
@@ -177,6 +179,17 @@ module Make(Symbol : SymbolType) = struct
   let __s_to_i = SymbolHashtbl.create 5
   let __symbol_count = ref 0
 
+  (** Perform the operation in a locked context *)
+  let with_lock k =
+    Symbol.lock ();
+    try
+      let y = k () in
+      Symbol.unlock ();
+      y
+    with e ->
+      Symbol.unlock ();
+      raise e
+
   (** Convert a symbol to an integer *)
   let s_to_i s =
     try SymbolHashtbl.find __s_to_i s
@@ -188,7 +201,11 @@ module Make(Symbol : SymbolType) = struct
       i
 
   (** Convert an integer back to a symbol *)
-  let i_to_s i = Utils.IHashtbl.find __i_to_s i
+  let i_to_s i =
+    try Utils.IHashtbl.find __i_to_s i
+    with Not_found ->
+      Symbol.unlock ();
+      raise Not_found
 
   (** Forget about the symbol. If the corresponding int [i] it still used,
       [get_symbol i] will fail with Not_found. *)
@@ -213,11 +230,13 @@ module Make(Symbol : SymbolType) = struct
       are variables, the int must be negative. *)
   let mk_literal head args =
     let head = s_to_i head in
+    Symbol.lock ();
     let args = List.map
       (function
        | `Var i -> assert (i < 0); i
        | `Symbol s -> s_to_i s)
       args in
+    Symbol.unlock ();
     Array.of_list (head :: args)
 
   (** Same as [mk_literal], but converts strings to symbols on-the-fly *)
@@ -235,9 +254,11 @@ module Make(Symbol : SymbolType) = struct
     let head = literal.(0) in
     let head = i_to_s head in
     let args = Array.to_list (Array.sub literal 1 (Array.length literal - 1)) in
+    Symbol.lock ();
     let args = List.map
       (fun i -> if i < 0 then `Var i else `Symbol (i_to_s i))
       args in
+    Symbol.unlock ();
     head, args
 
   (** Create a clause from a conclusion and a list of premises *)
@@ -357,7 +378,7 @@ module Make(Symbol : SymbolType) = struct
 
   let pp_literal formatter t =
     (* symbol index (int) to string *)
-    let to_s s = Symbol.to_string (i_to_s s) in
+    let to_s s = with_lock (fun () -> Symbol.to_string (i_to_s s)) in
     if arity t = 0
       then Format.fprintf formatter "%s" (to_s t.(0))
       else begin
@@ -384,7 +405,7 @@ module Make(Symbol : SymbolType) = struct
       end
 
   let pp_subst formatter subst =
-    let to_s s = Symbol.to_string (i_to_s s) in
+    let to_s s = with_lock (fun () -> Symbol.to_string (i_to_s s)) in
     Format.fprintf formatter "@[{";
     let first = ref true in
     Utils.IHashtbl.iter
@@ -759,4 +780,6 @@ module Default = Make(
     let of_string s = s
     let equal s1 s2 = String.compare s1 s2 = 0
     let hash s = Hashtbl.hash s
+    let lock () = ()
+    let unlock () = ()
   end)

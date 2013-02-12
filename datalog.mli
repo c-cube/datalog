@@ -163,12 +163,15 @@ module Logic : sig
     include Hashtbl.HashedType
     val to_string : t -> string
     val of_string : string -> t
+    val lock : unit -> unit
+    val unlock : unit -> unit
   end
 
   (** Build a Datalog module *)
   module Make(Symbol : SymbolType) : S with type symbol = Symbol.t
 
-  (** Default literal base, where symbols are just strings *)
+  (** Default literal base, where symbols are just strings.
+      No locking. *)
   module Default : S with type symbol = string
 end
 

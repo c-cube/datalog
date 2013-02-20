@@ -13,11 +13,12 @@ Handlers (semantic attachments) can be provided by the user, to be called on
 every goal. The point is that the handlers can add facts that **solve** the
 goal by adding facts that match it.
 
-For instance, a handler may solve goals of the form `lower_than(i,j)` (where
-`i` and `j` are integers) by adding the fact `lower_than(i,j)` if `i < j` is
+For instance, a handler may solve goals of the form `lt_than(i,j)` (where
+`i` and `j` are integers) by adding the fact `lt(i,j)` if `i < j` is
 really true. Another example: if symbols are strings, then the goal
 `concat("foo", "bar", X)` may be solved by adding the fact
-`concat("foo", "bar", "foobar")`.
+`concat("foo", "bar", "foobar")`. The tool `datalog_cli` has build-in
+definitions of `lt`, `le` (lower or equal) and `equal`; see the last example.
 Thus, goals are a way to call semantic attachments in a goal-oriented way.
 
 ## License
@@ -98,3 +99,21 @@ Or
     % size of saturated set: 40805
     % number of fact with head reachable: 40401
     % max_heap_size: 1777664; minor_collections: 38; major collections: 9
+
+Or
+
+    $ datalog_cli tests/graph10.pl -goal 'increasing(3,7)' -pattern 'increasing(3,X)'
+    % start datalog
+    % parse file tests/graph10.pl
+    % process 15 clauses
+    % computing fixpoint...
+    % done.
+    % facts matching pattern increasing(3, X1):
+    increasing(3, 5).
+    increasing(3, 6).
+    increasing(3, 8).
+    increasing(3, 7).
+    increasing(3, 4).
+    increasing(3, 9).
+    increasing(3, 10).
+    % max_heap_size: 126976; minor_collections: 0; major collections: 0

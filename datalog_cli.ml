@@ -37,6 +37,7 @@ let print_saturated = ref false
 let print_size = ref false
 let sums = ref []
 let patterns = (ref [] : DLogic.literal list ref)
+let goals = (ref [] : DLogic.literal list ref)
 let explains = ref []
 let files = ref []
 
@@ -66,6 +67,23 @@ let pp_progress i total =
   Format.printf "\r%% clause %-5d / %-5d  " i total;
   Format.print_flush ()
 
+(** Simple goal handler (interprets 'lt') *)
+let handle_goal db lit =
+  (* debug: Format.printf "%% goal %a@." DLogic.pp_literal lit; *)
+  let compare a b =
+    try let a = int_of_string a and b = int_of_string b in
+        compare a b
+    with Invalid_argument _ -> compare a b
+  in
+  match DLogic.open_literal lit with
+  | "lt", [`Symbol a; `Symbol b] when compare a b < 0 ->
+    DLogic.db_add_fact db lit (* literal is true *)
+  | "le", [`Symbol a; `Symbol b] when compare a b <= 0 ->
+    DLogic.db_add_fact db lit (* literal is true *)
+  | "equal", [`Symbol a; `Symbol b] when a = b ->
+    DLogic.db_add_fact db lit (* literal is true *)
+  | _ -> ()
+
 (** Compute fixpoint of clauses *)
 let process_clauses clauses =
   Format.printf "%% process %d clauses@." (List.length clauses);
@@ -75,6 +93,9 @@ let process_clauses clauses =
   let db = DLogic.db_create () in
   (* handlers *)
   List.iter (fun (symbol,handler,_) -> DLogic.db_subscribe_fact db symbol handler) !sums;
+  (* goals *)
+  DLogic.db_subscribe_goal db (handle_goal db);
+  List.iter (fun goal -> DLogic.db_goal db goal) !goals;
   (* add clauses one by one *)
   let total = List.length clauses in
   ignore (List.fold_left (fun i clause -> (if !progress then pp_progress i total);
@@ -137,6 +158,12 @@ let add_pattern p =
   let literal = DParser.parse_literal DLexer.token lexbuf in
   patterns := literal :: !patterns
 
+(** Handler that add a goal *)
+let add_goal p =
+  let lexbuf = Lexing.from_string p in
+  let literal = DParser.parse_literal DLexer.token lexbuf in
+  goals := literal :: !goals
+
 (** Add the pattern to the list of patterns to explain *)
 let add_explain p =
   let lexbuf = Lexing.from_string p in
@@ -152,6 +179,7 @@ let parse_args () =
       ("-saturated", Arg.Set print_saturated, "print facts and clauses after fixpoint");
       ("-sum", Arg.String add_sum, "aggregate number of literals for the given symbol");
       ("-pattern", Arg.String add_pattern, "print facts matching this pattern");
+      ("-goal", Arg.String add_goal, "add a goal for backward chaining");
       ("-explain", Arg.String add_explain, "explain facts matching this pattern");
       ("-size", Arg.Set print_size, "print number of clauses after fixpoint");
     ]

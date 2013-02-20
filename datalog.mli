@@ -171,6 +171,9 @@ module Logic : sig
       (** Add the clause/fact to the DB as an axiom, updating fixpoint.
           UnsafeRule will be raised if the rule is not safe (see {!check_safe}) *)
 
+    val db_add_fact : db -> literal -> unit
+      (** Add a fact (ground unit clause) *)
+
     val db_goal : db -> literal -> unit
       (** Add a goal to the DB. The goal is used to trigger backward chaining
           (calling goal handlers that could help solve the goal) *)

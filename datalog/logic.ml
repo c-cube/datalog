@@ -168,6 +168,9 @@ module type S = sig
     (** Add the clause/fact to the DB as an axiom, updating fixpoint.
         UnsafeRule will be raised if the rule is not safe (see {!check_safe}) *)
 
+  val db_add_fact : db -> literal -> unit
+    (** Add a fact (ground unit clause) *)
+
   val db_goal : db -> literal -> unit
     (** Add a goal to the DB. The goal is used to trigger backward chaining
         (calling goal handlers that could help solve the goal) *)
@@ -1011,6 +1014,11 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
   let db_add db clause =
     (if not (check_safe clause) then raise UnsafeClause);
     process_items db (`AddClause (clause, Axiom))
+
+  (** Add a fact (ground unit clause) *)
+  let db_add_fact db lit =
+    (if not (is_ground lit) then raise UnsafeClause);
+    process_items db (`AddClause ([|lit|], Axiom))
 
   (** Add a goal to the DB. The goal is used to trigger backward chaining
       (calling goal handlers that could help solve the goal) *)

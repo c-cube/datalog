@@ -1108,3 +1108,5 @@ module Default = Make(
     let lock () = ()
     let unlock () = ()
   end)
+
+let version = "0.3"

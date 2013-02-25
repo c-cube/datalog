@@ -117,3 +117,10 @@ Or
     increasing(3, 9).
     increasing(3, 10).
     % max_heap_size: 126976; minor_collections: 0; major collections: 0
+
+## TODOs/ideas
+
+- Goal subsumption
+- Clause subsumption (when selected lit is ground)
+- Clause retraction
+- Library of standard interpreted predicates

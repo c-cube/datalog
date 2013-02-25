@@ -54,13 +54,13 @@ module Logic : sig
 
     (** {3 Constructors and destructors} *)
 
-    val mk_literal : symbol -> [`Var of int | `Symbol of symbol] list -> literal
+    val mk_literal : symbol -> [< `Var of int | `Symbol of symbol] list -> literal
       (** Helper to build a literal. Arguments are either variables or symbols; if they
           variables indexes *must* be negative (otherwise it will raise Invalid_argument *)
 
     val of_soft_lit : soft_lit -> literal
 
-    val mk_literal_s : string -> [`Var of int | `Symbol of string] list -> literal
+    val mk_literal_s : string -> [< `Var of int | `Symbol of string] list -> literal
       (** Same as [mk_literal], but converts strings to symbols on-the-fly *)
 
     val open_literal : literal -> soft_lit

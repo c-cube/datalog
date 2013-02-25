@@ -215,8 +215,6 @@ module Logic : sig
     include Hashtbl.HashedType
     val to_string : t -> string
     val of_string : string -> t
-    val lock : unit -> unit
-    val unlock : unit -> unit
   end
 
   (** Build a Datalog module *)

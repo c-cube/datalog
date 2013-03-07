@@ -89,15 +89,13 @@ literals:
   | literal COMMA literals { $1 :: $3 }
 
 literal:
-  | LOWER_WORD { Logic.Default.mk_literal $1 [] }
-  | LOWER_WORD LEFT_PARENTHESIS args RIGHT_PARENTHESIS
-    { Logic.Default.mk_literal $1 $3 }
+  | const { Logic.Default.mk_const $1 }
+  | const LEFT_PARENTHESIS args RIGHT_PARENTHESIS
+    { Logic.Default.mk_apply $1 $3 }
 
 args:
-  | const { [`Symbol $1] }
-  | UPPER_WORD { [get_var $1] }
-  | const COMMA args { (`Symbol $1) :: $3 }
-  | UPPER_WORD COMMA args { (get_var $1) :: $3 }
+  | literal { [$1] }
+  | literal COMMA args { $1 :: $3 }
 
 const:
   | INT { $1 }

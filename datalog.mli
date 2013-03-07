@@ -35,15 +35,19 @@ module Logic : sig
     type symbol
       (** Abstract type of symbols *)
 
-    type literal
-      (** A datalog atom, i.e. pred(arg_1, ..., arg_n). The first element of the
-          array is the predicate, then arguments follow *)
+    type literal =
+      | Var of int
+      | Apply of symbol * literal array
+      (** A datalog atom, i.e. pred(arg_1, ..., arg_n). Arguments can
+          themselves be literals *)
 
     type clause
       (** A datalog clause, i.e. head :- body_1, ..., body_n *)
 
-    type soft_lit = symbol * [`Var of int | `Symbol of symbol] list
-    type soft_clause = soft_lit * soft_lit list
+    val mk_apply : symbol -> literal list -> literal
+    val mk_apply_a : symbol -> literal array -> literal
+    val mk_const : symbol -> literal
+    val mk_var : int -> literal
 
     type subst
       (** A substitution maps variables to symbols *)
@@ -54,28 +58,17 @@ module Logic : sig
 
     (** {3 Constructors and destructors} *)
 
-    val mk_literal : symbol -> [< `Var of int | `Symbol of symbol] list -> literal
-      (** Helper to build a literal. Arguments are either variables or symbols; if they
-          variables indexes *must* be negative (otherwise it will raise Invalid_argument *)
-
-    val of_soft_lit : soft_lit -> literal
-
-    val mk_literal_s : string -> [< `Var of int | `Symbol of string] list -> literal
-      (** Same as [mk_literal], but converts strings to symbols on-the-fly *)
-
-    val open_literal : literal -> soft_lit
-      (** Deconstruct a literal *)
-
     val mk_clause : literal -> literal list -> clause
       (** Create a clause from a conclusion and a list of premises *)
 
-    val of_soft_clause : soft_clause -> clause
-
-    val open_clause : clause -> soft_clause
+    val open_clause : clause -> literal * literal list
       (** Deconstruct a clause *)
 
-    val is_var : int -> bool
+    val is_var : literal -> bool
       (** A variable is a negative int *)
+
+    val vars : literal -> literal Sequence.t
+      (** Iterate on variables of the literal *)
 
     val is_ground : literal -> bool
       (** Is the literal ground (a fact)? *)
@@ -91,8 +84,8 @@ module Logic : sig
     val hash_literal : literal -> int
       (** Hash the literal *)
 
-    val compare_literal : literal -> literal -> int
-      (** Arbitrary comparison of literals (lexicographic) *)
+    val body : clause -> literal Sequence.t
+      (** Body of the clause *)
 
     val check_safe : clause -> bool
       (** A datalog clause is safe iff all variables in its head also occur in its body *)

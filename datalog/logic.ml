@@ -32,15 +32,19 @@ module type S = sig
   type symbol
     (** Abstract type of symbols *)
 
-  type literal
-    (** A datalog atom, i.e. pred(arg_1, ..., arg_n). The first element of the
-        array is the predicate, then arguments follow *)
+  type literal =
+    | Var of int
+    | Apply of symbol * literal array
+    (** A datalog atom, i.e. pred(arg_1, ..., arg_n). Arguments can
+        themselves be literals *)
 
   type clause
     (** A datalog clause, i.e. head :- body_1, ..., body_n *)
 
-  type soft_lit = symbol * [`Var of int | `Symbol of symbol] list
-  type soft_clause = soft_lit * soft_lit list
+  val mk_apply : symbol -> literal list -> literal
+  val mk_apply_a : symbol -> literal array -> literal
+  val mk_const : symbol -> literal
+  val mk_var : int -> literal
 
   type subst
     (** A substitution maps variables to symbols *)
@@ -51,24 +55,10 @@ module type S = sig
 
   (** {3 Constructors and destructors} *)
 
-  val mk_literal : symbol -> [< `Var of int | `Symbol of symbol] list -> literal
-    (** Helper to build a literal. Arguments are either variables or symbols; if they
-        variables indexes *must* be negative (otherwise it will raise Invalid_argument *)
-
-  val of_soft_lit : soft_lit -> literal
-
-  val mk_literal_s : string -> [< `Var of int | `Symbol of string] list -> literal
-    (** Same as [mk_literal], but converts strings to symbols on-the-fly *)
-
-  val open_literal : literal -> soft_lit
-    (** Deconstruct a literal *)
-
   val mk_clause : literal -> literal list -> clause
     (** Create a clause from a conclusion and a list of premises *)
 
-  val of_soft_clause : soft_clause -> clause
-
-  val open_clause : clause -> soft_clause
+  val open_clause : clause -> literal * literal list
     (** Deconstruct a clause *)
 
   val is_var : int -> bool
@@ -222,181 +212,123 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
   type symbol = Symbol.t
     (** Abstract type of symbols *)
 
-  module SymbolHashtbl = Hashtbl.Make(Symbol)
+  type literal =
+    | Var of int
+    | Apply of symbol * literal array
+    (** A datalog atom, i.e. pred(arg_1, ..., arg_n). Arguments can
+        themselves be literals *)
 
-  (* bijective mapping int <-> symbols *)
-  let __i_to_s = Utils.IHashtbl.create 5
-  let __s_to_i = SymbolHashtbl.create 5
-  let __symbol_count = ref 0
+  let rec equal_lit l1 l2 = match l1, l2 with
+    | Var i, Var j -> i = j
+    | Apply (s1, args1), Apply (s2, args2) when Symbol.equal s1 s2 ->
+      equal_args args1 args2 0
+    | _ -> false
+  and equal_args l1 l2 i =
+    if Array.length l1 <> Array.length l2 then false
+    else if i = Array.length l1 then true
+    else equal_lit l1.(i) l2.(i) && equal_args l1 l2 (i+1)
 
-  (** Perform the operation in a locked context *)
-  let with_lock k =
-    let y = k () in
-    y
+  let rec hash_lit lit = match lit with
+    | Var i -> i
+    | Apply (s, args) ->
+      Array.fold_left (fun h arg -> (hash_lit arg) * 65599 + h) (Symbol.hash s) args
 
-  (** Convert a symbol to an integer *)
-  let s_to_i s =
-    try SymbolHashtbl.find __s_to_i s
-    with Not_found ->
-      let i = !__symbol_count in
-      incr __symbol_count;
-      SymbolHashtbl.replace __s_to_i s i;
-      Utils.IHashtbl.replace __i_to_s i s;
-      i
-
-  (** Convert an integer back to a symbol *)
-  let i_to_s i =
-    Utils.IHashtbl.find __i_to_s i
-
-  (** Forget about the symbol. If the corresponding int [i] it still used,
-      [get_symbol i] will fail with Not_found. *)
-  let rm_symbol s =
-    try
-      let i = SymbolHashtbl.find __s_to_i s in
-      Utils.IHashtbl.remove __i_to_s i;
-      SymbolHashtbl.remove __s_to_i s
-    with Not_found -> ()
-
-  type literal = int array
-    (** A datalog atom, i.e. pred(arg_1, ..., arg_n). The first element of the
-        array is the predicate, then arguments follow *)
+  (** Hashconsing on literals *)
+  module Hashcons = Weak.Make(struct
+    type t = literal
+    let equal l1 l2 = equal_lit l1 l2
+    let hash l = hash_lit l
+  end)
 
   type clause = literal array
     (** A datalog clause, i.e. head :- body_1, ..., body_n *)
 
-  type soft_lit = symbol * [`Var of int | `Symbol of symbol] list
-  type soft_clause = soft_lit * soft_lit list
+  let table = Hashcons.create 5003
+
+  let mk_apply_a head args =
+    Hashcons.find table (Apply (head, args))
+
+  let mk_apply head args =
+    let args = Array.of_list args in
+    mk_apply_a head args
 
   type subst =
     | SubstEmpty
-    | SubstBind of (int * int * int * int * subst)
-    (** A substitution is a map from (negative) ints (variables) with context
-        to ints with context (variable or symbol) *)
+    | SubstBind of (literal * int * literal * int * subst)
+    (** A substitution is a map from variables with context
+        to literals with context *)
 
   type 'a bind = ('a * int)
     (** A context in which to interpret variables in a literal or clause.
         The context is an offset that is implicitely applied to variables *)
 
-  (** Helper to build a literal. Arguments are either variables or symbols; if they
-      are variables, the int must be negative. *)
-  let mk_literal head args =
-    let head = s_to_i head in
-    let args = List.map
-      (function
-       | `Var i -> assert (i < 0); i
-       | `Symbol s -> s_to_i s)
-      args in
-    Array.of_list (head :: args)
-
-  let of_soft_lit sl = match sl with
-    | hd, args -> mk_literal hd args
-
-  (** Same as [mk_literal], but converts strings to symbols on-the-fly *)
-  let mk_literal_s head args =
-    let head = Symbol.of_string head in
-    let args = List.map
-      (function
-      | `Var i -> `Var i
-      | `Symbol s -> `Symbol (Symbol.of_string s))
-      args in
-    mk_literal head args
-
-  (** Deconstruct a literal *)
-  let open_literal literal =
-    let head = literal.(0) in
-    let head = i_to_s head in
-    let args = Array.to_list (Array.sub literal 1 (Array.length literal - 1)) in
-    let args = List.map
-      (fun i -> if i < 0 then `Var i else `Symbol (i_to_s i))
-      args in
-    head, args
-
   (** Create a clause from a conclusion and a list of premises *)
   let mk_clause head premises = Array.of_list (head :: premises)
 
-  let of_soft_clause sc = match sc with
-    | concl, premises ->
-      let concl = of_soft_lit concl in
-      let premises = List.map of_soft_lit premises in
-      mk_clause concl premises
-
   (** Deconstruct a clause *)
   let open_clause clause =
-    let head = clause.(0) in
-    let head = open_literal head in
-    let body = Array.to_list (Array.sub clause 1 (Array.length clause - 1)) in
-    let body = List.map open_literal body in
-    head, body
+    clause.(0), Array.to_list (Array.sub clause 1 (Array.length clause -1))
 
-  (** A variable is a negative int *)
-  let is_var x = x < 0
+  let is_var x =
+    match x with
+    | Var _ -> true
+    | Apply _ -> false
+
+  (** Iterate on variables of the literal *)
+  let vars lit =
+    let rec vars k lit = 
+      match lit with
+      | Var _ -> k lit
+      | Apply (_, args) -> Array.iter (fun arg -> vars k arg) args
+    in
+    Sequence.from_iter (fun k -> vars k lit)
 
   (** Is the literal ground (a fact)? *)
-  let is_ground t =
-    assert (not (is_var t.(0)));
-    let rec check t i =
-      if i = Array.length t then true
-      else (not (is_var t.(i))) && check t (i+1)
-    in
-    check t 1
+  let is_ground t = Sequence.is_empty (vars t)
 
   (** Number of subterms of the literal. Ex for p(a,b,c) it returns 3 *)
-  let arity t = Array.length t - 1
-
-  (** compare literals *)
-  let compare_literal = Utils.compare_ints
+  let arity t =
+    match t with
+    | Var _ -> 0
+    | Apply (_, args) -> Array.length args
 
   (** Are the literals equal? *)
-  let eq_literal t1 t2 = compare_literal t1 t2 = 0
+  let eq_literal t1 t2 = t1 == t2
 
   (** Hash the literal *)
-  let hash_literal t = Utils.hash_ints t
+  let hash_literal lit = hash_lit lit
 
-  (** A datalog clause is safe iff all variables in its head also occur in its body *)
+  let body clause =
+    Sequence.array_slice clause 1 (Array.length clause - 1)
+
+  (** A datalog clause is safe iff all variables in its head also occur
+      in its body *)
   let check_safe clause =
-    let rec check_head i =
-      if i = Array.length clause.(0) then true
-      else
-        let t = clause.(0).(i) in
-        if is_var t
-          then check_body t 1 && check_head (i+1)
-          else check_head (i+1)
-    and check_body var j =
-      if j = Array.length clause then false
-        else check_body_literal var clause.(j) 1 || check_body var (j+1)
-    and check_body_literal var literal k =
-      if k = Array.length literal then false
-      else if literal.(k) = var then true
-      else check_body_literal var literal (k+1)
-    in
-    check_head 1
+    Sequence.for_all
+      (fun v -> Sequence.exists
+        (fun v' -> v == v')
+        (Sequence.flatMap vars (body clause)))
+      (vars clause.(0))
 
   (** A fact is a ground clause with empty body *)
   let is_fact clause =
     Array.length clause = 1 && is_ground clause.(0)
 
-  let compare_clause r1 r2 =
-    let rec compare r1 r2 i =
-      if i = Array.length r1
-        then 0
-        else
-          let cmp = Utils.compare_ints r1.(i) r2.(i) in
-          if cmp <> 0 then cmp else compare r1 r2 (i+1)
-    in
-    if Array.length r1 <> Array.length r2
-      then Array.length r1 - Array.length r2
-      else compare r1 r2 0
-
-  (** Check whether clauses are (syntactically) equal *)
-  let eq_clause r1 r2 = compare_clause r1 r2 = 0
+  (** Syntactic equality of clauses *)
+  let eq_clause c1 c2 =
+    if Array.length c1 <> Array.length c2 then
+      Array.length c1 - Array.length c2
+    else
+      let rec lexico i =
+        if i = Array.length c1 then true
+        else eq_literal c1.(i) c2.(i) && lexico (i+1) in
+      lexico 0
 
   (** Hash the clause *)
-  let hash_clause r =
-    let h = ref 17 in
-    for i = 0 to Array.length r - 1 do
-      h := (!h + 65536) * hash_literal r.(i);
-    done;
-    abs !h
+  let hash_clause c =
+    Array.fold_left
+      (fun h lit -> (hash_lit lit) * 65599 + h)
+      0 c
 
   (** {3 Unification, matching and substitutions} *)
 
@@ -408,23 +340,18 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
 
   (** Offset to avoid collisions with the given clause *)
   let offset clause =
-    (* explore literals of the clause, looking for the lowest var *)
-    let rec fold_lit terms offset i = 
-      if i = Array.length terms then offset
-      else fold_lit terms (min offset terms.(i)) (i+1)
-    and fold_lits lits offset i =
-      if i = Array.length lits then offset
-      else fold_lits lits (fold_lit lits.(i) offset 1) (i+1)
-    in
-    let offset = fold_lits clause 0 0 in
-    (* lowest var - 1, no collision! *)
-    offset - 1
+    let offset = Sequence.max
+      ~lt:(fun v1 v2 -> match v1, v2 with
+            | Var i, Var j -> i < j
+            | _ -> assert false)
+      (Sequence.flatMap vars clause) in
+    offset + 1
 
   (** Find the binding for [var] in context [offset] *)
   let rec get_var subst var offset =
     match subst with
     | SubstBind (t1, o1, t2, o2, subst') ->
-      if t1 = var && o1 = offset
+      if t1 == var && o1 = offset
         then get_var subst t2 o2
         else get_var subst' var offset
     | SubstEmpty -> (var, offset)
@@ -435,6 +362,19 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
     if v = t && o_v = o_t
       then subst
       else SubstBind (v, o_v, t, o_t, subst)
+
+  (** Checks whether [v,o_v] occurs in [subst t,o_t] *)
+  let rec occur_check subst v o_v t o_t =
+    match t with
+    | Apply (_, args) ->
+      Sequence.exists (fun a -> occur_check subst v o_v a o_t)
+        (Sequence.of_array args)
+    | Var _ when v == t && o_v = o_t -> true
+    | Var _ ->
+      let t', o_t' = get_var subst t o_t in
+      if t == t' && o_t = o_t'
+        then false (* t not bound, and not equal to v *)
+        else occur_check subst v o_v t' o_t' (* apply subst *)
 
   (** [matching pattern l] matches [pattern] against [l]; variables in [l]
       cannot be bound. Raise UnifFailure if they do not match. *)
@@ -549,7 +489,7 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
 
   let pp_literal formatter t =
     (* symbol index (int) to string *)
-    let to_s s = with_lock (fun () -> Symbol.to_string (i_to_s s)) in
+    let to_s s = Symbol.to_string (i_to_s s) in
     if arity t = 0
       then Format.fprintf formatter "%s" (to_s t.(0))
       else begin
@@ -576,7 +516,7 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
       end
 
   let pp_subst formatter subst =
-    let to_s s = with_lock (fun () -> Symbol.to_string (i_to_s s)) in
+    let to_s s = Symbol.to_string (i_to_s s) in
     Format.fprintf formatter "@[{";
     let first = ref true in
     let rec iter subst = match subst with

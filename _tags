@@ -1,2 +1,3 @@
 <datalog>: include
+<containers>: include
 <datalog/*.cmx>: for-pack(Datalog)

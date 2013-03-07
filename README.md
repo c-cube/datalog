@@ -30,6 +30,7 @@ See the `LICENSE` file.
 
 You need OCaml >= 3.12 with ocamlbuild. Just type in the root directory:
 
+    $ git submodule update --init
     $ make
 
 Then, you can install the library and the command line tool, `datalog_cli`,

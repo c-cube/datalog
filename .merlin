@@ -1,4 +1,6 @@
-S datalog
 S .
+S datalog
+S containers
 B _build
 B _build/datalog/
+B _build/containers

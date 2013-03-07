@@ -2,3 +2,4 @@ _build
 .*.swp
 *.native
 *.docdir
+.session

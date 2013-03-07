@@ -16,13 +16,13 @@ OPTIONS ?= -classic-display
 
 all: prod
 
-prod:
+prod: $(SUBMODULES) 
 	ocamlbuild $(OPTIONS) -tag noassert $(TARGETS)
 
-debug:
+debug: $(SUBMODULES) 
 	ocamlbuild $(OPTIONS) -tag debug $(TARGETS)
 
-profile:
+profile: $(SUBMODULES) 
 	ocamlbuild $(OPTIONS) -tag profile $(TARGETS)
 
 clean:

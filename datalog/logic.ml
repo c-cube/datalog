@@ -205,9 +205,7 @@ module type SymbolType = sig
 end
 
 module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
-  (* ----------------------------------------------------------------------
-   * Literals and clauses
-   * ---------------------------------------------------------------------- *)
+  (** {2 Literals and clauses} *)
 
   type symbol = Symbol.t
     (** Abstract type of symbols *)
@@ -234,7 +232,7 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
       Array.fold_left (fun h arg -> (hash_lit arg) * 65599 + h) (Symbol.hash s) args
 
   (** Hashconsing on literals *)
-  module Hashcons = Weak.Make(struct
+  module Hashcons : Weak.S with type data = literal = Weak.Make(struct
     type t = literal
     let equal l1 l2 = equal_lit l1 l2
     let hash l = hash_lit l
@@ -245,12 +243,20 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
 
   let table = Hashcons.create 5003
 
+  (** {3 Constructors and destructors} *)
+
   let mk_apply_a head args =
     Hashcons.find table (Apply (head, args))
 
   let mk_apply head args =
     let args = Array.of_list args in
     mk_apply_a head args
+
+  let mk_const s =
+    mk_apply_a s [||]
+
+  let mk_var i =
+    Hashcons.find table (Var i)
 
   type subst =
     | SubstEmpty
@@ -292,6 +298,8 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
     | Var _ -> 0
     | Apply (_, args) -> Array.length args
 
+  (** {3 Comparisons} *)
+
   (** Are the literals equal? *)
   let eq_literal t1 t2 = t1 == t2
 
@@ -316,8 +324,7 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
 
   (** Syntactic equality of clauses *)
   let eq_clause c1 c2 =
-    if Array.length c1 <> Array.length c2 then
-      Array.length c1 - Array.length c2
+    if Array.length c1 <> Array.length c2 then false
     else
       let rec lexico i =
         if i = Array.length c1 then true
@@ -340,11 +347,12 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
 
   (** Offset to avoid collisions with the given clause *)
   let offset clause =
-    let offset = Sequence.max
-      ~lt:(fun v1 v2 -> match v1, v2 with
-            | Var i, Var j -> i < j
-            | _ -> assert false)
-      (Sequence.flatMap vars clause) in
+    let open Sequence.Infix in
+    let offset =
+      Sequence.of_array clause
+      |> Sequence.flatMap vars
+      |> Sequence.map (function | Var i -> i | Apply _ -> assert false)
+      |> fun seq -> Sequence.max ~lt:(fun x y -> x < y) seq 0 in
     offset + 1
 
   (** Find the binding for [var] in context [offset] *)
@@ -363,6 +371,14 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
       then subst
       else SubstBind (v, o_v, t, o_t, subst)
 
+  let subst_to_seq subst =
+    let rec iter k subst = match subst with
+    | SubstEmpty -> ()
+    | SubstBind (x, o_x, y, o_y, subst') ->
+      k (x, o_x, y, o_y); iter k subst'
+    in
+    Sequence.from_iter (fun k -> iter k subst)
+
   (** Checks whether [v,o_v] occurs in [subst t,o_t] *)
   let rec occur_check subst v o_v t o_t =
     match t with
@@ -379,106 +395,122 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
   (** [matching pattern l] matches [pattern] against [l]; variables in [l]
       cannot be bound. Raise UnifFailure if they do not match. *)
   let matching ?(subst=empty_subst) (l1, o1) (l2, o2) =
-    if l1.(0) <> l2.(0) || Array.length l1 <> Array.length l2
-    then raise UnifFailure
-    else
-      let rec match_pairs subst i =
-        if i = Array.length l1 then subst else
-        let t1, o1' = get_var subst l1.(i) o1
-        and t2, o2' = get_var subst l2.(i) o2 in
-        let subst' = match_pair subst t1 o1' t2 o2' in
-        match_pairs subst' (i+1)
-      and match_pair subst t1 o1' t2 o2' =
-        match t1, t2 with
-        | _ when t1 = t2 && (t1 >= 0 || o1' = o2') ->
-          subst (* same symbol or variable *)
-        | _ when t1 >= 0 && t2 >= 0 ->
-          raise UnifFailure (* incompatible symbols *)
-        | _ when t1 < 0 ->
-          bind_subst subst t1 o1' t2 o2' (* bind var *)
-        | _ ->
-          assert (t2 < 0 && t1 >= 0);
-          raise UnifFailure (* cannot bind t2 *)
-      in match_pairs subst 1
+    let rec matching subst l1 o1 l2 o2 =
+      let l1, o1 = if is_var l1 then get_var subst l1 o1 else l1, o1 in
+      let l2, o2 = if is_var l2 then get_var subst l2 o2 else l2, o2 in
+      match l1, l2 with
+      | _ when l1 == l2 && o1 = o2 -> subst
+      | Var i, _ ->
+        if occur_check subst l1 o1 l2 o2
+          then raise UnifFailure
+          else bind_subst subst l1 o1 l2 o2
+      | Apply _, Var _ -> raise UnifFailure
+      | Apply (s1, args1), Apply (s2, args2) ->
+        if Symbol.equal s1 s2 && Array.length args1 = Array.length args2
+          then match_array subst args1 o1 args2 o2 0
+          else raise UnifFailure
+    and match_array subst args1 o1 args2 o2 i =
+      if i = Array.length args1
+        then subst
+        else
+          let subst' = matching subst args1.(i) o1 args2.(i) o2 in
+          match_array subst' args1 o1 args2 o2 (i+1)
+    in matching subst l1 o1 l2 o2
 
   (** [unify l1 l2] tries to unify [l1] with [l2].
        Raise UnifFailure if they do not match. *)
   let unify ?(subst=empty_subst) (l1, o1) (l2, o2) =
-    if l1.(0) <> l2.(0) || Array.length l1 <> Array.length l2
-    then raise UnifFailure
-    else
-      let rec unif_pairs subst i =
-        if i = Array.length l1 then subst else
-        let t1, o1' = get_var subst l1.(i) o1
-        and t2, o2' = get_var subst l2.(i) o2 in
-        let subst' = unif_pair subst t1 o1' t2 o2' in
-        unif_pairs subst' (i+1)
-      and unif_pair subst t1 o1' t2 o2' =
-        match t1, t2 with
-        | _ when t1 = t2 && (t1 >= 0 || o1' = o2') ->
-          subst (* same symbol or variable *)
-        | _ when t1 >= 0 && t2 >= 0 ->
-          raise UnifFailure (* incompatible symbols *)
-        | _ when t1 < 0 ->
-          bind_subst subst t1 o1' t2 o2' (* bind var *)
-        | _ when t2 < 0 ->
-          bind_subst subst t2 o2' t1 o1' (* bind var *)
-        | _ -> assert false
-      in unif_pairs subst 1
+    let rec unif subst l1 o1 l2 o2 =
+      let l1, o1 = if is_var l1 then get_var subst l1 o1 else l1, o1 in
+      let l2, o2 = if is_var l2 then get_var subst l2 o2 else l2, o2 in
+      match l1, l2 with
+      | _ when l1 == l2 && o1 = o2 -> subst
+      | Var _, _ ->
+        if occur_check subst l1 o1 l2 o2
+          then raise UnifFailure
+          else bind_subst subst l1 o1 l2 o2
+      | Apply _, Var _ ->
+        if occur_check subst l2 o2 l1 o1
+          then raise UnifFailure
+          else bind_subst subst l2 o2 l1 o1
+      | Apply (s1, args1), Apply (s2, args2) ->
+        if Symbol.equal s1 s2 && Array.length args1 = Array.length args2
+          then unif_array subst args1 o1 args2 o2 0
+          else raise UnifFailure
+    and unif_array subst args1 o1 args2 o2 i =
+      if i = Array.length args1
+        then subst
+        else
+          let subst' = unif subst args1.(i) o1 args2.(i) o2 in
+          unif_array subst' args1 o1 args2 o2 (i+1)
+    in unif subst l1 o1 l2 o2
 
   (** If the literals are alpha equivalent, return the corresponding renaming *)
   let alpha_equiv ?(subst=empty_subst) (l1,o1) (l2,o2) =
-    if l1.(0) <> l2.(0) || Array.length l1 <> Array.length l2
-    then raise UnifFailure
-    else
-      let rec unif_pairs subst i =
-        if i = Array.length l1 then subst else
-        let t1, o1' = get_var subst l1.(i) o1
-        and t2, o2' = get_var subst l2.(i) o2 in
-        let subst' = unif_pair subst t1 o1' t2 o2' in
-        unif_pairs subst' (i+1)
-      and unif_pair subst t1 o1' t2 o2' =
-        match t1, t2 with
-        | _ when t1 = t2 && (t1 >= 0 || o1' = o2') ->
-          subst (* same symbol or variable *)
-        | _ when t1 < 0 && t2 < 0 ->
-          bind_subst subst t1 o1' t2 o2' (* bind var *)
-        | _ ->
-          raise UnifFailure (* incompatible symbols or vars *)
-      in unif_pairs subst 1
+    let rec unif subst l1 o1 l2 o2 =
+      let l1, o1 = if is_var l1 then get_var subst l1 o1 else l1, o1 in
+      let l2, o2 = if is_var l2 then get_var subst l2 o2 else l2, o2 in
+      match l1, l2 with
+      | Var _, Var _ ->
+        if occur_check subst l1 o1 l2 o2
+          then raise UnifFailure
+          else bind_subst subst l1 o1 l2 o2
+      | Apply _, Var _
+      | Var _, Apply _ -> raise UnifFailure
+      | Apply (s1, args1), Apply (s2, args2) ->
+        if Symbol.equal s1 s2 && Array.length args1 = Array.length args2
+          then unif_array subst args1 o1 args2 o2 0
+          else raise UnifFailure
+    and unif_array subst args1 o1 args2 o2 i =
+      if i = Array.length args1
+        then subst
+        else
+          let subst' = unif subst args1.(i) o1 args2.(i) o2 in
+          unif_array subst' args1 o1 args2 o2 (i+1)
+    in unif subst l1 o1 l2 o2
 
   (** shift literal by offset *)
-  let shift_lit lit offset =
+  let rec shift_lit lit offset =
     if offset = 0 then lit
-    else Array.map (fun t -> if is_var t then t+offset else t) lit
+    else match lit with
+      | Var i -> mk_var (i+offset)
+      | Apply (s, args) ->
+        mk_apply_a s (Array.map (fun lit -> shift_lit lit offset) args)
 
   let shift_clause c offset =
     if offset = 0 then c
     else Array.map (fun lit -> shift_lit lit offset) c
 
   (** Apply substitution to the literal *)
-  let subst_literal subst (lit,offset) =
+  let rec subst_literal subst (lit,offset) =
     if is_ground lit || (is_empty_subst subst && offset = 0) then lit
     else if is_empty_subst subst then shift_lit lit offset
-    else Array.map
-      (fun t ->
-        let t', o_t' = get_var subst t offset in
-        (* shift [t'] if [t'] is a var *)
-        if is_var t' then t' + o_t' else t')
-      lit
+    else match lit with
+      | Var _ ->
+        let lit', offset' = get_var subst lit offset in
+        if lit == lit' && offset = offset'
+          then lit
+          else subst_literal subst (lit', offset')
+      | Apply (s, args) ->
+        let args' = Array.map (fun lit -> subst_literal subst (lit, offset)) args in
+        mk_apply_a s args'
 
-  (** Apply substitution to the clause. TODO remove duplicate literals afterward *)
+  (** Apply substitution to the clause. *)
   let subst_clause subst (clause,offset) =
     if is_empty_subst subst && offset = 0 then clause
     else if is_empty_subst subst then shift_clause clause offset
-    else Array.map
-      (fun lit -> subst_literal subst (lit,offset))
-      clause
+    else
+      let open Sequence.Infix in
+      Sequence.of_array clause
+        |> Sequence.map (fun lit -> subst_literal subst (lit,offset))
+        |> Sequence.uniq ~eq:(==)
+        |> Sequence.to_list
+        |> Array.of_list
 
   (** Remove first body element of the clause, after substitution *)
   let remove_first_subst subst (clause,offset) =
     assert (Array.length clause > 1);
-    let a = Array.make (Array.length clause - 1) [||] in
+    let a = Array.make (Array.length clause - 1) clause.(0) in
     a.(0) <- subst_literal subst (clause.(0),offset);
     for i = 1 to Array.length clause - 2 do
       a.(i) <- subst_literal subst (clause.(i+1),offset);
@@ -487,58 +519,40 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
 
   (** {3 Pretty-printing} *)
 
-  let pp_literal formatter t =
-    (* symbol index (int) to string *)
-    let to_s s = Symbol.to_string (i_to_s s) in
-    if arity t = 0
-      then Format.fprintf formatter "%s" (to_s t.(0))
-      else begin
-        Format.fprintf formatter "%s(" (to_s t.(0));
-        for i = 1 to Array.length t - 1 do
-          (if i > 1 then Format.fprintf formatter ", ");
-          if is_var t.(i)
-            then Format.fprintf formatter "X%d" (abs t.(i))
-            else Format.fprintf formatter "%s" (to_s t.(i));
-        done;
-        Format.fprintf formatter ")";
-      end
+  let rec pp_literal formatter t =
+    match t with
+    | Var i -> Format.fprintf formatter "X%d" i
+    | Apply (s, [||]) ->
+      Format.fprintf formatter "%s" (Symbol.to_string s)
+    | Apply (s, args) ->
+      Format.fprintf formatter "%s(%a)" (Symbol.to_string s)
+        (Sequence.pp_seq ~sep:", " pp_literal) (Sequence.of_array args)
 
   let pp_clause formatter clause =
-    if Array.length clause = 1
+    let n = Array.length clause in
+    if n = 1
       then Format.fprintf formatter "%a." pp_literal clause.(0)
-      else begin
-        Format.fprintf formatter "%a :-@ "  pp_literal clause.(0);
-        for i = 1 to Array.length clause - 1 do
-          (if i > 1 then Format.fprintf formatter ",@ ");
-          Format.fprintf formatter "%a" pp_literal clause.(i);
-        done;
-        Format.fprintf formatter ".";
-      end
+      else
+        Format.fprintf formatter "%a :-@ %a." pp_literal clause.(0)
+          (Sequence.pp_seq ~sep:", " pp_literal)
+          (Sequence.array_slice clause 1 (n-1))
 
   let pp_subst formatter subst =
-    let to_s s = Symbol.to_string (i_to_s s) in
-    Format.fprintf formatter "@[{";
-    let first = ref true in
-    let rec iter subst = match subst with
-    | SubstEmpty -> ()
-    | SubstBind (v,o_v,t,o_t,subst') ->
-      (if !first then first := false else Format.fprintf formatter ", ");
-      Format.fprintf formatter "X%d[%d] -> %s[%d]@;" (abs v) o_v (to_s t) o_t;
-      iter subst'
+    let pp_4 formatter (x,o_x,y,o_y) =
+      Format.fprintf formatter "%a[%d] -> %a[%d]@;"
+        pp_literal x o_x pp_literal y o_y
     in
-    iter subst;
-    Format.fprintf formatter "}@]";
+    Format.fprintf formatter "@[{%a}@]"
+      (Sequence.pp_seq pp_4) (subst_to_seq subst)
 
-  (* ----------------------------------------------------------------------
-   * Generalization/Specialization index on literals
-   * ---------------------------------------------------------------------- *)
+  (** {2 Generalization/Specialization index on literals} *)
 
-  (** Hashtable on literals *)
-  module LitHashtbl = Hashtbl.Make(
+  (** Persistent Hashtable on literals *)
+  module LitHashtbl = FHashtbl.Tree(
     struct
       type t = literal
       let equal = eq_literal
-      let hash = Utils.hash_ints
+      let hash = hash_literal
     end)
 
   (** Type for an indexing structure on literals *)

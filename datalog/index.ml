@@ -71,6 +71,7 @@ end
 
 (** {2 Implementation using discrimination trees} *)
 module Make(L : Logic.S) : S with module Logic = L = struct
+  module Logic = L
 
   type literal = L.literal
   type subst = L.subst
@@ -79,6 +80,10 @@ module Make(L : Logic.S) : S with module Logic = L = struct
   (** A set of literal+indexed data *)
   module DataSet = struct
     type 'a t = (literal * 'a) list
+
+    let is_empty = function
+      | [] -> true
+      | _ -> false
 
     let add set lit data : 'a t = (lit, data) :: set
 
@@ -93,6 +98,7 @@ module Make(L : Logic.S) : S with module Logic = L = struct
   (** Elements of a flat-literal (labels edges of the discrimination tree) *)
   type flat_char =
     | FlatVar
+    | FlatEnd (* end of literal *)
     | FlatSymbol of symbol * int  (* symbol+arity *)
   (** Flat literal *)
   and flat_lit = flat_char array
@@ -123,9 +129,10 @@ module Make(L : Logic.S) : S with module Logic = L = struct
     in
     (* function that flattens a literal (allocates, etc.) *)
     let flatten lit =
-      let len = lit_len lit in
-      let a = Array.make len FlatVar in
+      let len = lit_len lit + 1 in
+      let a = Array.make len FlatEnd in
       ignore (flatten a lit 0);
+      assert (a.(len) = FlatEnd);
       a
     in
     (* caching *)
@@ -134,12 +141,14 @@ module Make(L : Logic.S) : S with module Logic = L = struct
 
   let eq_flat_char f1 f2 = match f1, f2 with
     | FlatVar, FlatVar -> true
+    | FlatEnd, FlatEnd -> true
     | FlatSymbol (s1, ar1), FlatSymbol (s2, ar2) ->
       ar1 = ar2 && L.Symbol.equal s1 s2
     | _ -> false
 
   let hash_flat_char f = match f with
     | FlatVar -> 13
+    | FlatEnd -> 17
     | FlatSymbol (s, arity) -> arity lxor L.Symbol.hash s
 
   (** Persistent hashtable on flat characters *)
@@ -157,6 +166,11 @@ module Make(L : Logic.S) : S with module Logic = L = struct
   (** Empty trie *)
   let empty () = Node (FlatHashtbl.empty 6)
 
+  (** Check whether there are no elements in the index *)
+  let is_empty t = match t with
+    | Node h -> FlatHashtbl.size h = 0
+    | Leaf set -> DataSet.is_empty set
+
   (** Add the element indexed by the literal *)
   let add t literal data =
     let flat = flatten_lit literal in
@@ -168,12 +182,12 @@ module Make(L : Logic.S) : S with module Logic = L = struct
         Leaf (DataSet.add set literal data)
       | Node h ->
         let subtrie =
-          try FlatHashtbl.find h flat.(i)
-          with Not_found -> empty ()  (* create subtrie *)
+          (try FlatHashtbl.find h flat.(i)
+          with Not_found -> empty ())  (* create subtrie *)
         in
         (* insert in subtrie *)
         let subtrie' = insert subtrie (i+1) in
-        FlatHashtbl.replace h flat.(i) subtrie'
+        Node (FlatHashtbl.replace h flat.(i) subtrie')
     in
     insert t 0
 
@@ -187,146 +201,125 @@ module Make(L : Logic.S) : S with module Logic = L = struct
         assert (i = Array.length flat);
         Leaf (DataSet.remove ~eq set literal data)
       | Node h ->
-        try
+        begin try
           let subtrie = FlatHashtbl.find h flat.(i) in
           (* remove in subtrie *)
           let subtrie' = remove subtrie (i+1) in
-          FlatHashtbl.replace h flat.(i) subtrie'
+          Node (FlatHashtbl.replace h flat.(i) subtrie')
         with Not_found -> t  (* not present *)
+        end
     in
     remove t 0
 
-  (** Fold on generalizations of given ground literal *)
+  (** Fold on generalizations of given literal *)
   let retrieve_generalizations k acc (t,o_t) (literal,o_lit) =
     let flat = flatten_lit literal in
-    (* search in subtrie [t], with cursor at [i]-th argument of [literal] *)
-    let rec search t i acc = match t, i with
-    | Node (set, _), i when i = len ->
-      DataSet.fold
-        (fun (lit',elt) acc ->
-          try
-            let subst = matching (lit',o_t) (literal,o_lit) in
-            k acc lit' elt subst
-          with UnifFailure -> acc)
-        !set acc
-    | Node (_, subtries), i ->
-      if is_var literal.(i)
-        then try_with subtries acc (-1) i
-        else
-          let acc' = try_with subtries acc (-1) i in
-          try_with subtries acc' literal.(i) i
-    (* try to search in the subtree annotated with given symbol/var *)
-    and try_with subtries acc sym i =
-      try let t' = Utils.IHashtbl.find subtries sym in
-          search t' (i+1) acc
-      with Not_found -> acc
+    (* fold over the tree *)
+    let rec fold acc t i =
+      match t, flat.(i) with
+      | Leaf set, FlatEnd ->
+        DataSet.fold
+          (fun acc lit data -> 
+            try
+              let subst = L.matching (lit,o_t) (literal,o_lit) in
+              k acc lit data subst
+            with L.UnifFailure -> acc)
+          acc set
+      | Node h, FlatVar ->
+        (try fold acc (FlatHashtbl.find h FlatVar) (i+1) with Not_found -> acc)
+      | Node h, ((FlatSymbol _) as flat_char) ->
+        (* follow both '*' and s *)
+        let acc' = (try fold acc (FlatHashtbl.find h flat_char) (i+1) with Not_found -> acc) in
+        (try fold acc' (FlatHashtbl.find h FlatVar) (i+1) with Not_found -> acc')
+      | Leaf _, _ -> assert false
+      | Node _, FlatEnd -> assert false
     in
-    search t 0 acc
+    fold acc t 0
 
   (** Fold on specializations of given literal *)
   let retrieve_specializations k acc (t,o_t) (literal,o_lit) =
-    let len = Array.length literal in
-    (* search in subtrie [t], with cursor at [i]-th argument of [literal] *)
-    let rec search t i acc = match t, i with
-    | Node (set, _), i when i = len ->
-      DataSet.fold
-        (fun (lit',elt) acc ->
-          try
-            let subst = matching (literal,o_lit) (lit',o_t) in
-            k acc lit' elt subst
-          with UnifFailure -> acc)
-        !set acc
-    | Node (_, subtries), i ->
-      if is_var literal.(i)
-        then  (* fold on all subtries *)
-          Utils.IHashtbl.fold
-            (fun _ subtrie acc -> search subtrie (i+1) acc)
-            subtries acc
-        else try_with subtries acc literal.(i) i
-    (* try to search in the subtree annotated with given symbol/var *)
-    and try_with subtries acc sym i =
-      try let t' = Utils.IHashtbl.find subtries sym in
-          search t' (i+1) acc
-      with Not_found -> acc
+    let flat = flatten_lit literal in
+    (* fold over the tree *)
+    let rec fold acc t i =
+      match t, flat.(i) with
+      | Leaf set, FlatEnd ->
+        DataSet.fold
+          (fun acc lit data -> 
+            try
+              let subst = L.matching (literal,o_lit) (lit,o_t)in
+              k acc lit data subst
+            with L.UnifFailure -> acc)
+          acc set
+      | Node h, FlatVar ->
+        (* follow every path *)
+        FlatHashtbl.fold (fun acc _ t' -> fold acc t' (i+1)) acc h
+      | Node h, ((FlatSymbol _) as flat_char) ->
+        (* follow symbol *)
+        (try fold acc (FlatHashtbl.find h flat_char) (i+1) with Not_found -> acc)
+      | Leaf _, _ -> assert false
+      | Node _, FlatEnd -> assert false
     in
-    search t 0 acc
+    fold acc t 0
 
   (** Fold on content that is unifiable with given literal *)
   let retrieve_unify k acc (t,o_t) (literal, o_lit) =
-    let len = Array.length literal in
-    (* search in subtrie [t], with cursor at [i]-th argument of [literal] *)
-    let rec search t i acc = match t, i with
-    | Node (set, _), i when i = len ->
-      DataSet.fold
-        (fun (lit',elt) acc ->
-          try
-            let subst = unify (literal,o_lit) (lit',o_t) in
-            k acc lit' elt subst
-          with UnifFailure -> acc)
-        !set acc
-    | Node (_, subtries), i ->
-      if is_var literal.(i)
-        then  (* fold on all subtries *)
-          Utils.IHashtbl.fold
-            (fun _ subtrie acc -> search subtrie (i+1) acc)
-            subtries acc
-        else (* try both subtrie with same symbol, and subtrie with variable *)
-          let acc' = try_with subtries acc literal.(i) i in
-          try_with subtries acc' (-1) i
-    (* try to search in the subtree annotated with given symbol/var *)
-    and try_with subtries acc sym i =
-      try let t' = Utils.IHashtbl.find subtries sym in
-          search t' (i+1) acc
-      with Not_found -> acc
+    let flat = flatten_lit literal in
+    (* fold over the tree *)
+    let rec fold acc t i =
+      match t, flat.(i) with
+      | Leaf set, FlatEnd ->
+        DataSet.fold
+          (fun acc lit data -> 
+            try
+              let subst = L.unify (literal,o_lit) (lit,o_t)in
+              k acc lit data subst
+            with L.UnifFailure -> acc)
+          acc set
+      | Node h, FlatVar ->
+        (* follow every path *)
+        FlatHashtbl.fold (fun acc _ t' -> fold acc t' (i+1)) acc h
+      | Node h, ((FlatSymbol _) as flat_char) ->
+        (* follow symbol and '*' *)
+        let acc' = (try fold acc (FlatHashtbl.find h flat_char) (i+1) with Not_found -> acc) in
+        (try fold acc' (FlatHashtbl.find h FlatVar) (i+1) with Not_found -> acc')
+      | Leaf _, _ -> assert false
+      | Node _, FlatEnd -> assert false
     in
-    search t 0 acc
+    fold acc t 0
 
   (** Fold on content that is unifiable with given literal *)
   let retrieve_renaming k acc (t,o_t) (literal, o_lit) =
-    let len = Array.length literal in
-    (* search in subtrie [t], with cursor at [i]-th argument of [literal] *)
-    let rec search t i acc = match t, i with
-    | Node (set, _), i when i = len ->
-      DataSet.fold
-        (fun (lit',elt) acc ->
-          try
-            let subst = alpha_equiv (literal,o_lit) (lit',o_t) in
-            k acc lit' elt subst
-          with UnifFailure -> acc)
-        !set acc
-    | Node (_, subtries), i ->
-      let sym = if is_var literal.(i) then (-1) else literal.(i) in
-      try let t' = Utils.IHashtbl.find subtries sym in
-          search t' (i+1) acc
-      with Not_found -> acc
+    let flat = flatten_lit literal in
+    (* fold over the tree *)
+    let rec fold acc t i =
+      match t, flat.(i) with
+      | Leaf set, FlatEnd ->
+        DataSet.fold
+          (fun acc lit data -> 
+            try
+              let subst = L.alpha_equiv (literal,o_lit) (lit,o_t)in
+              k acc lit data subst
+            with L.UnifFailure -> acc)
+          acc set
+      | Node h, FlatVar ->
+        (* follow '*' *)
+        (try fold acc (FlatHashtbl.find h FlatVar) (i+1) with Not_found -> acc)
+      | Node h, ((FlatSymbol _) as flat_char) ->
+        (* follow symbol *)
+        (try fold acc (FlatHashtbl.find h flat_char) (i+1) with Not_found -> acc)
+      | Leaf _, _ -> assert false
+      | Node _, FlatEnd -> assert false
     in
-    search t 0 acc
+    fold acc t 0
 
   (** Fold on all indexed elements *)
   let rec fold k acc t = match t with
-    | Node (set, subtries) ->
-      (* fold on elements at this point *)
-      let acc = DataSet.fold
-        (fun (lit,elt) acc -> k acc lit elt)
-        !set acc in
-      (* fold on subtries *)
-      Utils.IHashtbl.fold
-        (fun _ subtrie acc -> fold k acc subtrie)
-        subtries acc
-
-  (** Check whether the property is true for all subtries *)
-  let for_all p subtries =
-    try
-      Utils.IHashtbl.iter
-        (fun _ t' -> if not (p t') then raise Exit)
-      subtries;
-      true
-    with Exit -> false
-
-  (** Check whether there are no elements in the index *)
-  let rec is_empty t = match t with
-    | Node (set, subtries) ->
-      DataSet.cardinal !set = 0 && for_all is_empty subtries
+    | Leaf set ->
+      DataSet.fold
+        (fun acc lit data -> k acc lit data)
+        acc set
+    | Node h ->
+      FlatHashtbl.fold (fun acc _ t' -> fold k acc t') acc h
 
   (** Number of elements *)
   let size t = fold (fun i _ _ -> i + 1) 0 t

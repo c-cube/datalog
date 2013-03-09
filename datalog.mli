@@ -23,16 +23,26 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 *)
 
-(** {2 Interface file} *)
+(** {1 Interface of Datalog} *)
 
-(** Main module, that exposes datatypes for logic literals and clauses,
-    functions to manipulate them, and functions to compute the fixpoint
-    of a set of clauses *)
+(** {2 Logic types: literals and clauses, substitutions and unification} *)
 module Logic : sig
+  (** Signature for a symbol type. It must be hashable, comparable and
+      in bijection with strings *)
+  module type SymbolType = sig
+    type t
+    val equal : t -> t -> bool
+    val hash : t -> int
+    val to_string : t -> string
+    val of_string : string -> t
+  end
+
   module type S = sig
     (** {2 Literals and clauses} *)
 
-    type symbol
+    module Symbol : SymbolType
+
+    type symbol = Symbol.t
       (** Abstract type of symbols *)
 
     type literal =
@@ -93,9 +103,6 @@ module Logic : sig
     val is_fact : clause -> bool
       (** A fact is a ground clause with empty body *)
 
-    val compare_clause : clause -> clause -> int
-      (** Lexicographic comparison of clauses *)
-
     val eq_clause : clause -> clause -> bool
       (** Check whether clauses are (syntactically) equal *)
 
@@ -142,97 +149,159 @@ module Logic : sig
     val pp_subst : Format.formatter -> subst -> unit
       (** Pretty print the substitution *)
 
-    (** {2 The Datalog unit resolution algorithm} *)
+    (** {3 Utils} *)
+
+    module ClauseHashtbl : FHashtbl.S with type key = clause
+  end
+
+  (** Build a Datalog module *)
+  module Make(Symbol : SymbolType) : S with module Symbol = Symbol
+
+  module DefaultSymbol : SymbolType with type t = string
+
+  (** Default literal base, where symbols are just strings.
+      No locking. *)
+  module Default : S with module Symbol = DefaultSymbol
+end
+
+(** {2 Term indexing} *)
+module Index : sig
+  module type S = sig
+    type 'a t
+
+    module Logic : Logic.S
+
+    type literal = Logic.literal
+    type subst = Logic.subst
+
+    val empty : unit -> 'a t
+      (** Empty index. *)
+
+    val is_empty : _ t -> bool
+      (** Is the index empty? *)
+
+    val add : 'a t -> literal -> 'a -> 'a t
+      (** Add a value, indexed by the literal, to the index *)
+
+    val remove : ?eq:('a -> 'a -> bool) -> 'a t -> literal -> 'a -> 'a t
+      (** Remove a value indexed by some literal *)
+
+    val retrieve_generalizations : ('b -> literal -> 'a -> subst -> 'b) -> 'b ->
+                                   'a t Logic.bind -> literal Logic.bind -> 'b
+      (** Fold on generalizations of given literal *)
+
+    val retrieve_specializations : ('b -> literal -> 'a -> subst -> 'b) -> 'b ->
+                                   'a t Logic.bind -> literal Logic.bind -> 'b
+      (** Fold on specializations of given literal *)
+
+    val retrieve_unify : ('b -> literal -> 'a -> subst -> 'b) -> 'b ->
+                         'a t Logic.bind -> literal Logic.bind -> 'b
+      (** Fold on content that is unifiable with given literal *)
+
+    val retrieve_renaming : ('b -> literal -> 'a -> subst -> 'b) -> 'b ->
+                         'a t Logic.bind -> literal Logic.bind -> 'b
+      (** Fold on elements that are alpha-equivalent to given literal *)
+
+    val fold : ('b -> literal -> 'a -> 'b) -> 'b -> 'a t -> 'b
+      (** Fold on all indexed elements *)
+
+    val size : _ t -> int
+      (** Number of indexed elements (linear time) *)
+  end
+
+  module Make(L : Logic.S) : S with module Logic = L
+end
+
+(** {2 A Datalog database, i.e. a set of clauses closed under the application
+       of non-unit clauses} *)
+module DB : sig
+  module type S = sig
+    module Logic : Logic.S
+
+    type literal = Logic.literal
+
+    type clause = Logic.clause
+
+    type t
+      (** The type for a database of facts and clauses, with
+          incremental fixpoint computation *)
 
     exception UnsafeClause
-
-    type db
-      (** A database of facts and clauses, with incremental fixpoint computation *)
 
     type explanation =
       | Axiom
       | Resolution of clause * literal
       (** Explanation for a clause or fact *)
 
-    val db_create : unit -> db
-      (** Create a DB *)
+    type result =
+      | NewFact of literal
+      | NewGoal of literal
+      | NewRule of clause
 
-    val db_mem : db -> clause -> bool
+    val empty : t
+      (** Empty database *)
+
+    val mem : t -> clause -> bool
       (** Is the clause member of the DB? *)
 
-    val db_add : db -> clause -> unit
+    val add : t -> clause -> t * result list
       (** Add the clause/fact to the DB as an axiom, updating fixpoint.
+          It returns the list of deduced new results.
           UnsafeRule will be raised if the rule is not safe (see {!check_safe}) *)
 
-    val db_add_fact : db -> literal -> unit
+    val add_fact : t -> literal -> t * result list
       (** Add a fact (ground unit clause) *)
 
-    val db_goal : db -> literal -> unit
+    val add_goal : t -> literal -> t * result list
       (** Add a goal to the DB. The goal is used to trigger backward chaining
           (calling goal handlers that could help solve the goal) *)
 
-    val db_match : db -> literal -> (literal bind -> subst -> unit) -> unit
+    val match_with : t -> literal ->
+                       (literal Logic.bind -> Logic.subst -> unit) -> unit
       (** match the given literal with facts of the DB, calling the handler on
           each fact that match (with the corresponding substitution) *)
 
-    val db_size : db -> int
+    val db_size : t -> int
       (** Size of the DB *)
 
-    val db_fold : ('a -> clause -> 'a) -> 'a -> db -> 'a
+    val fold : ('a -> clause -> 'a) -> 'a -> t -> 'a
       (** Fold on all clauses in the current DB (including fixpoint) *)
 
-    type fact_handler = literal -> unit
-    type goal_handler = literal -> unit
-
-    val db_subscribe_fact : db -> symbol -> fact_handler -> unit
-    val db_subscribe_goal : db -> goal_handler -> unit
-
-    val db_goals : db -> (literal -> unit) -> unit
+    val goals : t -> literal Sequence.t
       (** Iterate on all current goals *)
 
-    val db_explain : db -> literal -> literal list
-      (** Explain the given fact by returning a list of facts that imply it
+    val support : t -> literal -> literal list
+      (** Explain the given fact by returning a set of facts that imply it
           under the current clauses, or raise Not_found *)
 
-    val db_premises : db -> literal -> clause * literal list
+    val premises : t -> literal -> clause * literal list
       (** Immediate premises of the fact (ie the facts that resolved with
           a clause to give the literal), plus the clause that has been used. *)
 
-    val db_explanations : db -> clause -> explanation list
+    val explanations : t -> clause -> explanation Sequence.t
       (** Get all the explanations that explain why this clause is true *)
   end
-
-  (** Signature for a symbol type. It must be hashable, comparable and
-      in bijection with strings *)
-  module type SymbolType = sig
-    include Hashtbl.HashedType
-    val to_string : t -> string
-    val of_string : string -> t
-  end
-
-  (** Build a Datalog module *)
-  module Make(Symbol : SymbolType) : S with type symbol = Symbol.t
-
-  (** Default literal base, where symbols are just strings.
-      No locking. *)
-  module Default : S with type symbol = string
+  
+  module Make(L : Logic.S) : S with module Logic = L
 
   val version : string
-    (** Version of the library *)
 end
 
-(** Parser for Datalog files (syntax is a subset of prolog) *)
+(** {2 Parser for Datalog files (syntax is a subset of prolog)} *)
 module Parser : sig
   type token
+  
   val parse_literal :
     (Lexing.lexbuf  -> token) -> Lexing.lexbuf -> Logic.Default.literal
+  
   val parse_clause :
     (Lexing.lexbuf  -> token) -> Lexing.lexbuf -> Logic.Default.clause
+  
   val parse_file :
     (Lexing.lexbuf  -> token) -> Lexing.lexbuf -> Logic.Default.clause list
 end
 
-(** Lexer for parsing Datalog files *)
+(** {2 Lexer for parsing Datalog files} *)
 module Lexer : sig
   val token : Lexing.lexbuf -> Parser.token
 end

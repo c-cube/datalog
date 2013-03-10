@@ -77,7 +77,9 @@ module Make(L : Logic.S) : S with module Logic = L = struct
   type subst = L.subst
   type symbol = L.Symbol.t
 
-  (** A set of literal+indexed data *)
+  (** A set of literal+indexed data.
+      TODO: gather data per-literal, so that only one unification/matching
+            per literal is done. *)
   module DataSet = struct
     type 'a t = (literal * 'a) list
 
@@ -90,6 +92,17 @@ module Make(L : Logic.S) : S with module Logic = L = struct
     let remove ?(eq=(=)) set lit data =
       List.filter (fun (lit', data') ->
         not (lit == lit' && eq data data')) set
+
+    let flat_map set lit f =
+      let rec loop acc set = match set with
+      | [] -> acc
+      | (lit', x)::set' when lit == lit' ->
+        (* transform value associated to the literal *)
+        let xs = List.map (fun y -> lit, y) (f x) in
+        loop (xs @ acc) set'
+      | (lit', x)::set' ->
+        loop ((lit', x) :: acc) set'
+      in loop [] set
 
     let fold f acc set =
       List.fold_left (fun acc (lit, data) -> f acc lit data) acc set
@@ -205,11 +218,38 @@ module Make(L : Logic.S) : S with module Logic = L = struct
           let subtrie = FlatHashtbl.find h flat.(i) in
           (* remove in subtrie *)
           let subtrie' = remove subtrie (i+1) in
-          Node (FlatHashtbl.replace h flat.(i) subtrie')
+          (* replace subtrie, unless it is empty (in which case delete it) *)
+          if is_empty subtrie'
+            then Node (FlatHashtbl.remove h flat.(i))
+            else Node (FlatHashtbl.replace h flat.(i) subtrie')
         with Not_found -> t  (* not present *)
         end
     in
     remove t 0
+
+  (** Map every value associated to the given literal, to a (possibly
+      empty) list of values. *)
+  let flat_map t lit f =
+    let flat = flatten_lit lit in
+    (* recursive deletion *)
+    let rec recurse t i =
+      match t with
+      | Leaf set ->
+        let set' = DataSet.flat_map set lit f in
+        Leaf set'
+      | Node h ->
+        begin try
+          let subtrie = FlatHashtbl.find h flat.(i) in
+          (* remove in subtrie *)
+          let subtrie' = recurse subtrie (i+1) in
+          (* replace subtrie, unless it is empty (in which case delete it) *)
+          if is_empty subtrie'
+            then Node (FlatHashtbl.remove h flat.(i))
+            else Node (FlatHashtbl.replace h flat.(i) subtrie')
+        with Not_found -> t  (* not present *)
+        end
+    in
+    recurse t 0
 
   (** Fold on generalizations of given literal *)
   let retrieve_generalizations k acc (t,o_t) (literal,o_lit) =

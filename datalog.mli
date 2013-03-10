@@ -183,6 +183,10 @@ module Index : sig
     val add : 'a t -> literal -> 'a -> 'a t
       (** Add a value, indexed by the literal, to the index *)
 
+    val flat_map : 'a t -> literal -> ('a -> 'a list) -> 'a t
+      (** Map every value associated to the given literal, to a (possibly
+          empty) list of values. *)
+
     val remove : ?eq:('a -> 'a -> bool) -> 'a t -> literal -> 'a -> 'a t
       (** Remove a value indexed by some literal *)
 

@@ -44,13 +44,14 @@ module type S = sig
   type symbol = Symbol.t
     (** Abstract type of symbols *)
 
-  type literal =
+  type literal = private
     | Var of int
     | Apply of symbol * literal array
     (** A datalog atom, i.e. pred(arg_1, ..., arg_n). Arguments can
         themselves be literals *)
 
-  type clause
+  type clause = private
+    | Clause of literal * literal list
     (** A datalog clause, i.e. head :- body_1, ..., body_n *)
 
   val mk_apply : symbol -> literal list -> literal
@@ -69,9 +70,6 @@ module type S = sig
 
   val mk_clause : literal -> literal list -> clause
     (** Create a clause from a conclusion and a list of premises *)
-
-  val open_clause : clause -> literal * literal list
-    (** Deconstruct a clause *)
 
   val is_var : literal -> bool
     (** A variable is a negative int *)
@@ -188,10 +186,11 @@ module Make(Symbol : SymbolType) = struct
     let hash l = hash_lit l
   end)
 
-  type clause = literal array
+  type clause =
+    | Clause of literal * literal list
     (** A datalog clause, i.e. head :- body_1, ..., body_n *)
 
-  let table = Hashcons.create 5003
+  let table = Hashcons.create 5003 (* hashconsing for literals *)
 
   (** {3 Constructors and destructors} *)
 
@@ -219,11 +218,7 @@ module Make(Symbol : SymbolType) = struct
         The context is an offset that is implicitely applied to variables *)
 
   (** Create a clause from a conclusion and a list of premises *)
-  let mk_clause head premises = Array.of_list (head :: premises)
-
-  (** Deconstruct a clause *)
-  let open_clause clause =
-    clause.(0), Array.to_list (Array.sub clause 1 (Array.length clause -1))
+  let mk_clause head premises = Clause (head, premises)
 
   let is_var x =
     match x with
@@ -243,8 +238,7 @@ module Make(Symbol : SymbolType) = struct
   let is_ground t = Sequence.is_empty (vars t)
 
   (** Number of subterms of the literal. Ex for p(a,b,c) it returns 3 *)
-  let arity t =
-    match t with
+  let arity t = match t with
     | Var _ -> 0
     | Apply (_, args) -> Array.length args
 
@@ -256,8 +250,18 @@ module Make(Symbol : SymbolType) = struct
   (** Hash the literal *)
   let hash_literal lit = hash_lit lit
 
+  let conclusion clause =
+    match clause with
+    | Clause (head, _) -> head
+
   let body clause =
-    Sequence.array_slice clause 1 (Array.length clause - 1)
+    match clause with
+    | Clause (_, body) -> Sequence.of_list body
+
+  let all_lits clause = match clause with
+    | Clause (head, body) ->
+    Sequence.from_iter (fun k ->
+      k head; List.iter k body)
 
   (** A datalog clause is safe iff all variables in its head also occur
       in its body *)
@@ -266,26 +270,24 @@ module Make(Symbol : SymbolType) = struct
       (fun v -> Sequence.exists
         (fun v' -> v == v')
         (Sequence.flatMap vars (body clause)))
-      (vars clause.(0))
+      (vars (conclusion clause))
 
   (** A fact is a ground clause with empty body *)
   let is_fact clause =
-    Array.length clause = 1 && is_ground clause.(0)
+    Sequence.is_empty (body clause) && is_ground (conclusion clause)
 
   (** Syntactic equality of clauses *)
-  let eq_clause c1 c2 =
-    if Array.length c1 <> Array.length c2 then false
-    else
-      let rec lexico i =
-        if i = Array.length c1 then true
-        else eq_literal c1.(i) c2.(i) && lexico (i+1) in
-      lexico 0
+  let eq_clause c1 c2 = match c1, c2 with
+    | Clause (concl1, body1), Clause (concl2, body2) ->
+      eq_literal concl1 concl2 &&
+      try List.for_all2 eq_literal body1 body2 with Invalid_argument _ -> false
 
   (** Hash the clause *)
-  let hash_clause c =
-    Array.fold_left
-      (fun h lit -> (hash_lit lit) * 65599 + h)
-      0 c
+  let hash_clause c = match c with
+    | Clause (head, body) ->
+      List.fold_left
+        (fun h lit -> (hash_lit lit) * 65599 + h)
+        (hash_lit head) body
 
   (** {3 Unification, matching and substitutions} *)
 
@@ -299,7 +301,7 @@ module Make(Symbol : SymbolType) = struct
   let offset clause =
     let open Sequence.Infix in
     let offset =
-      Sequence.of_array clause
+      all_lits clause
       |> Sequence.flatMap vars
       |> Sequence.map (function | Var i -> i | Apply _ -> assert false)
       |> fun seq -> Sequence.max ~lt:(fun x y -> x < y) seq 0 in
@@ -429,7 +431,10 @@ module Make(Symbol : SymbolType) = struct
 
   let shift_clause c offset =
     if offset = 0 then c
-    else Array.map (fun lit -> shift_lit lit offset) c
+    else match c with
+      | Clause (head, body) ->
+        let body' = List.map (fun lit -> shift_lit lit offset) body in
+        mk_clause (shift_lit head offset) body'
 
   (** Apply substitution to the literal *)
   let rec subst_literal subst (lit,offset) =
@@ -447,25 +452,23 @@ module Make(Symbol : SymbolType) = struct
 
   (** Apply substitution to the clause. *)
   let subst_clause subst (clause,offset) =
+    let open Sequence.Infix in
     if is_empty_subst subst && offset = 0 then clause
     else if is_empty_subst subst then shift_clause clause offset
-    else
-      let open Sequence.Infix in
-      Sequence.of_array clause
-        |> Sequence.map (fun lit -> subst_literal subst (lit,offset))
-        |> Sequence.uniq ~eq:(==)
-        |> Sequence.to_list
-        |> Array.of_list
+    else match clause with
+      | Clause (head, body) ->
+        let head' = subst_literal subst (head, offset) in
+        let body' = List.map (fun lit -> subst_literal subst (lit,offset)) body
+        in mk_clause head' body'
 
   (** Remove first body element of the clause, after substitution *)
   let remove_first_subst subst (clause,offset) =
-    assert (Array.length clause > 1);
-    let a = Array.make (Array.length clause - 1) clause.(0) in
-    a.(0) <- subst_literal subst (clause.(0),offset);
-    for i = 1 to Array.length clause - 2 do
-      a.(i) <- subst_literal subst (clause.(i+1),offset);
-    done;
-    a
+    match clause with
+    | Clause (_, []) -> raise (Invalid_argument "remove_first_subst")
+    | Clause (head, _::body) ->
+      let head' = subst_literal subst (head, offset) in
+      let body' = List.map (fun lit -> subst_literal subst (lit,offset)) body
+      in mk_clause head' body'
 
   (** {3 Pretty-printing} *)
 
@@ -479,13 +482,12 @@ module Make(Symbol : SymbolType) = struct
         (Sequence.pp_seq ~sep:", " pp_literal) (Sequence.of_array args)
 
   let pp_clause formatter clause =
-    let n = Array.length clause in
-    if n = 1
-      then Format.fprintf formatter "%a." pp_literal clause.(0)
-      else
-        Format.fprintf formatter "%a :-@ %a." pp_literal clause.(0)
-          (Sequence.pp_seq ~sep:", " pp_literal)
-          (Sequence.array_slice clause 1 (n-1))
+    match clause with
+    | Clause (head, []) ->
+      Format.fprintf formatter "%a." pp_literal head
+    | Clause (head, body) ->
+      Format.fprintf formatter "%a :-@ %a." pp_literal head
+        (Sequence.pp_seq ~sep:", " pp_literal) (Sequence.of_list body)
 
   let pp_subst formatter subst =
     let pp_4 formatter (x,o_x,y,o_y) =

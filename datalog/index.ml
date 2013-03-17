@@ -40,11 +40,10 @@ module type S = sig
   val is_empty : _ t -> bool
     (** Is the index empty? *)
 
-  val add : 'a t -> literal -> 'a -> 'a t
-    (** Add a value, indexed by the literal, to the index *)
-
-  val remove : ?eq:('a -> 'a -> bool) -> 'a t -> literal -> 'a -> 'a t
-    (** Remove a value indexed by some literal *)
+  val map : 'a t -> literal -> ('a option -> 'a option) -> 'a t * 'a option
+    (** Maps the value associated to this literal (modulo alpha-renaming)
+        to a value. None indicates that the literal is not present, or
+        that the literal is to be removed. The old value is also returned. *)
 
   val retrieve_generalizations : ('b -> literal -> 'a -> subst -> 'b) -> 'b ->
                                  'a t Logic.bind -> literal Logic.bind -> 'b
@@ -77,31 +76,42 @@ module Make(L : Logic.S) : S with module Logic = L = struct
   type subst = L.subst
   type symbol = L.Symbol.t
 
-  (** A set of literal+indexed data.
-      TODO: gather data per-literal, so that only one unification/matching
-            per literal is done. *)
+  (** A set of literal+indexed data. *)
   module DataSet = struct
     type 'a t = (literal * 'a) list
+
+    let empty = []
 
     let is_empty = function
       | [] -> true
       | _ -> false
 
-    let add set lit data : 'a t = (lit, data) :: set
+    let rec map set lit f =
+      match set with
+      | [] ->
+        begin match f None with
+        | None -> [] (* do not insert *)
+        | Some x -> [lit, x]  (* insertion *)
+        end
+      | (lit', data)::set' ->
+        begin try
+          ignore (L.alpha_equiv (lit,0) (lit',1));
+          begin match f (Some data) with
+          | None -> set'  (* remove *)
+          | Some data' -> (lit', data') :: set'  (* replace *)
+          end
+        with L.UnifFailure ->
+          (* keep this pair *)
+          (lit', data) :: map set' lit f
+        end
 
-    let remove ?(eq=(=)) set lit data =
-      List.filter (fun (lit', data') ->
-        not (lit == lit' && eq data data')) set
-
-    let flat_map set lit f =
+    let flat_map set f =
       let rec loop acc set = match set with
       | [] -> acc
-      | (lit', x)::set' when lit == lit' ->
+      | (lit, x)::set' ->
         (* transform value associated to the literal *)
         let xs = List.map (fun y -> lit, y) (f x) in
         loop (xs @ acc) set'
-      | (lit', x)::set' ->
-        loop ((lit', x) :: acc) set'
       in loop [] set
 
     let fold f acc set =
@@ -184,70 +194,32 @@ module Make(L : Logic.S) : S with module Logic = L = struct
     | Node h -> FlatHashtbl.size h = 0
     | Leaf set -> DataSet.is_empty set
 
-  (** Add the element indexed by the literal *)
-  let add t literal data =
-    let flat = flatten_lit literal in
-    (* recursive insertion (index i in flat-lit) *)
-    let rec insert t i =
-      match t with
-      | Leaf set ->
-        assert (i = Array.length flat);
-        Leaf (DataSet.add set literal data)
-      | Node h ->
-        let subtrie =
-          (try FlatHashtbl.find h flat.(i)
-          with Not_found -> empty ())  (* create subtrie *)
-        in
-        (* insert in subtrie *)
-        let subtrie' = insert subtrie (i+1) in
-        Node (FlatHashtbl.replace h flat.(i) subtrie')
-    in
-    insert t 0
-
-  (** Remove (lit,data) from the trie *)
-  let remove ?(eq=(=)) t literal data =
-    let flat = flatten_lit literal in
-    (* recursive deletion *)
-    let rec remove t i =
-      match t with
-      | Leaf set ->
-        assert (i = Array.length flat);
-        Leaf (DataSet.remove ~eq set literal data)
-      | Node h ->
-        begin try
-          let subtrie = FlatHashtbl.find h flat.(i) in
-          (* remove in subtrie *)
-          let subtrie' = remove subtrie (i+1) in
-          (* replace subtrie, unless it is empty (in which case delete it) *)
-          if is_empty subtrie'
-            then Node (FlatHashtbl.remove h flat.(i))
-            else Node (FlatHashtbl.replace h flat.(i) subtrie')
-        with Not_found -> t  (* not present *)
-        end
-    in
-    remove t 0
-
-  (** Map every value associated to the given literal, to a (possibly
-      empty) list of values. *)
-  let flat_map t lit f =
+  (** Maps the value associated to this literal (modulo alpha-renaming)
+      to a value. None indicates that the literal is not present, or
+      that the literal is to be removed *)
+  let map t lit f =
     let flat = flatten_lit lit in
-    (* recursive deletion *)
+    (* recursive lookup (index i in flat-lit) *)
     let rec recurse t i =
       match t with
       | Leaf set ->
-        let set' = DataSet.flat_map set lit f in
+        assert (i = Array.length flat);
+        (* map set to a new set' (may add/remove literal) *)
+        let set' = DataSet.map set lit f in
         Leaf set'
       | Node h ->
-        begin try
-          let subtrie = FlatHashtbl.find h flat.(i) in
-          (* remove in subtrie *)
-          let subtrie' = recurse subtrie (i+1) in
-          (* replace subtrie, unless it is empty (in which case delete it) *)
-          if is_empty subtrie'
-            then Node (FlatHashtbl.remove h flat.(i))
-            else Node (FlatHashtbl.replace h flat.(i) subtrie')
-        with Not_found -> t  (* not present *)
-        end
+        let subtrie =
+          (try FlatHashtbl.find h flat.(i)
+          with Not_found ->
+            if flat.(i) = FlatEnd
+              then Leaf DataSet.empty (* create leaf *)
+              else empty ())  (* create subtrie *)
+        in
+        (* insert in subtrie *)
+        let subtrie' = recurse subtrie (i+1) in
+        if is_empty subtrie'
+          then Node (FlatHashtbl.remove h flat.(i))
+          else Node (FlatHashtbl.replace h flat.(i) subtrie')
     in
     recurse t 0
 

@@ -45,13 +45,14 @@ module Logic : sig
     type symbol = Symbol.t
       (** Abstract type of symbols *)
 
-    type literal =
+    type literal = private
       | Var of int
       | Apply of symbol * literal array
       (** A datalog atom, i.e. pred(arg_1, ..., arg_n). Arguments can
           themselves be literals *)
 
-    type clause
+    type clause = private
+      | Clause of literal * literal list
       (** A datalog clause, i.e. head :- body_1, ..., body_n *)
 
     val mk_apply : symbol -> literal list -> literal
@@ -70,9 +71,6 @@ module Logic : sig
 
     val mk_clause : literal -> literal list -> clause
       (** Create a clause from a conclusion and a list of premises *)
-
-    val open_clause : clause -> literal * literal list
-      (** Deconstruct a clause *)
 
     val is_var : literal -> bool
       (** A variable is a negative int *)
@@ -94,8 +92,14 @@ module Logic : sig
     val hash_literal : literal -> int
       (** Hash the literal *)
 
+    val conclusion : clause -> literal
+      (** Conclusion of the clause *)
+
     val body : clause -> literal Sequence.t
       (** Body of the clause *)
+
+    val all_lits : clause -> literal Sequence.t
+      (** All the literals of the clause *)
 
     val check_safe : clause -> bool
       (** A datalog clause is safe iff all variables in its head also occur in its body *)
@@ -180,15 +184,10 @@ module Index : sig
     val is_empty : _ t -> bool
       (** Is the index empty? *)
 
-    val add : 'a t -> literal -> 'a -> 'a t
-      (** Add a value, indexed by the literal, to the index *)
-
-    val flat_map : 'a t -> literal -> ('a -> 'a list) -> 'a t
-      (** Map every value associated to the given literal, to a (possibly
-          empty) list of values. *)
-
-    val remove : ?eq:('a -> 'a -> bool) -> 'a t -> literal -> 'a -> 'a t
-      (** Remove a value indexed by some literal *)
+    val map : 'a t -> literal -> ('a option -> 'a option) -> 'a t * 'a option
+      (** Maps the value associated to this literal (modulo alpha-renaming)
+          to a value. None indicates that the literal is not present, or
+          that the literal is to be removed. The old value is also returned. *)
 
     val retrieve_generalizations : ('b -> literal -> 'a -> subst -> 'b) -> 'b ->
                                    'a t Logic.bind -> literal Logic.bind -> 'b
@@ -242,30 +241,37 @@ module DB : sig
       | NewGoal of literal
       | NewRule of clause
 
-    val empty : t
+    val empty : unit -> t
       (** Empty database *)
+
+    val copy : t -> t
+      (** Get a (shallow) that can be used for backtracking without modifying
+          the given DB. This is quite cheap. *)
 
     val mem : t -> clause -> bool
       (** Is the clause member of the DB? *)
 
-    val add : t -> clause -> t * result list
+    val propagate : t -> result list
+      (** Compute the fixpoint of the current Database's state *)
+
+    val add : t -> clause -> result list
       (** Add the clause/fact to the DB as an axiom, updating fixpoint.
           It returns the list of deduced new results.
           UnsafeRule will be raised if the rule is not safe (see {!check_safe}) *)
 
-    val add_fact : t -> literal -> t * result list
+    val add_fact : t -> literal -> result list
       (** Add a fact (ground unit clause) *)
 
-    val add_goal : t -> literal -> t * result list
+    val add_goal : t -> literal -> result list
       (** Add a goal to the DB. The goal is used to trigger backward chaining
           (calling goal handlers that could help solve the goal) *)
 
     val match_with : t -> literal ->
-                       (literal Logic.bind -> Logic.subst -> unit) -> unit
+                    (literal Logic.bind -> Logic.subst -> unit) -> unit
       (** match the given literal with facts of the DB, calling the handler on
           each fact that match (with the corresponding substitution) *)
 
-    val db_size : t -> int
+    val size : t -> int
       (** Size of the DB *)
 
     val fold : ('a -> clause -> 'a) -> 'a -> t -> 'a

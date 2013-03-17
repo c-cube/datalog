@@ -3,3 +3,4 @@ _build
 *.native
 *.docdir
 .session
+TAGS

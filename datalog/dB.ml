@@ -49,29 +49,39 @@ module type S = sig
     | NewGoal of literal
     | NewRule of clause
 
-  val empty : t
+  val empty : unit -> t
     (** Empty database *)
+
+  val copy : t -> t
+    (** Get a (shallow) that can be used for backtracking without modifying
+        the given DB. This is quite cheap. *)
 
   val mem : t -> clause -> bool
     (** Is the clause member of the DB? *)
 
-  val add : t -> clause -> t * result list
+  val propagate : t -> result list
+    (** Compute the fixpoint of the current Database's state *)
+
+  val add : t -> clause -> result list
     (** Add the clause/fact to the DB as an axiom, updating fixpoint.
         It returns the list of deduced new results.
         UnsafeRule will be raised if the rule is not safe (see {!check_safe}) *)
 
-  val add_fact : t -> literal -> t * result list
+  val add_fact : t -> literal -> result list
     (** Add a fact (ground unit clause) *)
 
-  val add_goal : t -> literal -> t * result list
+  val add_goal : t -> literal -> result list
     (** Add a goal to the DB. The goal is used to trigger backward chaining
         (calling goal handlers that could help solve the goal) *)
 
-  val match_with : t -> literal -> (literal Logic.bind -> subst -> unit) -> unit
+  val add_seq : t -> clause Sequence.t -> result list
+    (** Add a whole sequence of clauses, in batch. *)
+
+  val match_with : t -> literal -> (literal Logic.bind -> Logic.subst -> unit) -> unit
     (** match the given literal with facts of the DB, calling the handler on
         each fact that match (with the corresponding substitution) *)
 
-  val db_size : t -> int
+  val size : t -> int
     (** Size of the DB *)
 
   val fold : ('a -> clause -> 'a) -> 'a -> t -> 'a
@@ -88,7 +98,7 @@ module type S = sig
     (** Immediate premises of the fact (ie the facts that resolved with
         a clause to give the literal), plus the clause that has been used. *)
 
-  val explanations : db -> clause -> explanation Sequence.t
+  val explanations : t -> clause -> explanation Sequence.t
     (** Get all the explanations that explain why this clause is true *)
 end
 
@@ -107,91 +117,140 @@ module Make(L : Logic.S) = struct
     | Axiom
     | Resolution of clause * literal
 
-  type queue_item =
-    [ `AddClause of clause * explanation
-    | `AddGoal of literal
-    ]
+  type result =
+    | NewFact of literal
+    | NewGoal of literal
+    | NewRule of clause
 
-  (** A database of facts and clauses, with incremental fixpoint computation *)
-  type t = {
-    db_all : explanation ClauseHashtbl.t;   (** maps all clauses to their explanations *)
-    db_facts : ClausesIndex.t;              (** index on facts *)
-    db_goals : GoalIndex.t;                 (** set of goals *)
-    db_selected : ClausesIndex.t;           (** index on clauses' selected premises *)
-    db_heads : ClausesIndex.t;              (** index on clauses' heads *)
-    db_queue : queue_item Queue.t;          (** queue of items to process *)
+  type queue_item =
+    | AddClause of clause * explanation
+    | AddGoal of literal
+
+  type index_data = {
+    as_premise : (clause * explanation) list;
+    as_conclusion : (clause * explanation) list;
+    as_fact : explanation list;
+    as_goal : bool;
+  } (** The kind of data that is put in the global index. It associates
+        various data to the literal. *)
+
+  (** Empty Data associated to a literal *)
+  let empty_data = {
+    as_premise = [];
+    as_conclusion = [];
+    as_goal = false;
+    as_fact = [];
   }
 
-  (** Create a DB *)
-  let db_create () =
-    { db_all = ClauseHashtbl.create 17;
-      db_facts = ClausesIndex.create ();
-      db_goals = GoalIndex.create ();
-      db_selected = ClausesIndex.create ();
-      db_heads = ClausesIndex.create ();
-      db_fact_handlers = Hashtbl.create 3;
-      db_goal_handlers = [];
+  module Idx = Index.Make(L)
+
+  (** The type for a database of facts and clauses, with
+      incremental fixpoint computation *)
+  type t = {
+    mutable db_idx : index_data Idx.t;                (** Global index for lits/clauses *)
+    db_queue : queue_item Queue.t;                    (** Queue of items to process *)
+  }
+
+  (** Empty DB *)
+  let empty () =
+    { db_idx = Idx.empty ();
+      db_queue = Queue.create ();
+    }
+
+  (** Get a (shallow) that can be used for backtracking without modifying
+      the given DB. This is quite cheap. *)
+  let copy db =
+    assert (Queue.is_empty db.db_queue); 
+    { db_idx = db.db_idx;
       db_queue = Queue.create ();
     }
 
   (** Is the clause member of the DB? *)
-  let db_mem db clause =
-    assert (check_safe clause);
-    ClauseHashtbl.mem db.db_all clause
+  let mem db clause =
+    assert (L.check_safe clause);
+    try
+      ignore
+        (Idx.retrieve_renaming
+          (fun () _ _ _ -> raise Exit) ()
+          (db.db_idx,0) (L.conclusion clause,1));
+      false
+    with Exit ->
+      true
 
-  let add_clause db clause explanation =
-    (* check if clause already present; in any case add the explanation *)
-    let already_present = db_mem db clause in
-    ClauseHashtbl.add db.db_all clause explanation;
-    if already_present then ()
-    (* generate new clauses by resolution *)
-    else if is_fact clause then begin
-      ClausesIndex.add db.db_facts clause.(0) clause;
-      (* call handler for this fact, if any *)
-      let handlers = Hashtbl.find_all db.db_fact_handlers clause.(0).(0) in
-      List.iter (fun h ->
-        try h clause.(0)
-        with e ->
-          Format.eprintf "Datalog: exception while calling handler for %d@."
-            clause.(0).(0);
-          raise e)
-        handlers;
-      (* insertion of a fact: resolution with all clauses whose
-         first body literal matches the fact. No offset is needed, because
-         the fact is ground. *)
-      ClausesIndex.retrieve_generalizations
-        (fun () _ clause' subst ->
-          (* subst(clause'.(1)) = clause.(0) , remove the first element of the
-             body of subst(clause'), that makes a new clause *)
-          let clause'' = remove_first_subst subst (clause',0) in
-          let explanation = Resolution (clause', clause.(0)) in
-          Queue.push (`AddClause (clause'', explanation)) db.db_queue)
-        () (db.db_selected,0) (clause.(0),0)
-    end else begin
-      assert (Array.length clause > 1);
-      (* check if some goal unifies with head of clause *)
-      let offset = offset clause in
-      GoalIndex.retrieve_unify
-        (fun () goal () subst ->
-          (* subst(goal) = subst(clause.(0)), so subst(clause.(1)) is a goal *)
-          let new_goal = subst_literal subst (clause.(1),0) in
-          Queue.push (`AddGoal new_goal) db.db_queue)
-        () (db.db_goals,offset) (clause.(0),0);
-      (* add to index *)
-      ClausesIndex.add db.db_selected clause.(1) clause;
-      ClausesIndex.add db.db_heads clause.(0) clause;
-      (* insertion of a non_unit clause: resolution with all facts that match the
-         first body literal of the clause *)
-      ClausesIndex.retrieve_specializations
-        (fun () fact _ subst ->
-          (* subst(clause.body.(0)) = fact, remove this first literal *)
-          let clause' = remove_first_subst subst (clause,0) in
-          let explanation = Resolution (clause, fact) in
-          Queue.push (`AddClause (clause', explanation)) db.db_queue)
-        () (db.db_facts,offset) (clause.(1),0)
-    end
+  let add_fact_idx idx fact explanation =
+    Idx.map idx fact
+      (function
+      | None ->
+        let data = empty_data in
+        Some {data with as_fact = [explanation]}
+      | Some data ->
+        Some {data with as_fact = explanation::data.as_fact; })
 
-  let add_goal db lit =
+  let add_clause_idx idx clause explanation =
+    match clause with
+    | L.Clause (_, []) -> assert false
+    | L.Clause (head, lit::_) ->
+      (* index clause by lit as premise *)
+      let idx' = Idx.map idx lit
+        (function
+        | None ->
+          let data = empty_data in
+          Some {data with as_premise = [clause,explanation]; }
+        | Some data ->
+          Some {data with as_premise = (clause,explanation) :: data.as_premise; }) in
+      (* index clause by head as conclusion *)
+      Idx.map idx' head
+        (function
+        | None ->
+          let data = empty_data in
+          Some {data with as_conclusion = [clause,explanation]; }
+        | Some data ->
+          Some {data with as_conclusion = (clause,explanation) :: data.as_conclusion; })
+
+  let add_goal_idx idx goal =
+    Idx.map idx goal
+      (function
+        | None ->
+          Some {empty_data with as_goal=true; }
+        | Some data ->
+          Some {data with as_goal=true; })
+
+  (** Forward resolution with the given fact: resolution with clauses in
+      which the first premise unifies with fact. *)
+  (* TODO *)
+  let fwd_resolution db fact =
+    (*
+    ClausesIndex.retrieve_generalizations
+      (fun () _ clause' subst ->
+        (* subst(clause'.(1)) = clause.(0) , remove the first element of the
+           body of subst(clause'), that makes a new clause *)
+        let clause'' = remove_first_subst subst (clause',0) in
+        let explanation = Resolution (clause', clause.(0)) in
+        Queue.push (`AddClause (clause'', explanation)) db.db_queue)
+      () (db.db_selected,0) (clause.(0),0)
+    *)
+    []
+
+  (** Backward resolution with the clause: resolution with facts that
+      unify with the clause's first premise. *)
+  (* TODO *)
+  let back_resolution db clause =
+    (*
+    ClausesIndex.retrieve_specializations
+      (fun () fact _ subst ->
+        (* subst(clause.body.(0)) = fact, remove this first literal *)
+        let clause' = remove_first_subst subst (clause,0) in
+        let explanation = Resolution (clause, fact) in
+        Queue.push (`AddClause (clause', explanation)) db.db_queue)
+      () (db.db_facts,offset) (clause.(1),0)
+    *)
+    []
+
+  (** Forward goal chaining: add this goal to the [db] and chain to find
+      other goals *)
+  (* TODO *)
+  let fwd_goal_chaining db goal =
+    (*
     try
       let offset = offset [|lit|] in
       GoalIndex.retrieve_renaming
@@ -210,42 +269,96 @@ module Make(L : Logic.S) = struct
     with Exit ->
       (* goal already present (in an alpha-equivalent form) *)
       ()
+    *)
+    []
 
-  (** Push the item in the queue, and process items in the queue
-      if no other function call is already doing it *)
-  let process_items db item =
-    let empty = Queue.is_empty db.db_queue in
-    Queue.push item db.db_queue;
-    (* how to process one queue item *)
-    let process_item item = 
-      match item with
-      | `AddClause (c, explanation) -> add_clause db c explanation
-      | `AddGoal goal -> add_goal db goal
-    in
-    (* if the queue was not empty, that means that another call
-        below in the stack is already processing items. We only
-        need to do it if it is not the case *)
-    if empty then begin
-      while not (Queue.is_empty db.db_queue) do
-        let item = Queue.pop db.db_queue in
-        process_item item
-      done
-    end
+  (** Backward goal chaining with the given non unit clause *)
+  (* TODO *)
+  let back_goal_chaining db clause =
+    (*
+    let offset = offset clause in
+    GoalIndex.retrieve_unify
+      (fun () goal () subst ->
+        (* subst(goal) = subst(clause.(0)), so subst(clause.(1)) is a goal *)
+        let new_goal = subst_literal subst (clause.(1),0) in
+        Queue.push (`AddGoal new_goal) db.db_queue)
+      () (db.db_goals,offset) (clause.(0),0)
+    *)
+    []
 
-  (** Add the clause/fact to the DB, updating fixpoint *)
-  let db_add db clause =
-    (if not (check_safe clause) then raise UnsafeClause);
-    process_items db (`AddClause (clause, Axiom))
+  let process_add_clause db results c explanation =
+    if not (mem db c) then match c with
+      (* add the clause to the index, and generate new clauses by resolution *)
+      | L.Clause (fact, []) ->
+        db.db_idx <- add_fact_idx db.db_idx fact explanation;
+        results := fwd_resolution db fact @ !results
+      | L.Clause (head, ((_::_) as body)) ->
+        db.db_idx <- add_clause_idx db.db_idx c explanation;
+        results := back_resolution db c @ !results;
+        results := back_goal_chaining db c @ !results
 
-  (** Add a fact (ground unit clause) *)
-  let db_add_fact db lit =
-    (if not (is_ground lit) then raise UnsafeClause);
-    process_items db (`AddClause ([|lit|], Axiom))
+  let process_add_goal db results goal =
+    db.db_idx <- add_goal_idx db.db_idx goal;
+    results := fwd_goal_chaining db goal @ !results
 
-  (** Add a goal to the DB. The goal is used to trigger backward chaining
-      (calling goal handlers that could help solve the goal) *)
-  let db_goal db lit =
-    process_items db (`AddGoal lit)
+  (** Process one item *)
+  let rec process_queue_item db results item =
+    match item with
+    | AddClause (c, explanation) -> process_add_clause db results c explanation
+    | AddGoal goal -> process_add_goal db results goal
+
+  (** Compute the fixpoint of the current Database's state *)
+  let propagate db =
+    let results = ref [] in
+    while not (Queue.is_empty db.db_queue) do
+      let queue_item = Queue.pop db.db_queue in
+      process_queue_item db results queue_item
+    done;
+    !results
+
+  (** Add the clause to the Datalog base *)
+  let add db clause =
+    assert (L.check_safe clause);
+    Queue.push (AddClause (clause, Axiom)) db.db_queue;
+    (* fixpoint *)
+    propagate db
+
+  let add_fact db fact =
+    add db (L.mk_clause fact [])
+
+  (** Add the given goal to the Datalog base *)
+  let add_goal db goal =
+    Queue.push (AddGoal goal) db.db_queue;
+    (* fixpoint *)
+    propagate db
+
+  let add_seq db clauses =
+    let open Sequence.Infix in
+    (* push batch, then propagate *)
+    clauses
+      |> Sequence.map (fun c -> AddClause (c, Axiom))
+      |> Sequence.to_queue db.db_queue;
+    propagate db
+
+  (* --------------- TODO ------------ *)
+
+  let match_with db lit k =
+    ()  (* TODO *)
+
+
+  let size db = 0 (* TODO *)
+
+  let fold f acc db = failwith "not implemented" (* TODO *)
+
+  let goals db = Sequence.empty  (* TODO *)
+
+  let support db lit = [] (* TODO *)
+
+  let premises db lit = failwith "not implemented" (* TODO *)
+
+  let explanations db c = Sequence.empty (* TODO *)
+
+  (*
 
   (** match the given literal with facts of the DB, calling the handler on
       each fact that match (with the corresponding substitution) *)
@@ -300,7 +413,7 @@ module Make(L : Logic.S) = struct
       end
     in
     (* once the set is collected, convert it to list *)
-    search [|fact|];
+    search (L.mk_clause fact []);
     LitSet.elements !set
 
   (** Immediate premises of the fact (ie the facts that resolved with
@@ -318,5 +431,7 @@ module Make(L : Logic.S) = struct
   let db_explanations db clause =
     ClauseHashtbl.find_all db.db_all clause
 
-  let version = "0.3.1"
+  *)
 end
+
+let version = "0.3.1"  (* TODO move it to Datalog.ml main file *)

@@ -40,10 +40,10 @@ module type S = sig
   val is_empty : _ t -> bool
     (** Is the index empty? *)
 
-  val map : 'a t -> literal -> ('a option -> 'a option) -> 'a t * 'a option
+  val map : 'a t -> literal -> ('a option -> 'a option) -> 'a t
     (** Maps the value associated to this literal (modulo alpha-renaming)
         to a value. None indicates that the literal is not present, or
-        that the literal is to be removed. The old value is also returned. *)
+        that the literal is to be removed *)
 
   val retrieve_generalizations : ('b -> literal -> 'a -> subst -> 'b) -> 'b ->
                                  'a t Logic.bind -> literal Logic.bind -> 'b

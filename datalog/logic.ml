@@ -91,8 +91,14 @@ module type S = sig
   val hash_literal : literal -> int
     (** Hash the literal *)
 
+  val conclusion : clause -> literal
+    (** Conclusion of the clause *)
+
   val body : clause -> literal Sequence.t
     (** Body of the clause *)
+
+  val all_lits : clause -> literal Sequence.t
+    (** All the literals of the clause *)
 
   val check_safe : clause -> bool
     (** A datalog clause is safe iff all variables in its head also occur in its body *)
@@ -195,7 +201,7 @@ module Make(Symbol : SymbolType) = struct
   (** {3 Constructors and destructors} *)
 
   let mk_apply_a head args =
-    Hashcons.find table (Apply (head, args))
+    Hashcons.merge table (Apply (head, args))
 
   let mk_apply head args =
     let args = Array.of_list args in
@@ -205,7 +211,7 @@ module Make(Symbol : SymbolType) = struct
     mk_apply_a s [||]
 
   let mk_var i =
-    Hashcons.find table (Var i)
+    Hashcons.merge table (Var i)
 
   type subst =
     | SubstEmpty
@@ -403,6 +409,7 @@ module Make(Symbol : SymbolType) = struct
       let l1, o1 = if is_var l1 then get_var subst l1 o1 else l1, o1 in
       let l2, o2 = if is_var l2 then get_var subst l2 o2 else l2, o2 in
       match l1, l2 with
+      | _ when l1 == l2 && o1 = o2 -> subst
       | Var _, Var _ ->
         if occur_check subst l1 o1 l2 o2
           then raise UnifFailure

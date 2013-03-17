@@ -27,21 +27,21 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
   (** Mapping string -> var in the current context *)
   let vars = Hashtbl.create 3
-  let vars_num = ref (-1)
+  let vars_num = ref 0
 
   (** Reset the variables mapping *)
   let reset_vars () =
     Hashtbl.clear vars;
-    vars_num := (-1)
+    vars_num := 0
 
   (** Get the number for this variable, in current variables context *)
   let get_var name =
     try Hashtbl.find vars name
     with Not_found ->
       let i = !vars_num in
-      decr vars_num;
-      Hashtbl.replace vars name (`Var i);
-      `Var i
+      incr vars_num;
+      Hashtbl.replace vars name i;
+      i
 
 %}
 
@@ -68,13 +68,13 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 %%
 
 parse_file:
-  | clauses EOI { Utils.reset (); $1 }
+  | clauses EOI { reset_vars (); Utils.reset (); $1 }
 
 parse_literal:
-  | literal EOI { Utils.reset (); $1 }
+  | literal EOI { reset_vars (); Utils.reset (); $1 }
 
 parse_clause:
-  | clause EOI { Utils.reset (); $1 }
+  | clause EOI { reset_vars (); Utils.reset (); $1 }
 
 clauses:
   | clause { let r = [$1] in reset_vars (); r }
@@ -89,6 +89,7 @@ literals:
   | literal COMMA literals { $1 :: $3 }
 
 literal:
+  | UPPER_WORD { Logic.Default.mk_var (get_var $1) }
   | const { Logic.Default.mk_const $1 }
   | const LEFT_PARENTHESIS args RIGHT_PARENTHESIS
     { Logic.Default.mk_apply $1 $3 }

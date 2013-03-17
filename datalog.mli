@@ -184,10 +184,10 @@ module Index : sig
     val is_empty : _ t -> bool
       (** Is the index empty? *)
 
-    val map : 'a t -> literal -> ('a option -> 'a option) -> 'a t * 'a option
+    val map : 'a t -> literal -> ('a option -> 'a option) -> 'a t
       (** Maps the value associated to this literal (modulo alpha-renaming)
           to a value. None indicates that the literal is not present, or
-          that the literal is to be removed. The old value is also returned. *)
+          that the literal is to be removed. *)
 
     val retrieve_generalizations : ('b -> literal -> 'a -> subst -> 'b) -> 'b ->
                                    'a t Logic.bind -> literal Logic.bind -> 'b
@@ -254,6 +254,11 @@ module DB : sig
     val propagate : t -> result list
       (** Compute the fixpoint of the current Database's state *)
 
+    (** The modification functions ({!add}, {!add_fact}, {!add_goal}...) modify
+        the database, and then update the fixpoint. They return a list of
+        {b results}, ie the new information that has been discovered during
+        propagation. *)
+
     val add : t -> clause -> result list
       (** Add the clause/fact to the DB as an axiom, updating fixpoint.
           It returns the list of deduced new results.
@@ -265,6 +270,9 @@ module DB : sig
     val add_goal : t -> literal -> result list
       (** Add a goal to the DB. The goal is used to trigger backward chaining
           (calling goal handlers that could help solve the goal) *)
+
+    val add_seq : t -> clause Sequence.t -> result list
+      (** Add a whole sequence of clauses, in batch. *)
 
     val match_with : t -> literal ->
                     (literal Logic.bind -> Logic.subst -> unit) -> unit

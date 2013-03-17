@@ -16,6 +16,9 @@ OPTIONS ?= -classic-display
 
 all: prod
 
+tests:
+	ocamlbuild -use-ocamlfind -I datalog -package oUnit tests/run_tests.native
+
 prod: $(SUBMODULES) 
 	ocamlbuild $(OPTIONS) -tag noassert $(TARGETS)
 
@@ -35,4 +38,4 @@ install: prod
 tags:
 	otags **/*.ml{,i}
 
-.PHONY: all clean install tags
+.PHONY: all clean install tags tests

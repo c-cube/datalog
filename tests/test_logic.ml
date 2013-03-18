@@ -19,6 +19,13 @@ let are_alpha_equiv lit1 lit2 =
   with L.UnifFailure ->
     false
 
+let are_unifiable lit1 lit2 =
+  try
+    ignore (L.unify (lit1,0) (lit2,1));
+    true
+  with L.UnifFailure ->
+    false
+
 let test_parse_lit () =
   let _ = parse_lit "p(a,b,'c',42,X)" in
   let lit = parse_lit "p(f(X,Y),X)" in
@@ -51,10 +58,21 @@ let test_arity () =
 let test_safe () =
   let c = parse_clause "p(a,b,c)." in
   OUnit.assert_bool "safe" (L.check_safe c);
+  OUnit.assert_bool "fact" (L.is_fact c);
   let c' = parse_clause "r(X,Y) :- r(X,Z), rr(Z,Y)." in
   OUnit.assert_bool "safe" (L.check_safe c');
+  OUnit.assert_bool "not fact" (not (L.is_fact (parse_clause "p(X,Y).")));
   let c'' = parse_clause "r(X,Y,Z) :- p(X), q(Y), fail(a)." in
   OUnit.assert_bool "not safe" (not (L.check_safe c''));
+  ()
+
+let test_unif () =
+  let lit1 = parse_lit "p(X,b,c)" in
+  let lit2 = parse_lit "p(a,Y,Z)" in
+  OUnit.assert_bool "unif" (are_unifiable lit1 lit2);
+  let lit1 = parse_lit "p(X,X,b)" in
+  let lit2 = parse_lit "p(a,Y,Y)" in
+  OUnit.assert_raises L.UnifFailure (fun () -> L.unify (lit1,0) (lit2,0));
   ()
 
 let suite =
@@ -64,4 +82,5 @@ let suite =
       "test_ground" >:: test_ground;
       "test_arity" >:: test_arity;
       "test_safe" >:: test_safe;
+      "test_unif" >:: test_unif;
     ]

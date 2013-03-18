@@ -87,6 +87,9 @@ module type S = sig
   val fold : ('a -> clause -> 'a) -> 'a -> t -> 'a
     (** Fold on all clauses in the current DB (including fixpoint) *)
 
+  val goal_mem : t -> literal -> bool
+    (** Is the given literal a goal? *)
+
   val goals : t -> literal Sequence.t
     (** Iterate on all current goals *)
 
@@ -177,6 +180,18 @@ module Make(L : Logic.S) = struct
     with Exit ->
       true
 
+  (** Is the given literal a goal? *)
+  let goal_mem db goal =
+    try
+      (* check whether the goal is already present *)
+      Idx.retrieve_renaming
+        (fun () lit data subst ->
+          if data.as_goal then raise Exit)
+        () (db.db_idx,0) (goal,1);
+      false
+    with Exit ->
+      true
+
   let add_fact_idx idx fact explanation =
     Idx.map idx fact
       (function
@@ -215,105 +230,100 @@ module Make(L : Logic.S) = struct
         | Some data ->
           Some {data with as_goal=true; })
 
-  (** subst(fact) = subst(clause.(1)), do resolution and add
-      its result to [db] *)
-  let do_resolution db fact (clause,offset) subst =
+  (** subst(fact) = subst(clause.(1)), do resolution and return
+      the resulting (clause, explanation) *)
+  let do_resolution fact (clause,offset) subst =
     match clause with
     | L.Clause (_, _::_) ->
       let clause' = L.remove_first_subst subst (clause,offset) in
       let explanation = Resolution (clause, fact) in
-      Queue.push (AddClause (clause', explanation)) db.db_queue
+      AddClause (clause', explanation)
     | _ -> assert false
 
   (** Forward resolution with the given fact: resolution with clauses in
       which the first premise unifies with fact. *)
-  (* TODO *)
   let fwd_resolution db fact =
     let offset = L.lit_offset fact in
     (* set of already traversed clauses *)
     let set = L.ClauseMutHashtbl.create 5 in
-    Idx.retrieve_generalizations
-      (fun () lit' data subst ->
-        (* subst(lit') = fact, find clauses whose  *)
-        List.iter
-          (fun (clause, expl) ->
-            if L.ClauseMutHashtbl.mem set clause then () else begin
+    Idx.retrieve_unify
+      (fun acc it' data subst ->
+        (* subst(lit') = subst(fact), resolution with clauses *)
+        List.fold_left
+          (fun acc (clause, expl) ->
+            if L.ClauseMutHashtbl.mem set clause then acc
+            else begin
               L.ClauseMutHashtbl.replace set clause ();
-              do_resolution db fact (clause,offset) subst
+              do_resolution fact (clause,offset) subst :: acc
             end)
-          data.as_premise)
-      () (db.db_idx,offset) (fact,0);
-    [] (* TODO: how to keep track of additions? especially if conclusion alraedy present *)
+          acc data.as_premise)
+      [] (db.db_idx,offset) (fact,0)
 
   (** Backward resolution with the clause: resolution with facts that
       unify with the clause's first premise. *)
-  (* TODO *)
   let back_resolution db clause =
-    (*
-    ClausesIndex.retrieve_specializations
-      (fun () fact _ subst ->
-        (* subst(clause.body.(0)) = fact, remove this first literal *)
-        let clause' = remove_first_subst subst (clause,0) in
-        let explanation = Resolution (clause, fact) in
-        Queue.push (`AddClause (clause', explanation)) db.db_queue)
-      () (db.db_facts,offset) (clause.(1),0)
-    *)
-    []
+    let offset = L.offset clause in
+    let lit = match clause with
+      | L.Clause (_, []) -> assert false
+      | L.Clause (_, lit::_) -> lit
+    in
+    Idx.retrieve_unify
+      (fun acc fact data subst ->
+        (* subst(lit) = subst(fact), resolution with fact *)
+        do_resolution fact (clause,0) subst :: acc)
+      [] (db.db_idx,offset) (lit,0)
 
   (** Forward goal chaining: add this goal to the [db] and chain to find
       other goals *)
-  (* TODO *)
   let fwd_goal_chaining db goal =
-    (*
-    try
-      let offset = offset [|lit|] in
-      GoalIndex.retrieve_renaming
-        (fun () _ _ _ -> raise Exit)
-        () (db.db_goals,offset) (lit,0);
-      (* goal is not present! call handlers and add it *)
-      List.iter (fun h -> h lit) db.db_goal_handlers;
-      GoalIndex.add db.db_goals lit ();
-      (* find clauses that may help solving this goal *)
-      ClausesIndex.retrieve_unify
-        (fun () head clause subst ->
-          (* subst(clause.(0)) = subst(lit), so subst(clause.(1)) is a new goal *)
-          let new_goal = subst_literal subst (clause.(1),offset) in
-          Queue.push (`AddGoal new_goal) db.db_queue)
-        () (db.db_heads,offset) (lit,0)
-    with Exit ->
-      (* goal already present (in an alpha-equivalent form) *)
-      ()
-    *)
-    []
+    let offset = L.lit_offset goal in
+    (* find clauses that may help solving this goal *)
+    Idx.retrieve_unify
+      (fun acc lit data subst ->
+        (* find clauses whose head unified with goal *)
+        List.fold_left
+          (fun acc (clause, _) ->
+            match clause with
+            | L.Clause (_, []) -> acc
+            | L.Clause (_, lit'::_) ->
+              let new_goal = L.subst_literal subst (lit',offset) in
+              AddGoal new_goal :: acc)
+          acc data.as_conclusion)
+      [] (db.db_idx,offset) (goal,0)
 
   (** Backward goal chaining with the given non unit clause *)
   (* TODO *)
   let back_goal_chaining db clause =
-    (*
-    let offset = offset clause in
-    GoalIndex.retrieve_unify
-      (fun () goal () subst ->
-        (* subst(goal) = subst(clause.(0)), so subst(clause.(1)) is a goal *)
-        let new_goal = subst_literal subst (clause.(1),0) in
-        Queue.push (`AddGoal new_goal) db.db_queue)
-      () (db.db_goals,offset) (clause.(0),0)
-    *)
-    []
+    match clause with
+    | L.Clause (_, []) -> []
+    | L.Clause (head, lit::_) ->
+      let offset = L.offset clause in
+      Idx.retrieve_unify
+        (fun acc goal data subst ->
+          let new_goal = L.subst_literal subst (lit,0) in
+          AddGoal new_goal :: acc)
+        [] (db.db_idx,offset) (head,0)
 
   let process_add_clause db results c explanation =
     if not (mem db c) then match c with
       (* add the clause to the index, and generate new clauses by resolution *)
       | L.Clause (fact, []) ->
+        results := NewFact fact :: !results;
         db.db_idx <- add_fact_idx db.db_idx fact explanation;
-        results := fwd_resolution db fact @ !results
-      | L.Clause (head, ((_::_) as body)) ->
+        Sequence.to_queue db.db_queue (Sequence.of_list (fwd_resolution db fact))
+      | L.Clause (head, _::_) ->
+        results := NewRule c :: !results;
         db.db_idx <- add_clause_idx db.db_idx c explanation;
-        results := back_resolution db c @ !results;
-        results := back_goal_chaining db c @ !results
+        Sequence.to_queue db.db_queue (Sequence.of_list (back_resolution db c));
+        Sequence.to_queue db.db_queue (Sequence.of_list (back_goal_chaining db c))
 
   let process_add_goal db results goal =
-    db.db_idx <- add_goal_idx db.db_idx goal;
-    results := fwd_goal_chaining db goal @ !results
+    if not (goal_mem db goal) then begin
+      results := NewGoal goal :: !results;
+      (* add goal to the index, and chain *)
+      db.db_idx <- add_goal_idx db.db_idx goal;
+      Sequence.to_queue db.db_queue (Sequence.of_list (fwd_goal_chaining db goal))
+    end
 
   (** Process one item *)
   let rec process_queue_item db results item =

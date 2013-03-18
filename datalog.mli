@@ -293,6 +293,10 @@ module DB : sig
     val fold : ('a -> clause -> 'a) -> 'a -> t -> 'a
       (** Fold on all clauses in the current DB (including fixpoint) *)
 
+    val goal_mem : t -> literal -> bool
+      (** Is the given literal a goal? *)
+      (* XXX: should it be true if the lit is subsumed by a goal? *)
+
     val goals : t -> literal Sequence.t
       (** Iterate on all current goals *)
 

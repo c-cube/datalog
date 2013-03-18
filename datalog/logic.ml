@@ -119,7 +119,8 @@ module type S = sig
   val empty_subst : subst
     (** The empty substitution *)
 
-  (* TODO external API to build substitutions *)
+  val lit_offset : literal -> int
+    (** Offset to avoid collisions with the given lit *)
 
   val offset : clause -> int
     (** Offset to avoid collisions with the given clause *)
@@ -141,6 +142,9 @@ module type S = sig
   val subst_clause : subst -> clause bind -> clause
     (** Apply substitution to the clause *)
 
+  val remove_first_subst : subst -> clause bind -> clause
+    (** Remove first body element of the clause, after substitution *)
+
   (** {3 Pretty-printing} *)
 
   val pp_literal : Format.formatter -> literal -> unit
@@ -155,6 +159,8 @@ module type S = sig
   (** {2 Utils} *)
 
   module ClauseHashtbl : FHashtbl.S with type key = clause
+
+  module ClauseMutHashtbl : Hashtbl.S with type key = clause
 end
 
 module Make(Symbol : SymbolType) = struct
@@ -302,6 +308,12 @@ module Make(Symbol : SymbolType) = struct
   let empty_subst = SubstEmpty
 
   let is_empty_subst = function | SubstEmpty -> true | _ -> false
+
+  let lit_offset lit =
+    let open Sequence.Infix in
+    vars lit
+      |> Sequence.map (function | Var i -> i | Apply _ -> assert false)
+      |> fun seq -> Sequence.max ~lt:(fun x y -> x < y) seq 0
 
   (** Offset to avoid collisions with the given clause *)
   let offset clause =
@@ -508,6 +520,13 @@ module Make(Symbol : SymbolType) = struct
 
   (** Functional Hashtable on clauses *)
   module ClauseHashtbl = FHashtbl.Tree(struct
+    type t = clause
+    let equal = eq_clause
+    let hash = hash_clause
+  end)
+
+  (** Mutable hashtable on clauses *)
+  module ClauseMutHashtbl = Hashtbl.Make(struct
     type t = clause
     let equal = eq_clause
     let hash = hash_clause

@@ -215,21 +215,35 @@ module Make(L : Logic.S) = struct
         | Some data ->
           Some {data with as_goal=true; })
 
+  (** subst(fact) = subst(clause.(1)), do resolution and add
+      its result to [db] *)
+  let do_resolution db fact (clause,offset) subst =
+    match clause with
+    | L.Clause (_, _::_) ->
+      let clause' = L.remove_first_subst subst (clause,offset) in
+      let explanation = Resolution (clause, fact) in
+      Queue.push (AddClause (clause', explanation)) db.db_queue
+    | _ -> assert false
+
   (** Forward resolution with the given fact: resolution with clauses in
       which the first premise unifies with fact. *)
   (* TODO *)
   let fwd_resolution db fact =
-    (*
-    ClausesIndex.retrieve_generalizations
-      (fun () _ clause' subst ->
-        (* subst(clause'.(1)) = clause.(0) , remove the first element of the
-           body of subst(clause'), that makes a new clause *)
-        let clause'' = remove_first_subst subst (clause',0) in
-        let explanation = Resolution (clause', clause.(0)) in
-        Queue.push (`AddClause (clause'', explanation)) db.db_queue)
-      () (db.db_selected,0) (clause.(0),0)
-    *)
-    []
+    let offset = L.lit_offset fact in
+    (* set of already traversed clauses *)
+    let set = L.ClauseMutHashtbl.create 5 in
+    Idx.retrieve_generalizations
+      (fun () lit' data subst ->
+        (* subst(lit') = fact, find clauses whose  *)
+        List.iter
+          (fun (clause, expl) ->
+            if L.ClauseMutHashtbl.mem set clause then () else begin
+              L.ClauseMutHashtbl.replace set clause ();
+              do_resolution db fact (clause,offset) subst
+            end)
+          data.as_premise)
+      () (db.db_idx,offset) (fact,0);
+    [] (* TODO: how to keep track of additions? especially if conclusion alraedy present *)
 
   (** Backward resolution with the clause: resolution with facts that
       unify with the clause's first premise. *)
@@ -346,9 +360,14 @@ module Make(L : Logic.S) = struct
     ()  (* TODO *)
 
 
-  let size db = 0 (* TODO *)
+  let size db =
+    Idx.fold (fun i _ _ -> i+1) 0 db.db_idx
 
-  let fold f acc db = failwith "not implemented" (* TODO *)
+  let fold f acc db =
+    Idx.fold
+      (fun acc lit data ->
+        List.fold_left (fun acc (clause,_) -> f acc clause) acc data.as_conclusion)
+      acc db.db_idx
 
   let goals db = Sequence.empty  (* TODO *)
 
@@ -434,4 +453,4 @@ module Make(L : Logic.S) = struct
   *)
 end
 
-let version = "0.3.1"  (* TODO move it to Datalog.ml main file *)
+let version = "0.3.1"  (* TODO move it to Datalog.ml main file (and <- 4.0) *)

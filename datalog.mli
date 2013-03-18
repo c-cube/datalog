@@ -122,6 +122,9 @@ module Logic : sig
 
     (* TODO external API to build substitutions *)
 
+    val lit_offset : literal -> int
+      (** Offset to avoid collisions with the given lit *)
+
     val offset : clause -> int
       (** Offset to avoid collisions with the given clause *)
 
@@ -142,6 +145,9 @@ module Logic : sig
     val subst_clause : subst -> clause bind -> clause
       (** Apply substitution to the clause *)
 
+    val remove_first_subst : subst -> clause bind -> clause
+      (** Remove first body element of the clause, after substitution *)
+
     (** {3 Pretty-printing} *)
 
     val pp_literal : Format.formatter -> literal -> unit
@@ -156,6 +162,8 @@ module Logic : sig
     (** {3 Utils} *)
 
     module ClauseHashtbl : FHashtbl.S with type key = clause
+
+    module ClauseMutHashtbl : Hashtbl.S with type key = clause
   end
 
   (** Build a Datalog module *)

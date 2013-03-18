@@ -121,6 +121,8 @@ Or
 
 ## TODOs/ideas
 
+- Use some basic rewriting for efficient **ground** equality (with a union-find)
+
 - Goal subsumption
 - Clause subsumption (when selected lit is ground)
 - Clause retraction

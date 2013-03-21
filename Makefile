@@ -8,6 +8,7 @@ CLI = datalog_cli.native
 LIB = datalog.cmxa datalog.cma
 DOC = datalog.docdir/index.html
 TARGETS = $(DOC) $(LIB) $(CLI)
+SUBMODULES = containers
 
 INSTALL_LIB = datalog.cmxa datalog.cma datalog.a datalog.cmi datalog.mli
 
@@ -38,4 +39,7 @@ install: prod
 tags:
 	otags **/*.ml{,i}
 
-.PHONY: all clean install tags tests
+containers:
+	make -C containers
+
+.PHONY: all clean install tags tests submodules

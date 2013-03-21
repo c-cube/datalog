@@ -158,6 +158,8 @@ module type S = sig
 
   (** {2 Utils} *)
 
+  module LitMutHashtbl : Hashtbl.S with type key = literal
+
   module ClauseHashtbl : FHashtbl.S with type key = clause
 
   module ClauseMutHashtbl : Hashtbl.S with type key = clause
@@ -517,6 +519,12 @@ module Make(Symbol : SymbolType) = struct
       (Sequence.pp_seq pp_4) (subst_to_seq subst)
 
   (** {2 Utils} *)
+
+  module LitMutHashtbl = Hashtbl.Make(struct
+    type t = literal
+    let equal = eq_literal
+    let hash = hash_lit
+  end)
 
   (** Functional Hashtable on clauses *)
   module ClauseHashtbl = FHashtbl.Tree(struct

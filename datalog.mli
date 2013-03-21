@@ -161,6 +161,8 @@ module Logic : sig
 
     (** {3 Utils} *)
 
+    module LitMutHashtbl : Hashtbl.S with type key = literal
+
     module ClauseHashtbl : FHashtbl.S with type key = clause
 
     module ClauseMutHashtbl : Hashtbl.S with type key = clause

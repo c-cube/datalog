@@ -292,7 +292,6 @@ module Make(L : Logic.S) = struct
       [] (db.db_idx,offset) (goal,0)
 
   (** Backward goal chaining with the given non unit clause *)
-  (* TODO *)
   let back_goal_chaining db clause =
     match clause with
     | L.Clause (_, []) -> []
@@ -367,8 +366,11 @@ module Make(L : Logic.S) = struct
   (* --------------- TODO ------------ *)
 
   let match_with db lit k =
-    ()  (* TODO *)
-
+    let offset = L.lit_offset lit in
+    Idx.retrieve_specializations
+      (fun () fact data subst ->
+        if data.as_fact <> [] then k (fact,offset) subst)
+      () (db.db_idx,offset) (lit,0)
 
   let size db =
     Idx.fold (fun i _ _ -> i+1) 0 db.db_idx
@@ -379,45 +381,23 @@ module Make(L : Logic.S) = struct
         List.fold_left (fun acc (clause,_) -> f acc clause) acc data.as_conclusion)
       acc db.db_idx
 
-  let goals db = Sequence.empty  (* TODO *)
+  let goals db =
+    Sequence.from_iter
+      (fun k ->
+        Idx.fold
+          (fun () lit data -> if data.as_goal then k lit)
+          () db.db_idx)
 
-  let support db lit = [] (* TODO *)
+  let support db lit =
+    let set = L.LitMutHashtbl.create 7 in
+    let explored = L.ClauseMutHashtbl.create 7 in
+    [] (* TODO *)
 
   let premises db lit = failwith "not implemented" (* TODO *)
 
   let explanations db c = Sequence.empty (* TODO *)
 
   (*
-
-  (** match the given literal with facts of the DB, calling the handler on
-      each fact that match (with the corresponding substitution) *)
-  let db_match db pattern handler =
-    ClausesIndex.retrieve_specializations
-      (fun () fact _ subst -> handler (fact,0) subst)
-      () (db.db_facts,0) (pattern,1)
-
-  (** Size of the DB *)
-  let db_size db =
-    ClausesIndex.size db.db_facts + ClausesIndex.size db.db_selected
-
-  (** Fold on all clauses in the current DB (including fixpoint) *)
-  let db_fold k acc db =
-    ClauseHashtbl.fold
-      (fun clause _ acc -> k acc clause)
-      db.db_all acc
-
-  let db_subscribe_fact db symbol handler =
-    let i = s_to_i symbol in
-    Hashtbl.add db.db_fact_handlers i handler
-
-  let db_subscribe_goal db handler =
-    db.db_goal_handlers <- handler :: db.db_goal_handlers
-
-  (** Iterate on all current goals *)
-  let db_goals db k =
-    GoalIndex.fold
-      (fun () goal () -> k goal)
-      () db.db_goals
 
   (** Explain the given fact by returning a list of facts that imply it
       under the current clauses. *)

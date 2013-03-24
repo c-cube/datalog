@@ -127,3 +127,6 @@ Or
 - Clause subsumption (when selected lit is ground)
 - Clause retraction
 - Library of standard interpreted predicates
+- Substitution trees to avoid intermediate clauses (n-ary resolution) with
+generic, functorial interface
+- quoting mechanism?

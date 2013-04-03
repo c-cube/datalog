@@ -1,3 +1,4 @@
 <datalog>: include
 <containers>: include
+<logic-terms>: include
 <datalog/*.cmx>: for-pack(Datalog)

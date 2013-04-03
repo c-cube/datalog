@@ -1,3 +1,6 @@
 [submodule "containers"]
 	path = containers
 	url = http://github.com/c-cube/ocaml-containers
+[submodule "logic-terms"]
+	path = logic-terms
+	url = https://github.com/c-cube/logic-terms.git

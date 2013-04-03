@@ -49,6 +49,13 @@ module type S = sig
     | NewGoal of literal
     | NewRule of clause
 
+  type action =
+    | AddClause of clause * explanation
+    | AddFact of literal * explanation   (* shortcut *)
+    | AddGoal of literal
+
+  type handler = result -> action list
+
   val empty : unit -> t
     (** Empty database *)
 
@@ -56,26 +63,40 @@ module type S = sig
     (** Get a (shallow) that can be used for backtracking without modifying
         the given DB. This is quite cheap. *)
 
+  val add_handler : t -> handler -> unit
+    (** All results of the DB will be given to the handler, from now on.
+        Handlers too are copied by [copy]. *)
+
   val mem : t -> clause -> bool
     (** Is the clause member of the DB? *)
 
-  val propagate : t -> result list
+  val propagate : t -> result Sequence.t
     (** Compute the fixpoint of the current Database's state *)
 
-  val add : t -> clause -> result list
+  val add : t -> clause -> result Sequence.t
     (** Add the clause/fact to the DB as an axiom, updating fixpoint.
         It returns the list of deduced new results.
         UnsafeRule will be raised if the rule is not safe (see {!check_safe}) *)
 
-  val add_fact : t -> literal -> result list
+  val add_fact : t -> literal -> result Sequence.t
     (** Add a fact (ground unit clause) *)
 
-  val add_goal : t -> literal -> result list
+  val add_goal : t -> literal -> result Sequence.t
     (** Add a goal to the DB. The goal is used to trigger backward chaining
         (calling goal handlers that could help solve the goal) *)
 
-  val add_seq : t -> clause Sequence.t -> result list
+  val add_seq : t -> clause Sequence.t -> result Sequence.t
     (** Add a whole sequence of clauses, in batch. *)
+
+  val add_action : t -> action -> result Sequence.t
+    (** Add an action to perform *)
+  
+  val add_actions : t -> action Sequence.t -> result Sequence.t
+    (** Add a finite set of actions *)
+
+  val raw_add : t -> action -> unit
+    (** Add the action but does not propagate yet. The user needs to call
+        {! propagate} by herself *)
 
   val match_with : t -> literal -> (literal Logic.bind -> Logic.subst -> unit) -> unit
     (** match the given literal with facts of the DB, calling the handler on
@@ -125,9 +146,12 @@ module Make(L : Logic.S) = struct
     | NewGoal of literal
     | NewRule of clause
 
-  type queue_item =
+  type action =
     | AddClause of clause * explanation
+    | AddFact of literal * explanation   (* shortcut *)
     | AddGoal of literal
+
+  type handler = result -> action list
 
   type index_data = {
     as_premise : (clause * explanation) list;
@@ -150,13 +174,15 @@ module Make(L : Logic.S) = struct
   (** The type for a database of facts and clauses, with
       incremental fixpoint computation *)
   type t = {
-    mutable db_idx : index_data Idx.t;                (** Global index for lits/clauses *)
-    db_queue : queue_item Queue.t;                    (** Queue of items to process *)
+    mutable db_idx : index_data Idx.t;        (** Global index for lits/clauses *)
+    mutable db_handlers : handler list;       (** Handlers *)
+    mutable db_queue : action Queue.t;        (** Queue of items to process *)
   }
 
   (** Empty DB *)
   let empty () =
     { db_idx = Idx.empty ();
+      db_handlers = [];
       db_queue = Queue.create ();
     }
 
@@ -165,8 +191,14 @@ module Make(L : Logic.S) = struct
   let copy db =
     assert (Queue.is_empty db.db_queue); 
     { db_idx = db.db_idx;
+      db_handlers = db.db_handlers;
       db_queue = Queue.create ();
     }
+
+  (** All results of the DB will be given to the handler, from now on.
+      Handlers too are copied by [copy]. *)
+  let add_handler db handler =
+    db.db_handlers <- handler :: db.db_handlers
 
   (** Is the clause member of the DB? *)
   let mem db clause =
@@ -303,65 +335,86 @@ module Make(L : Logic.S) = struct
           AddGoal new_goal :: acc)
         [] (db.db_idx,offset) (head,0)
 
-  let process_add_clause db results c explanation =
+  let process_add_clause db ~add_result c explanation =
     if not (mem db c) then match c with
       (* add the clause to the index, and generate new clauses by resolution *)
       | L.Clause (fact, []) ->
-        results := NewFact fact :: !results;
+        add_result (NewFact fact);
         db.db_idx <- add_fact_idx db.db_idx fact explanation;
         Sequence.to_queue db.db_queue (Sequence.of_list (fwd_resolution db fact))
       | L.Clause (head, _::_) ->
-        results := NewRule c :: !results;
+        add_result (NewRule c);
         db.db_idx <- add_clause_idx db.db_idx c explanation;
         Sequence.to_queue db.db_queue (Sequence.of_list (back_resolution db c));
         Sequence.to_queue db.db_queue (Sequence.of_list (back_goal_chaining db c))
 
-  let process_add_goal db results goal =
+  let process_add_goal db ~add_result goal =
     if not (goal_mem db goal) then begin
-      results := NewGoal goal :: !results;
+      add_result (NewGoal goal);
       (* add goal to the index, and chain *)
       db.db_idx <- add_goal_idx db.db_idx goal;
       Sequence.to_queue db.db_queue (Sequence.of_list (fwd_goal_chaining db goal))
     end
 
-  (** Process one item *)
-  let rec process_queue_item db results item =
-    match item with
-    | AddClause (c, explanation) -> process_add_clause db results c explanation
-    | AddGoal goal -> process_add_goal db results goal
+  (** Process one action *)
+  let rec process_action db ~add_result action =
+    match action with
+    | AddClause (c, explanation) ->
+      process_add_clause db ~add_result c explanation
+    | AddFact (lit, explanation) ->
+      let c = L.mk_clause lit [] in
+      process_add_clause db ~add_result c explanation
+    | AddGoal goal ->
+      process_add_goal db ~add_result goal
 
   (** Compute the fixpoint of the current Database's state *)
   let propagate db =
-    let results = ref [] in
+    let results = Queue.create () in
+    (* to be called for each new result *)
+    let add_result result =
+      Queue.push result results;  (* save result *)
+      List.iter
+        (fun handler ->
+          let actions = handler result in  (* call handler on the result *)
+          List.iter (fun action -> Queue.push action db.db_queue) actions)
+        db.db_handlers
+    in
     while not (Queue.is_empty db.db_queue) do
-      let queue_item = Queue.pop db.db_queue in
-      process_queue_item db results queue_item
+      let action = Queue.pop db.db_queue in
+      process_action db ~add_result action
     done;
-    !results
+    Sequence.of_queue results
+
+  let add_action db action =
+    Queue.push action db.db_queue;
+    (* compute fixpoint *)
+    propagate db
+
+  let add_actions db actions =
+    Sequence.to_queue db.db_queue actions;
+    propagate db
 
   (** Add the clause to the Datalog base *)
   let add db clause =
     assert (L.check_safe clause);
-    Queue.push (AddClause (clause, Axiom)) db.db_queue;
-    (* fixpoint *)
-    propagate db
+    add_action db (AddClause (clause, Axiom))
 
   let add_fact db fact =
     add db (L.mk_clause fact [])
 
   (** Add the given goal to the Datalog base *)
   let add_goal db goal =
-    Queue.push (AddGoal goal) db.db_queue;
-    (* fixpoint *)
-    propagate db
+    add_action db (AddGoal goal)
 
   let add_seq db clauses =
     let open Sequence.Infix in
     (* push batch, then propagate *)
     clauses
       |> Sequence.map (fun c -> AddClause (c, Axiom))
-      |> Sequence.to_queue db.db_queue;
-    propagate db
+      |> add_actions db
+
+  let raw_add db action =
+    Queue.push action db.db_queue 
 
   (* --------------- TODO ------------ *)
 
@@ -389,8 +442,10 @@ module Make(L : Logic.S) = struct
           () db.db_idx)
 
   let support db lit =
+    (*
     let set = L.LitMutHashtbl.create 7 in
     let explored = L.ClauseMutHashtbl.create 7 in
+    *)
     [] (* TODO *)
 
   let premises db lit = failwith "not implemented" (* TODO *)

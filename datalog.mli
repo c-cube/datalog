@@ -251,6 +251,15 @@ module DB : sig
       | NewGoal of literal
       | NewRule of clause
 
+    type action =
+      | AddClause of clause * explanation
+      | AddFact of literal * explanation   (* shortcut *)
+      | AddGoal of literal
+
+    type handler = result -> action list
+      (** A handler is a piece of external code that knows how to interpret
+          some results *)
+
     val empty : unit -> t
       (** Empty database *)
 
@@ -258,10 +267,14 @@ module DB : sig
       (** Get a (shallow) that can be used for backtracking without modifying
           the given DB. This is quite cheap. *)
 
+    val add_handler : t -> handler -> unit
+      (** All results of the DB will be given to the handler, from now on.
+          Handlers too are copied by [copy]. *)
+
     val mem : t -> clause -> bool
       (** Is the clause member of the DB? *)
 
-    val propagate : t -> result list
+    val propagate : t -> result Sequence.t
       (** Compute the fixpoint of the current Database's state *)
 
     (** The modification functions ({!add}, {!add_fact}, {!add_goal}...) modify
@@ -269,20 +282,30 @@ module DB : sig
         {b results}, ie the new information that has been discovered during
         propagation. *)
 
-    val add : t -> clause -> result list
+    val add : t -> clause -> result Sequence.t
       (** Add the clause/fact to the DB as an axiom, updating fixpoint.
           It returns the list of deduced new results.
           UnsafeRule will be raised if the rule is not safe (see {!check_safe}) *)
 
-    val add_fact : t -> literal -> result list
+    val add_fact : t -> literal -> result Sequence.t
       (** Add a fact (ground unit clause) *)
 
-    val add_goal : t -> literal -> result list
+    val add_goal : t -> literal -> result Sequence.t
       (** Add a goal to the DB. The goal is used to trigger backward chaining
           (calling goal handlers that could help solve the goal) *)
 
-    val add_seq : t -> clause Sequence.t -> result list
+    val add_seq : t -> clause Sequence.t -> result Sequence.t
       (** Add a whole sequence of clauses, in batch. *)
+
+    val add_action : t -> action -> result Sequence.t
+      (** Add an action to perform *)
+    
+    val add_actions : t -> action Sequence.t -> result Sequence.t
+      (** Add a finite set of actions *)
+
+    val raw_add : t -> action -> unit
+      (** Add the action but does not propagate yet. The user needs to call
+          {! propagate} by herself *)
 
     val match_with : t -> literal ->
                     (literal Logic.bind -> Logic.subst -> unit) -> unit

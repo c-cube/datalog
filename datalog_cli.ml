@@ -27,6 +27,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
     their fixpoint *)
 
 module DLogic = Logic.Default
+module DB = DB.Make(DLogic)
 module DParser = Parser
 module DLexer = Lexer
 
@@ -67,22 +68,27 @@ let pp_progress i total =
   Format.printf "\r%% clause %-5d / %-5d  " i total;
   Format.print_flush ()
 
-(** Simple goal handler (interprets 'lt') *)
-let handle_goal db lit =
-  (* debug: Format.printf "%% goal %a@." DLogic.pp_literal lit; *)
+(** Basic handler for a few goals (interprets 'lt', 'equal'...) *)
+let handler result =
   let compare a b =
     try let a = int_of_string a and b = int_of_string b in
         compare a b
     with Invalid_argument _ -> compare a b
   in
-  match DLogic.open_literal lit with
-  | "lt", [`Symbol a; `Symbol b] when compare a b < 0 ->
-    DLogic.db_add_fact db lit (* literal is true *)
-  | "le", [`Symbol a; `Symbol b] when compare a b <= 0 ->
-    DLogic.db_add_fact db lit (* literal is true *)
-  | "equal", [`Symbol a; `Symbol b] when a = b ->
-    DLogic.db_add_fact db lit (* literal is true *)
-  | _ -> ()
+  match result with
+  | DB.NewFact _ -> []
+  | DB.NewRule _ -> []
+  | DB.NewGoal lit ->
+    let open DLogic in
+    begin match lit with 
+    |Apply ("lt", [|Apply (a, [||]); Apply (b, [||])|]) when compare a b < 0 ->
+      [DB.AddFact (lit, DB.Axiom)]  (* literal is true *)
+    | Apply ("le", [|Apply (a, [||]); Apply (b, [||])|]) when compare a b <= 0 ->
+      [DB.AddFact (lit, DB.Axiom)]  (* literal is true *)
+    | Apply ("equal", [|Apply (a, [||]); Apply (b, [||])|]) when a = b ->
+      [DB.AddFact (lit, DB.Axiom)]  (* literal is true *)
+    | _ -> []
+    end
 
 (** Compute fixpoint of clauses *)
 let process_clauses clauses =
@@ -90,26 +96,26 @@ let process_clauses clauses =
   (if !print_input then
     List.iter (Format.printf "  clause @[<h>%a@]@." DLogic.pp_clause) clauses);
   Format.printf "%% computing fixpoint...@.";
-  let db = DLogic.db_create () in
+  let db = DB.empty () in
   (* handlers *)
-  List.iter (fun (symbol,handler,_) -> DLogic.db_subscribe_fact db symbol handler) !sums;
+  List.iter (fun (symbol,handler,_) -> DB.add_handler db handler) !sums;
   (* goals *)
-  DLogic.db_subscribe_goal db (handle_goal db);
-  List.iter (fun goal -> DLogic.db_goal db goal) !goals;
+  DB.add_handler db handler;
+  List.iter (fun goal -> DB.add_goal db goal; ()) !goals;
   (* add clauses one by one *)
   let total = List.length clauses in
   ignore (List.fold_left (fun i clause -> (if !progress then pp_progress i total);
-                          DLogic.db_add db clause; i+1)
+                          DB.add db clause; i+1)
           1 clauses);
   Format.printf "%% done.@.";
   (* print fixpoint of set after application of clauses *)
   (if !print_size then
-    Format.printf "%% size of saturated set: %d@." (DLogic.db_size db));
+    Format.printf "%% size of saturated set: %d@." (DB.size db));
   (if !print_saturated then
-    DLogic.db_fold (fun () clause ->
+    DB.fold (fun () clause ->
       Format.printf "  @[<h>%a@]@." DLogic.pp_clause clause) () db
   else if !print_result then
-    DLogic.db_fold (fun () clause ->
+    DB.fold (fun () clause ->
       if DLogic.is_fact clause then
         Format.printf "  @[<h>%a@]@." DLogic.pp_clause clause) () db);
   (* print aggregates *)
@@ -117,21 +123,21 @@ let process_clauses clauses =
   (* print patterns *)
   List.iter (fun pattern ->
     Format.printf "%% facts matching pattern %a:@." DLogic.pp_literal pattern;
-    DLogic.db_match db pattern
+    DB.match_with db pattern
       (fun (fact,_) subst -> Format.printf "  @[<h>%a.@]@." DLogic.pp_literal fact))
     !patterns;
   (* print explanations *)
   List.iter (fun pattern ->
-    DLogic.db_match db pattern
+    DB.match_with db pattern
       (fun (fact,_) subst ->
         (* premises *)
         Format.printf "  premises of @[<h>%a@]: @[<h>" DLogic.pp_literal fact;
-        let clause, premises = DLogic.db_premises db fact in
+        let clause, premises = DB.premises db fact in
         List.iter (fun fact' -> Format.printf "%a, " DLogic.pp_literal fact') premises;
         Format.printf " with @[<h>%a@]" DLogic.pp_clause clause;
         Format.printf "@]@.";
         (* explanation *)
-        let explanation = DLogic.db_explain db fact in
+        let explanation = DB.support db fact in
         Format.printf "  explain @[<h>%a@] by: @[<h>" DLogic.pp_literal fact;
         List.iter (fun fact' -> Format.printf " %a" DLogic.pp_literal fact') explanation;
         Format.printf "@]@."))
@@ -147,8 +153,15 @@ let process_clauses clauses =
 let add_sum symbol =
   let count = ref 0 in
   (* print result at exit *)
-  let printer () = Format.printf "%% number of fact with head %s: %d@." symbol !count in
-  let handler _ = incr count in
+  let printer () =
+    Format.printf "%% number of fact with head %s: %d@." symbol !count in
+  let handler result =
+    match result with
+    | DB.NewFact (DLogic.Apply (s, _)) when s == symbol ->
+      incr count;
+      []
+    | _ -> []
+  in
   sums := (symbol, handler, printer) :: !sums
 
 (** Handler that prints facts that match the given [pattern] once the

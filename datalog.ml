@@ -34,3 +34,5 @@ module DB = DB
 module Parser = Parser
 
 module Lexer = Lexer
+
+let version = "0.4"

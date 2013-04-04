@@ -92,7 +92,7 @@ literal:
   | UPPER_WORD { Logic.Default.T.mk_var (get_var $1) }
   | const { Logic.Default.T.mk_const $1 }
   | const LEFT_PARENTHESIS args RIGHT_PARENTHESIS
-    { Logic.Default.T.mk_apply (Logic.Default.T.mk_const $1) $3 }
+    { Logic.Default.T.mk_apply_l (Logic.Default.T.mk_const $1) $3 }
 
 args:
   | literal { [$1] }

@@ -137,5 +137,3 @@ module type S = sig
 end
 
 module Make(L : Logic.S) : S with module Logic = L
-
-val version : string

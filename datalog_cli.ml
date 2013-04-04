@@ -81,13 +81,13 @@ let handler result =
   | DB.NewClause _ -> []
   | DB.NewGoal lit ->
     begin match lit.term with 
-    | Apply ({term=Const "lt"}, [{term=Const a}; {term=Const b}])
+    | Apply ({term=Const "lt"}, [|{term=Const a}; {term=Const b}|])
       when compare_atoms a b < 0 ->
       [DB.AddFact (lit, DB.Axiom)]  (* literal is true *)
-    | Apply ({term=Const "le"}, [{term=Const a}; {term=Const b}])
+    | Apply ({term=Const "le"}, [|{term=Const a}; {term=Const b}|])
       when compare_atoms a b <= 0 ->
       [DB.AddFact (lit, DB.Axiom)]  (* literal is true *)
-    | Apply ({term=Const "equal"}, [{term=Const a}; {term=Const b}])
+    | Apply ({term=Const "equal"}, [|{term=Const a}; {term=Const b}|])
       when compare_atoms a b = 0 ->
       [DB.AddFact (lit, DB.Axiom)]  (* literal is true *)
     | _ -> []

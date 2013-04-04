@@ -307,15 +307,41 @@ module Make(L : Logic.S) = struct
         () db.db_idx ctx_idx premise ctx_clause
 
   let fwd_goal_chaining ~add_result db goal =
-    ()  (* TODO *)
+    let ctx_goal = L.T.mk_context () in
+    let ctx_idx = L.T.mk_context () in
+    (* find clauses that may help solving this goal *)
+    Idx.retrieve_unify
+      (fun () lit _ data ->
+        Gen.iter
+          (function
+          | IdxConclusion (L.Clause (_, premise::_)) ->
+            (* this clause may help solving the goal *)
+            let goal' = L.T.apply premise ctx_idx in
+            add_result (NewGoal goal')
+          | _ -> ())
+          data)
+      () db.db_idx ctx_idx goal ctx_goal
 
   let back_goal_chaining ~add_result db clause =
-    ()  (* TODO *)
+    match clause with
+    | L.Clause (concl, premise::_) ->
+      let ctx_clause = L.T.mk_context () in
+      let ctx_idx = L.T.mk_context () in
+      (* find clauses that may help solving this goal *)
+      Idx.retrieve_unify
+        (fun () goal _ data ->
+          Gen.iter
+            (function
+            | IdxGoal ->
+              let goal' = L.T.apply premise ctx_clause in
+              add_result (NewGoal goal')
+            | _ -> ())
+            data)
+        () db.db_idx ctx_idx concl ctx_clause
+    | L.Clause (_, []) -> assert false
 
   (*
 
-  (** Forward goal chaining: add this goal to the [db] and chain to find
-      other goals *)
   let fwd_goal_chaining db goal =
     let offset = L.lit_offset goal in
     (* find clauses that may help solving this goal *)

@@ -426,6 +426,11 @@ module Make(L : Logic.S) = struct
     (* to be called for each new result *)
     let add_result result =
       Queue.push result results;  (* save result *)
+      (* re-inject the result into the DB *)
+      (match result with
+      | NewFact (f, explanation) -> Queue.push (AddFact (f, explanation)) db.db_queue
+      | NewClause (c, explanation) -> Queue.push (AddClause (c, explanation)) db.db_queue
+      | NewGoal goal -> Queue.push (AddGoal goal) db.db_queue);
       List.iter
         (fun handler ->
           let actions = handler result in  (* call handler on the result *)
@@ -557,5 +562,3 @@ module Make(L : Logic.S) = struct
 
   *)
 end
-
-let version = "0.4"  (* TODO move it to Datalog.ml main file (and <- 4.0) *)

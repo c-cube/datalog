@@ -123,9 +123,18 @@ module type S = sig
   val goals : t -> literal Sequence.t
     (** Iterate on all current goals *)
 
-  val support : t -> literal -> literal list
-    (** Explain the given fact by returning a set of facts that imply it
+  type support_set = {
+    support_facts : literal list;
+    support_clauses : clause list;
+  } (** Full justification for a clause (a set of clauses/facts that imply
+        the clause *)
+
+  val support_clause : t -> clause -> support_set
+    (** Explain the given clause by returning a set of facts that imply it
         under the current clauses, or raise Not_found *)
+
+  val support : t -> literal -> support_set
+    (** Same as {! support_clause}, but for a single fact *)
 
   val premises : t -> literal -> clause * literal list
     (** Immediate premises of the fact (ie the facts that resolved with

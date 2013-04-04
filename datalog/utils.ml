@@ -25,6 +25,19 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 (** Utils *)
 
+let sprintf format =
+  let buffer = Buffer.create 32 in
+  let fmt = Format.formatter_of_buffer buffer in
+  Format.kfprintf
+    (begin fun fmt ->
+    Format.pp_print_flush fmt ();
+    let s = Buffer.contents buffer in
+    Buffer.clear buffer;
+    s
+    end)
+  fmt
+  format
+
 (* ----------------------------------------------------------------------
  * Ints and int arrays
  * ---------------------------------------------------------------------- *)

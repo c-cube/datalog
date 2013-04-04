@@ -142,9 +142,10 @@ let process_clauses clauses =
         Format.printf " with @[<h>%a@]" DLogic.pp_clause clause;
         Format.printf "@]@.";
         (* explanation *)
-        let explanation = DB.support db fact in
+        let support_set = DB.support db fact in
         Format.printf "  explain @[<h>%a@] by: @[<h>" DLogic.T.pp fact;
-        List.iter (fun fact' -> Format.printf " %a" DLogic.T.pp fact') explanation;
+        List.iter (fun fact' -> Format.printf " %a" DLogic.T.pp fact') support_set.DB.support_facts;
+        List.iter (fun c' -> Format.printf " %a" DLogic.pp_clause c') support_set.DB.support_clauses;
         Format.printf "@]@."))
     !explains;
   (* print memory usage *)

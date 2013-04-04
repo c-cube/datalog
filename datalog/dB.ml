@@ -123,9 +123,18 @@ module type S = sig
   val goals : t -> literal Sequence.t
     (** Iterate on all current goals *)
 
-  val support : t -> literal -> literal list
-    (** Explain the given fact by returning a set of facts that imply it
+  type support_set = {
+    support_facts : literal list;
+    support_clauses : clause list;
+  } (** Full justification for a clause (a set of clauses/facts that imply
+        the clause *)
+
+  val support_clause : t -> clause -> support_set
+    (** Explain the given clause by returning a set of facts that imply it
         under the current clauses, or raise Not_found *)
+
+  val support : t -> literal -> support_set
+    (** Same as {! support_clause}, but for a single fact *)
 
   val premises : t -> literal -> clause * literal list
     (** Immediate premises of the fact (ie the facts that resolved with
@@ -464,16 +473,92 @@ module Make(L : Logic.S) = struct
               then k lit)
           () db.db_idx)
 
+  type support_set = {
+    support_facts : literal list;   (* sorted *)
+    support_clauses : clause list;  (* sorted *)
+  } (** Full justification for a clause (a set of clauses/facts that imply
+        the clause *)
+
+  (** Merge two set of support *)
+  let merge_support s1 s2 =
+    let open Gen.Infix in
+    let support_facts =
+      Gen.sorted_merge ~cmp:L.T.compare
+        (Gen.of_list s1.support_facts) (Gen.of_list s2.support_facts)
+      |> Gen.uniq ~eq:L.T.eq
+      |> Gen.to_list
+    in
+    let support_clauses =
+      Gen.sorted_merge ~cmp:L.compare_clause
+        (Gen.of_list s1.support_clauses) (Gen.of_list s2.support_clauses)
+      |> Gen.uniq ~eq:L.eq_clause
+      |> Gen.to_list
+    in
+    { support_facts; support_clauses; }
+
+  let support_clause db c =
+    (* map clause -> support_set *)
+    let support = L.ClauseMutHashtbl.create 3 in
+    (* find a support for this clause. The trail is the set
+        of clauses we currently try to justify. *)
+    let rec justify_clause trail c =
+      if L.ClauseHashtbl.mem trail c
+        then raise Not_found  (* loop. bad branch *)
+      else if L.ClauseMutHashtbl.mem support c
+        then L.ClauseMutHashtbl.find support c  (* immediate success *)
+      else
+        (* try to follow one of the explanations of this clause *)
+        let explanations = L.ClauseHashtbl.find db.db_clauses c in
+        if List.exists (function | Axiom -> true | _ -> false) explanations
+          (* success because it's an axiom *)
+          then match c with
+          | L.Clause (fact, []) ->
+            let set = { support_facts = [fact]; support_clauses=[] } in
+            L.ClauseMutHashtbl.add support c set;
+            set
+          | _ ->
+            let set = { support_facts = []; support_clauses=[c] } in
+            L.ClauseMutHashtbl.add support c set;
+            set
+          else
+            let trail' = L.ClauseHashtbl.replace trail c () in
+            try_list c trail' explanations
+    (* try each explanation of the list to justify [c] *)
+    and try_list c trail l = match l with
+      | [] -> raise Not_found 
+      | Axiom::_ -> assert false
+      | Resolution (c', f)::l' ->
+        try
+          let set1 = justify_clause trail c' in
+          let set2 = justify_clause trail (L.mk_clause f []) in
+          (* could justify both hypothesis, win! *)
+          let set = merge_support set1 set2 in
+          L.ClauseMutHashtbl.add support c set;
+          set
+        with Not_found ->  (* explanation failed *)
+          try_list c trail l'
+    in
+    let trail = L.ClauseHashtbl.create 3 in
+    justify_clause trail c
+
   let support db lit =
-    (*
-    let set = L.LitMutHashtbl.create 7 in
-    let explored = L.ClauseMutHashtbl.create 7 in
-    *)
-    [] (* TODO *)
+    support_clause db (L.mk_clause lit [])
 
-  let premises db lit = failwith "not implemented" (* TODO *)
+  let premises db lit =
+    let rec search acc clause =
+      let explanations = L.ClauseHashtbl.find db.db_clauses clause in
+      match explanations with
+      | [] -> assert false
+      | Axiom::_ -> clause, acc  (* no premises *)
+      | Resolution (clause', fact)::_ ->
+        let acc = fact :: acc in
+        search acc clause'
+    in
+    search [] (L.mk_clause lit [])
 
-  let explanations db c = Sequence.empty (* TODO *)
+  let explanations db c =
+    let l = L.ClauseHashtbl.find db.db_clauses c in
+    Sequence.of_list l
 
   (*
 

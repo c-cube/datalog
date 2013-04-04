@@ -73,7 +73,7 @@ module type S = sig
   val mem : t -> clause -> bool
     (** Is the clause member of the DB? *)
 
-  val propagate : t -> result Sequence.t
+  val propagate : ?on_result:(result -> unit) -> t -> unit
     (** Compute the fixpoint of the current Database's state *)
 
   (** The modification functions ({!add}, {!add_fact}, {!add_goal}...) modify
@@ -81,25 +81,25 @@ module type S = sig
       {b results}, ie the new information that has been discovered during
       propagation. *)
 
-  val add : t -> clause -> result Sequence.t
+  val add : ?on_result:(result -> unit) -> t -> clause -> unit
     (** Add the clause/fact to the DB as an axiom, updating fixpoint.
         It returns the list of deduced new results.
         UnsafeRule will be raised if the rule is not safe (see {!check_safe}) *)
 
-  val add_fact : t -> literal -> result Sequence.t
+  val add_fact : ?on_result:(result -> unit) -> t -> literal -> unit
     (** Add a fact (ground unit clause) *)
 
-  val add_goal : t -> literal -> result Sequence.t
+  val add_goal : ?on_result:(result -> unit) -> t -> literal -> unit
     (** Add a goal to the DB. The goal is used to trigger backward chaining
         (calling goal handlers that could help solve the goal) *)
 
-  val add_seq : t -> clause Sequence.t -> result Sequence.t
+  val add_seq : ?on_result:(result -> unit) -> t -> clause Sequence.t -> unit
     (** Add a whole sequence of clauses, in batch. *)
 
-  val add_action : t -> action -> result Sequence.t
+  val add_action : ?on_result:(result -> unit) -> t -> action -> unit
     (** Add an action to perform *)
   
-  val add_actions : t -> action Sequence.t -> result Sequence.t
+  val add_actions : ?on_result:(result -> unit) -> t -> action Sequence.t -> unit
     (** Add a finite set of actions *)
 
   val raw_add : t -> action -> unit
@@ -258,7 +258,7 @@ module Make(L : Logic.S) = struct
 
   (** Forward resolution with the given fact: resolution with clauses in
       which first premise unifies with [fact]. *)
-  let fwd_resolution ~add_result db fact =
+  let fwd_resolution db fact =
     let ctx_idx = L.T.mk_context () in
     let ctx_fact = L.T.mk_context () in
     (* retrieve clauses whose premises unify with fact *)
@@ -269,18 +269,18 @@ module Make(L : Logic.S) = struct
             | IdxPremise (L.Clause (concl, [_]) as c) ->
               let fact' = L.T.apply concl ctx_idx in
               let explanation = Resolution (c, fact) in
-              add_result (NewFact (fact', explanation))
+              Queue.push (AddFact (fact', explanation)) db.db_queue
             | IdxPremise c ->
               (* resolution with clause [c] *)
               let c' = L.remove_first c ctx_idx in
               let explanation = Resolution (c, fact) in
-              add_result (NewClause (c', explanation))
+              Queue.push (AddClause (c', explanation)) db.db_queue
             | _ -> ())
           data)
       () db.db_idx ctx_idx fact ctx_fact
 
   (** Backward hyper-resolution of the [clause] with facts present in [db] *)
-  let back_resolution ~add_result db clause =
+  let back_resolution db clause =
     match clause with
     | L.Clause (_, []) -> assert false
     | L.Clause (concl, [premise]) ->
@@ -292,7 +292,7 @@ module Make(L : Logic.S) = struct
             then (* resolution *)
               let explanation = Resolution (clause, fact) in
               let fact' = L.T.apply concl ctx_clause in
-              add_result (NewFact (fact', explanation)))
+              Queue.push (AddFact (fact', explanation)) db.db_queue)
         () db.db_idx ctx_idx premise ctx_clause
     | L.Clause (_, premise::_) ->
       let ctx_clause = L.T.mk_context () in
@@ -303,10 +303,10 @@ module Make(L : Logic.S) = struct
             then (* resolution *)
               let explanation = Resolution (clause, fact) in
               let clause' = L.remove_first clause ctx_clause in
-              add_result (NewClause (clause', explanation)))
+              Queue.push (AddClause (clause', explanation)) db.db_queue)
         () db.db_idx ctx_idx premise ctx_clause
 
-  let fwd_goal_chaining ~add_result db goal =
+  let fwd_goal_chaining db goal =
     let ctx_goal = L.T.mk_context () in
     let ctx_idx = L.T.mk_context () in
     (* find clauses that may help solving this goal *)
@@ -317,12 +317,12 @@ module Make(L : Logic.S) = struct
           | IdxConclusion (L.Clause (_, premise::_)) ->
             (* this clause may help solving the goal *)
             let goal' = L.T.apply premise ctx_idx in
-            add_result (NewGoal goal')
+            Queue.push (AddGoal goal') db.db_queue
           | _ -> ())
           data)
       () db.db_idx ctx_idx goal ctx_goal
 
-  let back_goal_chaining ~add_result db clause =
+  let back_goal_chaining db clause =
     match clause with
     | L.Clause (concl, premise::_) ->
       let ctx_clause = L.T.mk_context () in
@@ -334,43 +334,11 @@ module Make(L : Logic.S) = struct
             (function
             | IdxGoal ->
               let goal' = L.T.apply premise ctx_clause in
-              add_result (NewGoal goal')
+              Queue.push (AddGoal goal') db.db_queue
             | _ -> ())
             data)
         () db.db_idx ctx_idx concl ctx_clause
     | L.Clause (_, []) -> assert false
-
-  (*
-
-  let fwd_goal_chaining db goal =
-    let offset = L.lit_offset goal in
-    (* find clauses that may help solving this goal *)
-    Idx.retrieve_unify
-      (fun acc lit data subst ->
-        (* find clauses whose head unified with goal *)
-        List.fold_left
-          (fun acc (clause, _) ->
-            match clause with
-            | L.Clause (_, []) -> acc
-            | L.Clause (_, lit'::_) ->
-              let new_goal = L.subst_literal subst (lit',offset) in
-              AddGoal new_goal :: acc)
-          acc data.as_conclusion)
-      [] (db.db_idx,offset) (goal,0)
-
-  (** Backward goal chaining with the given non unit clause *)
-  let back_goal_chaining db clause =
-    match clause with
-    | L.Clause (_, []) -> []
-    | L.Clause (head, lit::_) ->
-      let offset = L.offset clause in
-      Idx.retrieve_unify
-        (fun acc goal data subst ->
-          let new_goal = L.subst_literal subst (lit,0) in
-          AddGoal new_goal :: acc)
-        [] (db.db_idx,offset) (head,0)
-
-  *)
 
   let process_add_clause db ~add_result c explanation =
     try
@@ -386,13 +354,13 @@ module Make(L : Logic.S) = struct
       (* add the clause to the index, and generate new clauses by resolution *)
       | L.Clause (fact, []) ->
         add_result (NewFact (fact, explanation));
-        fwd_resolution ~add_result db fact;
+        fwd_resolution db fact;
         (* add fact to the DB *)
         db.db_idx <- add_fact_idx db.db_idx fact;
       | L.Clause (head, _::_) ->
         add_result (NewClause (c, explanation));
-        back_resolution ~add_result db c;
-        back_goal_chaining ~add_result db c;
+        back_resolution db c;
+        back_goal_chaining db c;
         (* add clause to the DB *)
         db.db_idx <- add_clause_idx db.db_idx c
 
@@ -402,7 +370,7 @@ module Make(L : Logic.S) = struct
       add_result (NewGoal goal);
       (* add goal to the index, and chain *)
       db.db_idx <- add_goal_idx db.db_idx goal;
-      fwd_goal_chaining ~add_result db goal;
+      fwd_goal_chaining db goal;
     end
 
   (** Process one action *)
@@ -417,17 +385,11 @@ module Make(L : Logic.S) = struct
       process_add_goal db ~add_result goal
 
   (** Compute the fixpoint of the current Database's state *)
-  let propagate db =
-    let results = Queue.create () in
+  let propagate ?(on_result=fun _ -> ()) db =
     (* to be called for each new result *)
     let add_result result =
-      Queue.push result results;  (* save result *)
-      (* re-inject the result into the DB *)
-      (match result with
-      | NewFact (f, explanation) -> Queue.push (AddFact (f, explanation)) db.db_queue
-      | NewClause (c, explanation) -> Queue.push (AddClause (c, explanation)) db.db_queue
-      | NewGoal goal -> Queue.push (AddGoal goal) db.db_queue);
-      List.iter
+      on_result result;  (* user defined handler *)
+      List.iter  (* registered handlers *)
         (fun handler ->
           let actions = handler result in  (* call handler on the result *)
           List.iter (fun action -> Queue.push action db.db_queue) actions)
@@ -437,35 +399,35 @@ module Make(L : Logic.S) = struct
       let action = Queue.pop db.db_queue in
       process_action db ~add_result action
     done;
-    Sequence.of_queue results
+    ()
 
-  let add_action db action =
+  let add_action ?on_result db action =
     Queue.push action db.db_queue;
     (* compute fixpoint *)
-    propagate db
+    propagate ?on_result db
 
-  let add_actions db actions =
+  let add_actions ?on_result db actions =
     Sequence.to_queue db.db_queue actions;
-    propagate db
+    propagate ?on_result db
 
   (** Add the clause to the Datalog base *)
-  let add db clause =
+  let add ?on_result db clause =
     assert (L.check_safe clause);
-    add_action db (AddClause (clause, Axiom))
+    add_action ?on_result db (AddClause (clause, Axiom))
 
-  let add_fact db fact =
-    add db (L.mk_clause fact [])
+  let add_fact ?on_result db fact =
+    add ?on_result db (L.mk_clause fact [])
 
   (** Add the given goal to the Datalog base *)
-  let add_goal db goal =
-    add_action db (AddGoal goal)
+  let add_goal ?on_result db goal =
+    add_action ?on_result db (AddGoal goal)
 
-  let add_seq db clauses =
+  let add_seq ?on_result db clauses =
     let open Sequence.Infix in
     (* push batch, then propagate *)
     clauses
       |> Sequence.map (fun c -> AddClause (c, Axiom))
-      |> add_actions db
+      |> add_actions ?on_result db
 
   let raw_add db action =
     Queue.push action db.db_queue 

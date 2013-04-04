@@ -73,7 +73,7 @@ module type S = sig
   val mem : t -> clause -> bool
     (** Is the clause member of the DB? *)
 
-  val propagate : t -> result Sequence.t
+  val propagate : ?on_result:(result -> unit) -> t -> unit
     (** Compute the fixpoint of the current Database's state *)
 
   (** The modification functions ({!add}, {!add_fact}, {!add_goal}...) modify
@@ -81,25 +81,25 @@ module type S = sig
       {b results}, ie the new information that has been discovered during
       propagation. *)
 
-  val add : t -> clause -> result Sequence.t
+  val add : ?on_result:(result -> unit) -> t -> clause -> unit
     (** Add the clause/fact to the DB as an axiom, updating fixpoint.
         It returns the list of deduced new results.
         UnsafeRule will be raised if the rule is not safe (see {!check_safe}) *)
 
-  val add_fact : t -> literal -> result Sequence.t
+  val add_fact : ?on_result:(result -> unit) -> t -> literal -> unit
     (** Add a fact (ground unit clause) *)
 
-  val add_goal : t -> literal -> result Sequence.t
+  val add_goal : ?on_result:(result -> unit) -> t -> literal -> unit
     (** Add a goal to the DB. The goal is used to trigger backward chaining
         (calling goal handlers that could help solve the goal) *)
 
-  val add_seq : t -> clause Sequence.t -> result Sequence.t
+  val add_seq : ?on_result:(result -> unit) -> t -> clause Sequence.t -> unit
     (** Add a whole sequence of clauses, in batch. *)
 
-  val add_action : t -> action -> result Sequence.t
+  val add_action : ?on_result:(result -> unit) -> t -> action -> unit
     (** Add an action to perform *)
   
-  val add_actions : t -> action Sequence.t -> result Sequence.t
+  val add_actions : ?on_result:(result -> unit) -> t -> action Sequence.t -> unit
     (** Add a finite set of actions *)
 
   val raw_add : t -> action -> unit

@@ -43,8 +43,7 @@ module type S = sig
 
   type explanation =
     | Axiom
-    | HyperResolution of clause * literal list
-    (** Explanation for a clause or fact *)
+    | Resolution of clause * literal
 
   type result =
     | NewFact of literal * explanation
@@ -151,7 +150,7 @@ module Make(L : Logic.S) = struct
   (** Explanation for a clause or fact *)
   type explanation =
     | Axiom
-    | HyperResolution of clause * literal list
+    | Resolution of clause * literal
 
   type result =
     | NewFact of literal * explanation
@@ -166,7 +165,7 @@ module Make(L : Logic.S) = struct
   type handler = result -> action list
 
   type index_data =
-    | IdxPremise of clause * int    (* lit = i-th premise of clause *)
+    | IdxPremise of clause          (* lit = first premise of clause *)
     | IdxConclusion of clause       (* lit = conclusion of clause *)
     | IdxFact                       (* lit is a fact *)
     | IdxGoal                       (* lit is a goal *)
@@ -175,8 +174,8 @@ module Make(L : Logic.S) = struct
 
   let compare_idx_data data1 data2 =
     match data1, data2 with
-    | IdxPremise (c1,i1), IdxPremise (c2,i2) ->
-      if i1 <> i2 then i1 - i2 else L.compare_clause c1 c2
+    | IdxPremise c1, IdxPremise c2 ->
+      L.compare_clause c1 c2
     | IdxConclusion c1, IdxConclusion c2 ->
       L.compare_clause c1 c2
     | IdxFact, IdxFact -> 0
@@ -244,16 +243,11 @@ module Make(L : Logic.S) = struct
   let add_clause_idx idx clause =
     match clause with
     | L.Clause (head, []) -> assert false
-    | L.Clause (head, body) ->
+    | L.Clause (head, premise::_) ->
       (* index by [head] *)
       let idx' = Idx.add idx head (IdxConclusion clause) in
       (* index clause by premises in body *)
-      let idx', _ =
-        List.fold_left
-          (fun (idx,i) premise ->
-            Idx.add idx premise (IdxPremise (clause, i)), i+1)
-          (idx', 0) body in
-      idx'
+      Idx.add idx' premise (IdxPremise clause)
 
   let add_fact_idx idx fact =
     let idx' = Idx.add idx fact IdxFact in
@@ -262,85 +256,61 @@ module Make(L : Logic.S) = struct
   let add_goal_idx idx goal =
     Idx.add idx goal IdxGoal
 
-  (** Given the list of premises, and the conclusion, perform hyper-resolution
-      with all facts present in [idx]. [ctx] is the current context for
-      the variables in [premises] and [conclusions]. [send_fact] is called
-      with all deduced facts and their premises. *)
-  let hyperresolve ~send_fact conclusion premises ctx idx =
-    (* heuristic: sort premises by decreasing size; bigger terms have more
-       chances to have few matches *)
-    let premises = List.sort (fun t1 t2 -> t2.L.T.size - t1.L.T.size) premises in
-    let premises = List.map (fun t -> t, L.T.mk_context ()) premises in
-    (* unify each premise with facts; [facts] is the list of facts used
-       so far to resolve previous premises *)
-    let rec resolve facts premises = match premises with
-      | [] ->
-        (* hyperresolution succeeded! *)
-        let fact = L.T.apply conclusion ctx in
-        send_fact fact facts
-      | (p, ctx_idx)::premises' ->
-        (* for each fact that match [p], recurse *)
-        Idx.retrieve_unify
-          (fun () fact _ data ->
-            Gen.iter
-              (fun data -> match data with
-               | IdxFact -> resolve (fact::facts) premises'
-               | _ -> ())
-              data)
-          () idx ctx_idx p ctx 
-    in
-    resolve [] premises
-
-  (** Remove [n]-th element of [l] *)
-  let rec remove_list_nth l n = match l with
-    | [] -> failwith "remove_list_nth: index not in list"
-    | x::l' when n=0 -> l'
-    | x::l' -> x::(remove_list_nth l' (n-1))
-
-  (** Forward hyper-resolution with the given fact: resolution with clauses in
-      which some premise unifies with [fact]. *)
-  let fwd_resolution db fact =
+  (** Forward resolution with the given fact: resolution with clauses in
+      which first premise unifies with [fact]. *)
+  let fwd_resolution ~add_result db fact =
     let ctx_idx = L.T.mk_context () in
     let ctx_fact = L.T.mk_context () in
-    let results = Queue.create () in
     (* retrieve clauses whose premises unify with fact *)
     Idx.retrieve_unify
       (fun () _ _ data ->
         Gen.iter
           (fun data -> match data with
-            | IdxPremise ((L.Clause (concl, body)) as clause, i) ->
-              (* hyperresolution with this clause *)
-              let send_fact f facts =
-                let explanation = HyperResolution (clause, fact::facts) in
-                Queue.push (NewFact (f, explanation)) results
-              in
-              let premises = remove_list_nth body i in
-              hyperresolve ~send_fact concl premises ctx_idx db.db_idx
+            | IdxPremise (L.Clause (concl, [_]) as c) ->
+              let fact' = L.T.apply concl ctx_idx in
+              let explanation = Resolution (c, fact) in
+              add_result (NewFact (fact', explanation))
+            | IdxPremise c ->
+              (* resolution with clause [c] *)
+              let c' = L.remove_first c ctx_idx in
+              let explanation = Resolution (c, fact) in
+              add_result (NewClause (c', explanation))
             | _ -> ())
           data)
-      () db.db_idx ctx_idx fact ctx_fact;
-    Sequence.of_queue results
+      () db.db_idx ctx_idx fact ctx_fact
 
   (** Backward hyper-resolution of the [clause] with facts present in [db] *)
-  let back_resolution db clause =
+  let back_resolution ~add_result db clause =
     match clause with
-    | L.Clause (_, []) ->
-      Sequence.empty  (* no resolution, this is a fact *)
-    | L.Clause (concl, premises) ->
-      let ctx = L.T.mk_context () in
-      let results = Queue.create () in
-      let send_fact f facts =
-        let explanation = HyperResolution (clause, facts) in
-        Queue.push (NewFact (f, explanation)) results
-      in
-      hyperresolve ~send_fact concl premises ctx db.db_idx;
-      Sequence.of_queue results
+    | L.Clause (_, []) -> assert false
+    | L.Clause (concl, [premise]) ->
+      let ctx_clause = L.T.mk_context () in
+      let ctx_idx = L.T.mk_context () in
+      Idx.retrieve_unify
+        (fun () fact _ data ->
+          if Gen.exists (function | IdxFact -> true | _ -> false) data
+            then (* resolution *)
+              let explanation = Resolution (clause, fact) in
+              let fact' = L.T.apply concl ctx_clause in
+              add_result (NewFact (fact', explanation)))
+        () db.db_idx ctx_idx premise ctx_clause
+    | L.Clause (_, premise::_) ->
+      let ctx_clause = L.T.mk_context () in
+      let ctx_idx = L.T.mk_context () in
+      Idx.retrieve_unify
+        (fun () fact _ data ->
+          if Gen.exists (function | IdxFact -> true | _ -> false) data
+            then (* resolution *)
+              let explanation = Resolution (clause, fact) in
+              let clause' = L.remove_first clause ctx_clause in
+              add_result (NewClause (clause', explanation)))
+        () db.db_idx ctx_idx premise ctx_clause
 
-  let fwd_goal_chaining db goal =
-    Sequence.empty  (* TODO *)
+  let fwd_goal_chaining ~add_result db goal =
+    ()  (* TODO *)
 
-  let back_goal_chaining db clause =
-    Sequence.empty  (* TODO *)
+  let back_goal_chaining ~add_result db clause =
+    ()  (* TODO *)
 
   (*
 
@@ -390,13 +360,13 @@ module Make(L : Logic.S) = struct
       (* add the clause to the index, and generate new clauses by resolution *)
       | L.Clause (fact, []) ->
         add_result (NewFact (fact, explanation));
-        Sequence.iter (fun r -> add_result r) (fwd_resolution db fact);
+        fwd_resolution ~add_result db fact;
         (* add fact to the DB *)
         db.db_idx <- add_fact_idx db.db_idx fact;
       | L.Clause (head, _::_) ->
         add_result (NewClause (c, explanation));
-        Sequence.iter add_result (back_resolution db c);
-        Sequence.iter add_result (back_goal_chaining db c);
+        back_resolution ~add_result db c;
+        back_goal_chaining ~add_result db c;
         (* add clause to the DB *)
         db.db_idx <- add_clause_idx db.db_idx c
 
@@ -406,7 +376,7 @@ module Make(L : Logic.S) = struct
       add_result (NewGoal goal);
       (* add goal to the index, and chain *)
       db.db_idx <- add_goal_idx db.db_idx goal;
-      Sequence.iter add_result (fwd_goal_chaining db goal);
+      fwd_goal_chaining ~add_result db goal;
     end
 
   (** Process one action *)

@@ -43,8 +43,7 @@ module type S = sig
 
   type explanation =
     | Axiom
-    | HyperResolution of clause * literal list
-    (** Explanation for a clause or fact *)
+    | Resolution of clause * literal
 
   type result =
     | NewFact of literal * explanation

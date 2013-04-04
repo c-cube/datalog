@@ -89,10 +89,10 @@ literals:
   | literal COMMA literals { $1 :: $3 }
 
 literal:
-  | UPPER_WORD { Logic.Default.mk_var (get_var $1) }
-  | const { Logic.Default.mk_const $1 }
+  | UPPER_WORD { Logic.Default.T.mk_var (get_var $1) }
+  | const { Logic.Default.T.mk_const $1 }
   | const LEFT_PARENTHESIS args RIGHT_PARENTHESIS
-    { Logic.Default.mk_apply $1 $3 }
+    { Logic.Default.T.mk_apply (Logic.Default.T.mk_const $1) $3 }
 
 args:
   | literal { [$1] }

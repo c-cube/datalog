@@ -13,7 +13,7 @@ Handlers (semantic attachments) can be provided by the user, to be called on
 every goal. The point is that the handlers can add facts that **solve** the
 goal by adding facts that match it.
 
-For instance, a handler may solve goals of the form `lt_than(i,j)` (where
+For instance, a handler may solve goals of the form `lt(i,j)` (where
 `i` and `j` are integers) by adding the fact `lt(i,j)` if `i < j` is
 really true. Another example: if symbols are strings, then the goal
 `concat("foo", "bar", X)` may be solved by adding the fact

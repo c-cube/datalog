@@ -5,5 +5,7 @@
 #directory "containers/_build/";;
 #load "containers.cma";;
 #load "datalog.cma";;
-#install_printer Datalog.Logic.Default.pp_literal;;
+#install_printer Datalog.Logic.Default.T.pp;;
 #install_printer Datalog.Logic.Default.pp_clause;;
+(* vim:syntax=ocaml:
+*)

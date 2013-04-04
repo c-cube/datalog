@@ -1,6 +1,8 @@
 S .
 S datalog
 S containers
+S logic-terms
 B _build
 B _build/datalog/
 B _build/containers
+B _build/logic-terms/

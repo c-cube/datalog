@@ -70,22 +70,25 @@ let pp_progress i total =
 
 (** Basic handler for a few goals (interprets 'lt', 'equal'...) *)
 let handler result =
-  let compare a b =
+  let open DLogic.T in
+  let compare_atoms a b =
     try let a = int_of_string a and b = int_of_string b in
-        compare a b
-    with Invalid_argument _ -> compare a b
+        a - b
+    with Invalid_argument _ -> String.compare a b
   in
   match result with
   | DB.NewFact _ -> []
-  | DB.NewRule _ -> []
+  | DB.NewClause _ -> []
   | DB.NewGoal lit ->
-    let open DLogic in
-    begin match lit with 
-    |Apply ("lt", [|Apply (a, [||]); Apply (b, [||])|]) when compare a b < 0 ->
+    begin match lit.term with 
+    | Apply ({term=Const "lt"}, [{term=Const a}; {term=Const b}])
+      when compare_atoms a b < 0 ->
       [DB.AddFact (lit, DB.Axiom)]  (* literal is true *)
-    | Apply ("le", [|Apply (a, [||]); Apply (b, [||])|]) when compare a b <= 0 ->
+    | Apply ({term=Const "le"}, [{term=Const a}; {term=Const b}])
+      when compare_atoms a b <= 0 ->
       [DB.AddFact (lit, DB.Axiom)]  (* literal is true *)
-    | Apply ("equal", [|Apply (a, [||]); Apply (b, [||])|]) when a = b ->
+    | Apply ({term=Const "equal"}, [{term=Const a}; {term=Const b}])
+      when compare_atoms a b = 0 ->
       [DB.AddFact (lit, DB.Axiom)]  (* literal is true *)
     | _ -> []
     end
@@ -121,25 +124,27 @@ let process_clauses clauses =
   (* print aggregates *)
   List.iter (fun (_,_,printer) -> printer ()) !sums;
   (* print patterns *)
+  let ctx1 = DLogic.T.mk_context () in
+  let ctx2 = DLogic.T.mk_context () in
   List.iter (fun pattern ->
-    Format.printf "%% facts matching pattern %a:@." DLogic.pp_literal pattern;
-    DB.match_with db pattern
-      (fun (fact,_) subst -> Format.printf "  @[<h>%a.@]@." DLogic.pp_literal fact))
+    Format.printf "%% facts matching pattern %a:@." DLogic.T.pp pattern;
+    DB.match_with db ctx1 pattern ctx2
+      (fun fact -> Format.printf "  @[<h>%a.@]@." DLogic.T.pp fact))
     !patterns;
   (* print explanations *)
   List.iter (fun pattern ->
-    DB.match_with db pattern
-      (fun (fact,_) subst ->
+    DB.match_with db ctx1 pattern ctx2
+      (fun fact ->
         (* premises *)
-        Format.printf "  premises of @[<h>%a@]: @[<h>" DLogic.pp_literal fact;
+        Format.printf "  premises of @[<h>%a@]: @[<h>" DLogic.T.pp fact;
         let clause, premises = DB.premises db fact in
-        List.iter (fun fact' -> Format.printf "%a, " DLogic.pp_literal fact') premises;
+        List.iter (fun fact' -> Format.printf "%a, " DLogic.T.pp fact') premises;
         Format.printf " with @[<h>%a@]" DLogic.pp_clause clause;
         Format.printf "@]@.";
         (* explanation *)
         let explanation = DB.support db fact in
-        Format.printf "  explain @[<h>%a@] by: @[<h>" DLogic.pp_literal fact;
-        List.iter (fun fact' -> Format.printf " %a" DLogic.pp_literal fact') explanation;
+        Format.printf "  explain @[<h>%a@] by: @[<h>" DLogic.T.pp fact;
+        List.iter (fun fact' -> Format.printf " %a" DLogic.T.pp fact') explanation;
         Format.printf "@]@."))
     !explains;
   (* print memory usage *)
@@ -156,8 +161,9 @@ let add_sum symbol =
   let printer () =
     Format.printf "%% number of fact with head %s: %d@." symbol !count in
   let handler result =
+    let open DLogic.T in
     match result with
-    | DB.NewFact (DLogic.Apply (s, _)) when s == symbol ->
+    | DB.NewFact ({term=Apply ({term=Const s}, _)}, _) when s == symbol ->
       incr count;
       []
     | _ -> []

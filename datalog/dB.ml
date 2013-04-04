@@ -441,8 +441,6 @@ module Make(L : Logic.S) = struct
   let raw_add db action =
     Queue.push action db.db_queue 
 
-  (* --------------- TODO ------------ *)
-
   let match_with db ctx_db lit ctx_lit k =
     Idx.retrieve_specializations
       (fun () fact _ data ->
@@ -559,49 +557,4 @@ module Make(L : Logic.S) = struct
   let explanations db c =
     let l = L.ClauseHashtbl.find db.db_clauses c in
     Sequence.of_list l
-
-  (*
-
-  (** Explain the given fact by returning a list of facts that imply it
-      under the current clauses. *)
-  let db_explain db fact =
-    let module LitSet = Set.Make(struct type t = literal let compare = compare_literal end) in
-    let explored = ref ClausesIndex.DataSet.empty
-    and set = ref LitSet.empty in
-    (* recursively collect explanations *)
-    let rec search clause =
-      let elt = clause.(0), clause in
-      if ClausesIndex.DataSet.mem elt !explored then ()
-      else begin
-        explored := ClausesIndex.DataSet.add elt !explored;
-        let explanation = ClauseHashtbl.find db.db_all clause in
-        match explanation with
-        | Axiom when is_fact clause -> set := LitSet.add clause.(0) !set
-        | Axiom -> ()
-        | Resolution (clause, fact) -> begin
-          search clause;
-          search [|fact|]
-        end
-      end
-    in
-    (* once the set is collected, convert it to list *)
-    search (L.mk_clause fact []);
-    LitSet.elements !set
-
-  (** Immediate premises of the fact (ie the facts that resolved with
-      a clause to give the literal), plus the clause that has been used. *)
-  let db_premises db fact =
-    let rec search acc clause =
-      let explanation = ClauseHashtbl.find db.db_all clause in
-      match explanation with
-      | Axiom -> clause, acc  (* no premises *)
-      | Resolution (clause, fact) -> let acc = fact :: acc in search acc clause
-    in
-    search [] [|fact|]
-
-  (** Get all the explanations that explain why this clause is true *)
-  let db_explanations db clause =
-    ClauseHashtbl.find_all db.db_all clause
-
-  *)
 end

@@ -1091,5 +1091,3 @@ module Default = Make(
     let equal s1 s2 = String.compare s1 s2 = 0
     let hash s = Hashtbl.hash s
   end)
-
-let version = "0.3.1"

@@ -26,6 +26,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 {
   open Parser
   open Utils
+  open Const
 
   let update_column_index (value: int) =
     prev_column_index := !current_column_index;
@@ -53,7 +54,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
   let lexing_error (error: string) (token: string) =
     Format.eprintf "%s %s, token '%s'@."
-      error (Utils.print_location ()) token;
+      error (print_location ()) token;
     raise PARSE_ERROR
 }
 

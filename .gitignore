@@ -1,4 +1,5 @@
 _build
+datalog/const.ml
 .*.swp
 *.native
 *.docdir

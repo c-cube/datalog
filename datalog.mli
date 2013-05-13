@@ -223,9 +223,6 @@ module Logic : sig
   (** Default literal base, where symbols are just strings.
       No locking. *)
   module Default : S with type symbol = string
-
-  val version : string
-    (** Version of the library *)
 end
 
 (** Parser for Datalog files (syntax is a subset of prolog) *)

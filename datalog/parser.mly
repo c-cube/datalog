@@ -68,13 +68,13 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 %%
 
 parse_file:
-  | clauses EOI { Utils.reset (); $1 }
+  | clauses EOI { Const.reset (); $1 }
 
 parse_literal:
-  | literal EOI { Utils.reset (); $1 }
+  | literal EOI { Const.reset (); $1 }
 
 parse_clause:
-  | clause EOI { Utils.reset (); $1 }
+  | clause EOI { Const.reset (); $1 }
 
 clauses:
   | clause { let r = [$1] in reset_vars (); r }

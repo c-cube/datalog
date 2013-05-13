@@ -35,6 +35,7 @@ let print_input = ref false
 let print_result = ref false
 let print_saturated = ref false
 let print_size = ref false
+let print_version = ref false
 let sums = ref []
 let patterns = (ref [] : DLogic.literal list ref)
 let goals = (ref [] : DLogic.literal list ref)
@@ -52,7 +53,7 @@ let parse_file filename =
     clauses
   with Parsing.Parse_error ->
     (* error, signal it and return no clause *)
-    Format.eprintf "%% error parsing %s (%s)@." filename (Utils.print_location ());
+    Format.eprintf "%% error parsing %s (%s)@." filename (Const.print_location ());
     []
 
 (** Parse files *)
@@ -182,6 +183,7 @@ let parse_args () =
       ("-goal", Arg.String add_goal, "add a goal for backward chaining");
       ("-explain", Arg.String add_explain, "explain facts matching this pattern");
       ("-size", Arg.Set print_size, "print number of clauses after fixpoint");
+      ("-version", Arg.Set print_version, "print version");
     ]
   in
   Arg.parse options (fun f -> files := f :: !files) "compute fixpoint of given files"
@@ -189,5 +191,6 @@ let parse_args () =
 let () =
   Format.printf "%% start datalog@.";
   parse_args ();
+  (if !print_version then Printf.printf "%% version : %s\n" Const.version);
   let clauses = parse_files () in
   process_clauses clauses

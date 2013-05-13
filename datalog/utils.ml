@@ -23,7 +23,7 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 *)
 
-(** Utils *)
+(** {1 Utils} *)
 
 (* ----------------------------------------------------------------------
  * Ints and int arrays
@@ -209,25 +209,3 @@ module IHashtbl =
 module IHashtbl = Hashtbl.Make( struct type t = int let equal i j = i = j let hash i = murmur_hash i end)
 *)
 
-(* ----------------------------------------------------------------------
- * Utils for parsing/lexing
- * ---------------------------------------------------------------------- *)
-
-exception PARSE_ERROR
-
-let prev_column_index = ref 1
-let current_column_index = ref 1
-let prev_line_index = ref 1
-let current_line_index = ref 1
-let current_token = ref ""
-
-let reset () =
-  prev_column_index := 1;
-  current_column_index := 1;
-  prev_line_index := 1;
-  current_line_index := 1;
-  current_token := ""
-
-let print_location () =
-  Format.sprintf "at line %d, column %d"
-    !current_line_index !current_column_index

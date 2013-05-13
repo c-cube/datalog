@@ -194,6 +194,12 @@ module Logic : sig
     val db_subscribe_fact : db -> symbol -> fact_handler -> unit
     val db_subscribe_goal : db -> goal_handler -> unit
 
+    type user_fun = soft_lit -> soft_lit
+
+    val db_add_fun : db -> symbol -> user_fun -> unit
+      (** Add a function to be called on new literals. Only one function per
+          symbol can be registered. *)
+
     val db_goals : db -> (literal -> unit) -> unit
       (** Iterate on all current goals *)
 

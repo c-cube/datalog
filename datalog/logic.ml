@@ -191,6 +191,12 @@ module type S = sig
   val db_subscribe_fact : db -> symbol -> fact_handler -> unit
   val db_subscribe_goal : db -> goal_handler -> unit
 
+  type user_fun = soft_lit -> soft_lit
+
+  val db_add_fun : db -> symbol -> user_fun -> unit
+    (** Add a function to be called on new literals. Only one function per
+        symbol can be registered. *)
+
   val db_goals : db -> (literal -> unit) -> unit
     (** Iterate on all current goals *)
 
@@ -868,6 +874,8 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
   type fact_handler = literal -> unit
   type goal_handler = literal -> unit
 
+  type user_fun = soft_lit -> soft_lit
+
   type queue_item =
     [ `AddClause of clause * explanation
     | `AddGoal of literal
@@ -882,6 +890,7 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
     db_heads : ClausesIndex.t;                        (** index on clauses' heads *)
     db_fact_handlers : (int, fact_handler) Hashtbl.t; (** map symbol -> fact handlers *)
     mutable db_goal_handlers : goal_handler list;     (** goal handlers *)
+    db_funs : user_fun Utils.IHashtbl.t;              (** user-defined functions *)
     db_queue : queue_item Queue.t;                    (** queue of items to process *)
   }
 
@@ -894,6 +903,7 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
       db_heads = ClausesIndex.create ();
       db_fact_handlers = Hashtbl.create 3;
       db_goal_handlers = [];
+      db_funs = Utils.IHashtbl.create 13;
       db_queue = Queue.create ();
     }
 
@@ -902,7 +912,28 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
     assert (check_safe clause);
     ClauseHashtbl.mem db.db_all clause
 
+  (** Apply user-defined functions to the clause *)
+  let rewrite_clause db clause =
+    (* rewrite the literal using user-defined functions *)
+    let rec rewrite_lit db_funs lit =
+      let s = lit.(0) in
+      let lit' = try
+        let f = Utils.IHashtbl.find db.db_funs s in
+        let lit' = f (open_literal lit) in
+        let lit' = of_soft_lit lit' in
+        lit'
+      with Not_found ->
+        lit
+      in
+      if lit == lit' || eq_literal lit lit'
+        then lit'  (* fixpoint *)
+        else rewrite_lit db_funs lit'
+    in
+    (* rewrite every literal *)
+    Array.map (fun lit -> rewrite_lit db.db_funs lit) clause
+
   let add_clause db clause explanation =
+    let clause = rewrite_clause db clause in
     (* check if clause already present; in any case add the explanation *)
     let already_present = db_mem db clause in
     ClauseHashtbl.add db.db_all clause explanation;
@@ -1026,6 +1057,12 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
     ClauseHashtbl.fold
       (fun clause _ acc -> k acc clause)
       db.db_all acc
+
+  let db_add_fun db s f =
+    let i = s_to_i s in
+    (if Utils.IHashtbl.mem db.db_funs i
+      then failwith ("function already defined for symbol " ^ Symbol.to_string s));
+    Utils.IHashtbl.replace db.db_funs i f
 
   let db_subscribe_fact db symbol handler =
     let i = s_to_i symbol in

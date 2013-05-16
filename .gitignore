@@ -3,3 +3,5 @@ datalog/const.ml
 .*.swp
 *.native
 *.docdir
+.session
+TAGS

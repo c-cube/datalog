@@ -36,4 +36,7 @@ install: prod
 	ocamlfind install $(NAME) META $(addprefix _build/,$(INSTALL_LIB))
 	cp _build/$(CLI) $(BINDIR)/datalog_cli
 
-.PHONY: all clean install
+tags:
+	otags *.ml *.mli
+
+.PHONY: all clean install tags

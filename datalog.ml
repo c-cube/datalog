@@ -23,7 +23,7 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 *)
 
-(** Representation for Datalog literals and clauses, and the main algorithm *)
+(** {1 Main Datalog module} *)
 
 (** Module type for logic *)
 module type S = sig
@@ -35,6 +35,7 @@ module type S = sig
   type term = private
     | Var of int
     | Const of symbol
+    | Query of int      (* for internal use *)
     (** Individual object *)
 
   val mk_var : int -> term
@@ -171,6 +172,37 @@ module type S = sig
 
   val db_explanations : db -> clause -> explanation list
     (** Get all the explanations that explain why this clause is true *)
+
+  (** {2 Earley resolution} *)
+
+  module Earley : sig
+    type query
+      (** Environment for running queries *)
+
+    type db
+      (** Contains user-provided clauses, as context for queries *)
+
+    val db_create : unit -> db
+      (** Fresh db *)
+
+    val new_query : db -> query
+      (** Create a new (stateful) query *)
+
+    val del_query : query -> unit
+      (** Terminate the query. It will no longer receive updates from its [db] *)
+
+    val iter_queries : db -> (query -> unit) -> unit
+      (** Iterate on the active queries *)
+
+    val ask : query -> literal list -> term list -> (term list -> unit) -> unit
+      (** New query that runs against the given [db]. It  *)
+
+    val ask_db : db -> literal list -> term list -> (term list -> unit) -> query
+      (** Create a query, and call {! ask} on it *)
+
+    val db_add : db -> clause -> unit
+      (** Add a clause *)
+  end
 end
 
 (** Signature for a symbol type. It must be hashable, comparable and printable *)
@@ -188,10 +220,12 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
   type term =
     | Var of int
     | Const of symbol
+    | Query of int      (* for internal use *)
     (** Individual object *)
 
   let mk_var i = Var i
   let mk_const s = Const s
+  let mk_query i = Query i
 
   type literal = term array
     (** A datalog atom, i.e. pred(arg_1, ..., arg_n). The first element of the
@@ -246,7 +280,8 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
 
   let is_var t = match t with
     | Var _ -> true
-    | Const _ -> false
+    | Const _
+    | Query _ -> false
 
   (** Is the literal ground (a fact)? *)
   let is_ground t =
@@ -261,7 +296,8 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
   let arity t = Array.length t - 1
 
   let eq_term t1 t2 = match t1, t2 with
-    | Var i, Var j -> i = j
+    | Var i, Var j
+    | Query i, Query j -> i = j
     | Const s1, Const s2 -> Symbol.equal s1 s2
     | _ -> false
 
@@ -275,13 +311,15 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
     Array.length t1 = Array.length t2 && check t1 t2 0
 
   let hash_term t = match t with
-    | Var i -> i
+    | Var i
+    | Query i -> i
     | Const s -> Symbol.hash s
 
   (** Hash the literal *)
   let hash_literal t =
     let hash_term h t = match t with
-    | Var i -> h * 65599 + i
+    | Var i
+    | Query i -> h * 65599 + i
     | Const s -> h * 65599 + Symbol.hash s
     in
     abs (Array.fold_left hash_term 13 t)
@@ -341,7 +379,8 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
       if i = Array.length terms then offset
       else
         let offset = match terms.(i) with
-        | Const _ -> offset
+        | Const _
+        | Query _ -> offset
         | Var i -> max i offset
         in fold_lit terms offset (i+1)
     and fold_lits lits offset i =
@@ -356,7 +395,7 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
       bound variable *)
   let rec deref subst var offset =
     match subst, var with
-    | _, Const _ -> var, offset
+    | _, (Const _ | Query _) -> var, offset
     | SubstBind (i, o, t, o_t, _), Var j when i = j && o = offset ->
       deref subst t o_t
     | SubstBind (_, _, _, _, subst'), _ -> deref subst' var offset
@@ -369,7 +408,8 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
       then subst  (* no-op *)
       else match v with
         | Var i -> SubstBind (i, o_v, t, o_t, subst)
-        | Const _ -> assert false
+        | Const _
+        | Query _ -> assert false
 
   (** [matching pattern l] matches [pattern] against [l]; variables in [l]
       cannot be bound. Raise UnifFailure if they do not match. *)
@@ -387,10 +427,12 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
         match t1, t2 with
         | Const s1, Const s2 ->
           if Symbol.equal s1 s2 then subst else raise UnifFailure
+        | Query i, Query j ->
+          if i = j then subst else raise UnifFailure
         | Var i, Var j when i = j && o1' = o2' -> subst
         | Var _, _ ->
           bind_subst subst t1 o1' t2 o2' (* bind var *)
-        | Const _, Var _ -> raise UnifFailure (* cannot bind t2 *)
+        | _, _ -> raise UnifFailure
       in match_pairs subst 0
 
   (** [unify l1 l2] tries to unify [l1] with [l2].
@@ -409,10 +451,12 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
         match t1, t2 with
         | Const s1, Const s2 ->
           if Symbol.equal s1 s2 then subst else raise UnifFailure
+        | Query i, Query j ->
+          if i = j then subst else raise UnifFailure
         | Var i, Var j when i = j && o1' = o2' -> subst
         | Var _, _ ->
           bind_subst subst t1 o1' t2 o2' (* bind var *)
-        | Const _, Var _ -> 
+        | _, _ -> 
           bind_subst subst t2 o2' t1 o1' (* bind var *)
       in unif_pairs subst 0
 
@@ -431,11 +475,12 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
         match t1, t2 with
         | Const s1, Const s2 ->
           if Symbol.equal s1 s2 then subst else raise UnifFailure
+        | Query i, Query j ->
+          if i = j then subst else raise UnifFailure
         | Var i, Var j when i = j && o1' = o2' -> subst
         | Var _, Var _ ->
           bind_subst subst t1 o1' t2 o2' (* bind var *)
-        | Const _, Var _
-        | Var _, Const _ -> raise UnifFailure
+        | _, _ -> raise UnifFailure
       in unif_pairs subst 0
 
   (** shift literal by offset *)
@@ -444,7 +489,8 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
     else Array.map
       (fun t -> match t with
       | Var i -> Var (i+offset)
-      | Const _ -> t)
+      | Const _
+      | Query _ -> t)
       lit
 
   let shift_clause c offset =
@@ -461,7 +507,8 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
         (* shift [t'] if [t'] is a var *)
         match t' with
         | Var i -> Var (i + o_t')
-        | Const _ -> t')
+        | Const _
+        | Query _ -> t')
       lit
 
   (** Apply substitution to the clause. TODO remove duplicate literals afterward *)
@@ -486,6 +533,7 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
 
   let pp_term formatter t = match t with
     | Const s -> Format.pp_print_string formatter (Symbol.to_string s)
+    | Query i -> Format.fprintf formatter "$query%d" i
     | Var i -> Format.fprintf formatter "X%d" i
 
   let pp_literal formatter t =
@@ -598,7 +646,8 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
     let __star = Var 0
 
     let term_to_char t = match t with
-      | Const _ -> t
+      | Const _
+      | Query _ -> t
       | Var _ -> __star  (* any var is the same *)
 
     (** Add the element indexed by the literal *)
@@ -841,6 +890,7 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
     let rec rewrite_lit db_funs lit =
       match lit.(0) with
       | Var _ -> assert false
+      | Query _ -> lit (* do not rewrite *)
       | Const s ->
         let lit' = try
           let f = SymbolHashtbl.find db.db_funs s in
@@ -867,16 +917,20 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
     else if is_fact clause then begin
       ClausesIndex.add db.db_facts clause.(0) clause;
       (* call handler for this fact, if any *)
-      let s = match clause.(0).(0) with Const s -> s | Var _ -> assert false in
-      let handlers = SymbolHashtbl.find_all db.db_fact_handlers s in
-      List.iter (fun h ->
-        try h clause.(0)
-        with e ->
-          Format.eprintf
-            "Datalog: exception while calling handler for %s@."
-            (Symbol.to_string s);
-          raise e)
-        handlers;
+      begin match clause.(0).(0) with
+      | Const s ->
+        let handlers = SymbolHashtbl.find_all db.db_fact_handlers s in
+        List.iter (fun h ->
+          try h clause.(0)
+          with e ->
+            Format.eprintf
+              "Datalog: exception while calling handler for %s@."
+              (Symbol.to_string s);
+            raise e)
+          handlers
+      | Query _ -> ()
+      | Var _ -> assert false
+      end;
       (* insertion of a fact: resolution with all clauses whose
          first body literal matches the fact. No offset is needed, because
          the fact is ground. *)
@@ -1041,6 +1095,70 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
   (** Get all the explanations that explain why this clause is true *)
   let db_explanations db clause =
     ClauseHashtbl.find_all db.db_all clause
+
+  (** {2 Earley resolution} *)
+
+  module Earley = struct
+    type 'a __query = {
+      q_id : int;
+      q_db : 'a;
+      q_vars : term list;
+      q_fact : literal;  (* literal composed of q_id(q_vars) *)
+    }
+
+    module rec QueryIndex : Index with type elt = DBTYPE.db __query =
+    MakeIndex(struct
+      type t = DBTYPE.db __query
+      open DBTYPE
+      let equal q1 q2 = q1.q_id = q2.q_id
+      let hash q = q.q_id
+    end)
+    and DBTYPE : sig
+      type db = {
+        db_all : explanation ClauseHashtbl.t;       (** maps clauses to their explanations *)
+        db_facts : ClausesIndex.t;                  (** index on facts *)
+        db_selected : ClausesIndex.t;               (** index on clauses' selected premises *)
+        db_queries : (int, query) Hashtbl.t;        (** Queries by index *)
+        db_queries_concl : QueryIndex.t;            (** Queries by fact *)
+      }
+      and query = db __query
+    end = struct
+      type db = {
+        db_all : explanation ClauseHashtbl.t;       (** maps clauses to their explanations *)
+        db_facts : ClausesIndex.t;                  (** index on facts *)
+        db_selected : ClausesIndex.t;               (** index on clauses' selected premises *)
+        db_queries : (int, query) Hashtbl.t;        (** Queries by index *)
+        db_queries_concl : QueryIndex.t;            (** Queries by fact *)
+      }
+      and query = db __query
+    end
+
+    type db = DBTYPE.db
+    type query = db __query
+    open DBTYPE
+
+    let db_create () =
+      let db = {
+        db_all = ClauseHashtbl.create 15;
+        db_facts = ClausesIndex.create ();
+        db_selected = ClausesIndex.create ();
+        db_queries = Hashtbl.create 3;
+        db_queries_concl = QueryIndex.create ();
+      } in
+      db
+
+    let new_query db = failwith "Datalog.Earley.new_query: not implemented"
+
+    let del_query q = failwith "Datalog.Earley.del_query: not implemented"
+
+    let iter_queries db k = failwith "Datalog.Earley.iter_queries: not implemented"
+
+    let ask q lits vars k = failwith "Datalog.Earley.iter_queries: not implemented"
+
+    let ask_db db lits vars k = failwith "Datalog.Earley.ask_db: not implemented"
+
+    let db_add db c = failwith "Datalog.Earley.add_clause: not implemented"
+  end
 end
 
 module Hashcons(S : SymbolType) = struct

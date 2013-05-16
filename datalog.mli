@@ -23,7 +23,7 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 *)
 
-(** {1 Interface file} *)
+(** {1 Main Datalog module} *)
 
 (** Main module, that exposes datatypes for logic literals and clauses,
     functions to manipulate them, and functions to compute the fixpoint
@@ -37,6 +37,7 @@ module type S = sig
   type term = private
     | Var of int
     | Const of symbol
+    | Query of int      (* for internal use *)
     (** Individual object *)
 
   val mk_var : int -> term
@@ -173,6 +174,37 @@ module type S = sig
 
   val db_explanations : db -> clause -> explanation list
     (** Get all the explanations that explain why this clause is true *)
+
+  (** {2 Earley resolution} *)
+
+  module Earley : sig
+    type query
+      (** Environment for running queries *)
+
+    type db
+      (** Contains user-provided clauses, as context for queries *)
+
+    val db_create : unit -> db
+      (** Fresh db *)
+
+    val new_query : db -> query
+      (** Create a new (stateful) query *)
+
+    val del_query : query -> unit
+      (** Terminate the query. It will no longer receive updates from its [db] *)
+
+    val iter_queries : db -> (query -> unit) -> unit
+      (** Iterate on the active queries *)
+
+    val ask : query -> literal list -> term list -> (term list -> unit) -> unit
+      (** New query that runs against the given [db]. It  *)
+
+    val ask_db : db -> literal list -> term list -> (term list -> unit) -> query
+      (** Create a query, and call {! ask} on it *)
+
+    val db_add : db -> clause -> unit
+      (** Add a clause *)
+  end
 end
 
 (** Signature for a symbol type. It must be hashable, comparable and printable *)

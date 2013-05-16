@@ -40,6 +40,9 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 %start parse_literal
 %type <Ast.literal> parse_literal
 
+%start parse_literals
+%type <Ast.literal list> parse_literals
+
 %start parse_clause
 %type <Ast.clause> parse_clause
 
@@ -53,6 +56,9 @@ parse_file:
 
 parse_literal:
   | literal EOI { $1 }
+
+parse_literals:
+  | literals EOI { $1 }
 
 parse_clause:
   | clause EOI { $1 }

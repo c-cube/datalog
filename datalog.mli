@@ -197,6 +197,8 @@ module Parser : sig
   type token
   val parse_literal :
     (Lexing.lexbuf  -> token) -> Lexing.lexbuf -> Ast.literal
+  val parse_literals :
+    (Lexing.lexbuf  -> token) -> Lexing.lexbuf -> Ast.literal list
   val parse_clause :
     (Lexing.lexbuf  -> token) -> Lexing.lexbuf -> Ast.clause
   val parse_file :

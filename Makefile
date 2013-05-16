@@ -14,14 +14,11 @@ INSTALL_LIB = datalog.cmxa datalog.cma datalog.a datalog.cmi datalog.mli
 # compilation options
 OPTIONS ?= -classic-display
 
-# constants
-VERSION = 0.3.1
-
 %.ml: %.mlp
 	sed -e "s/DATALOG_VERSION/$(VERSION)/g" \
 		 $< > $@
 
-all: datalog/const.ml prod
+all: prod
 
 prod:
 	ocamlbuild $(OPTIONS) -tag noassert $(TARGETS)
@@ -33,7 +30,6 @@ profile:
 	ocamlbuild $(OPTIONS) -tag profile $(TARGETS)
 
 clean:
-	rm -f datalog/const.ml || true
 	ocamlbuild -clean
 
 install: prod

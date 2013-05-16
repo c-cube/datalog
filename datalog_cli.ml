@@ -53,7 +53,7 @@ let parse_file filename =
     clauses
   with Parsing.Parse_error ->
     (* error, signal it and return no clause *)
-    Format.eprintf "%% error parsing %s (%s)@." filename (Const.print_location ());
+    Format.eprintf "%% error parsing %s (%s)@." filename (DLexer.print_location lexbuf);
     []
 
 (** Parse files *)
@@ -194,7 +194,7 @@ let parse_args () =
 let () =
   Format.printf "%% start datalog@.";
   parse_args ();
-  (if !print_version then Printf.printf "%% version : %s\n" Const.version);
+  (if !print_version then Printf.printf "%% version : %s\n" Datalog.version);
   let clauses = parse_files () in
   let clauses = List.map DLogic.clause_of_ast clauses in
   process_clauses clauses

@@ -24,38 +24,17 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 *)
 
 {
-  open Parser
-  open Utils
-  open Const
+open Parser
 
-  let update_column_index (value: int) =
-    prev_column_index := !current_column_index;
-    current_column_index := value
+let print_location lexbuf =
+  let open Lexing in
+  let pos = lexbuf.lex_curr_p in
+  Format.sprintf "at line %d, column %d" pos.pos_lnum pos.pos_cnum
 
-
-  let update_line_index () =
-    prev_line_index := !current_line_index;
-    current_line_index := !current_line_index + 1;
-    update_column_index 1
-
-
-  let count_new_lines (string: string) : unit =
-    String.iter
-      (fun char ->
-         if char = '\n' then
-           update_line_index ()
-         else
-           update_column_index (!current_column_index + 1))
-      string
-
-  let update_token (token: string) =
-    current_token := token;
-    update_column_index (!current_column_index + String.length token)
-
-  let lexing_error (error: string) (token: string) =
-    Format.eprintf "%s %s, token '%s'@."
-      error (print_location ()) token;
-    raise PARSE_ERROR
+let lexing_error (error: string) lexbuf =
+  let open Lexing in
+  Format.eprintf "%s %s, token '%s'@." error (print_location lexbuf) (lexeme lexbuf);
+  raise Parsing.Parse_error
 }
 
 let numeric = ['0' - '9']
@@ -74,40 +53,27 @@ let multi_line_comment_unclosed = "/*" ( [^ '*'] | ('*' [^ '/']) )* eof
 
 rule token =
     parse
-      | [' ' '\t' '\r']              { update_token (Lexing.lexeme lexbuf);
-                                       token lexbuf } (* skip blanks *)
-      | ['\n']                       { update_line_index ();
-                                       current_token := Lexing.lexeme lexbuf;
+      | [' ' '\t' '\r']              { token lexbuf } (* skip blanks *)
+      | ['\n']                       { Lexing.new_line lexbuf;
                                        token lexbuf } (* skip new lines *)
-      | one_line_comment             { update_line_index ();
-                                       current_token := Lexing.lexeme lexbuf;
-                                       token lexbuf } (* skip comment *)
-      | multi_line_comment           { count_new_lines (Lexing.lexeme lexbuf);
-                                       current_token := Lexing.lexeme lexbuf;
-                                       token lexbuf } (* skip comment *)
-      | multi_line_comment_unclosed  { prev_column_index := !current_column_index;
-                                       prev_line_index := !current_line_index;
-                                       lexing_error "Unclosed Comment" (Lexing.lexeme lexbuf) }
+      | one_line_comment             { token lexbuf } (* skip comment *)
+      | multi_line_comment           { token lexbuf } (* skip comment *)
+      | multi_line_comment_unclosed  { lexing_error "Unclosed Comment" lexbuf }
           (* end of input - for channels, strings, ... *)
-      | eof                          { update_token (Lexing.lexeme lexbuf); EOI }
-      | lower_word                   { update_token (Lexing.lexeme lexbuf);
-                                       LOWER_WORD(Lexing.lexeme lexbuf) }
-      | upper_word                   { update_token (Lexing.lexeme lexbuf);
-                                       UPPER_WORD(Lexing.lexeme lexbuf) }
-      | single_quoted                { update_token (Lexing.lexeme lexbuf);
-                                       SINGLE_QUOTED(Lexing.lexeme lexbuf) }
-      | number                       { update_token (Lexing.lexeme lexbuf);
-                                       INT(Lexing.lexeme lexbuf) }
-      | '('                          { update_token (Lexing.lexeme lexbuf); LEFT_PARENTHESIS }
-      | ')'                          { update_token (Lexing.lexeme lexbuf); RIGHT_PARENTHESIS }
-      | '.'                          { update_token (Lexing.lexeme lexbuf); DOT }
-      | ":-"                         { update_token (Lexing.lexeme lexbuf); IF }
-      | "<-"                         { update_token (Lexing.lexeme lexbuf); IF }
-      | ","                          { update_token (Lexing.lexeme lexbuf); COMMA }
-      | _                            { prev_column_index := !current_column_index;
-                                       prev_line_index := !current_line_index;
-                                       lexing_error "Invalid Input" (Lexing.lexeme lexbuf) }
+      | eof                          { EOI }
+      | lower_word                   { LOWER_WORD(Lexing.lexeme lexbuf) }
+      | upper_word                   { UPPER_WORD(Lexing.lexeme lexbuf) }
+      | single_quoted                { SINGLE_QUOTED(Lexing.lexeme lexbuf) }
+      | number                       { INT(Lexing.lexeme lexbuf) }
+      | '('                          { LEFT_PARENTHESIS }
+      | ')'                          { RIGHT_PARENTHESIS }
+      | '.'                          { DOT }
+      | ":-"                         { IF }
+      | "<-"                         { IF }
+      | ","                          { COMMA }
+      | _                            { lexing_error "Invalid Input" lexbuf }
 
 {
+  let print_location = print_location
 
 }

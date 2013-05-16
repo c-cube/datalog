@@ -203,6 +203,8 @@ end
 (** Lexer for parsing Datalog files *)
 module Lexer : sig
   val token : Lexing.lexbuf -> Parser.token
+
+  val print_location : Lexing.lexbuf -> string
 end
 
 (** Symbols are just hashconsed strings *)

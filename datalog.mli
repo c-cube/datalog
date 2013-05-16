@@ -34,10 +34,13 @@ module type S = sig
   type symbol
     (** Abstract type of symbols (individual objects) *)
 
-  type term =
+  type term = private
     | Var of int
     | Const of symbol
     (** Individual object *)
+
+  val mk_var : int -> term
+  val mk_const : symbol -> term
 
   type literal
     (** A datalog atom, i.e. pred(arg_1, ..., arg_n). The first element of the

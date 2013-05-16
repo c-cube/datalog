@@ -32,10 +32,13 @@ module type S = sig
   type symbol
     (** Abstract type of symbols (individual objects) *)
 
-  type term =
+  type term = private
     | Var of int
     | Const of symbol
     (** Individual object *)
+
+  val mk_var : int -> term
+  val mk_const : symbol -> term
 
   type literal
     (** A datalog atom, i.e. pred(arg_1, ..., arg_n). The first element of the
@@ -178,7 +181,6 @@ end
 
 (** Build a Datalog module *)
 module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
-
   type symbol = Symbol.t
 
   module SymbolHashtbl = Hashtbl.Make(Symbol)
@@ -187,6 +189,9 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
     | Var of int
     | Const of symbol
     (** Individual object *)
+
+  let mk_var i = Var i
+  let mk_const s = Const s
 
   type literal = term array
     (** A datalog atom, i.e. pred(arg_1, ..., arg_n). The first element of the
@@ -1095,9 +1100,9 @@ module Default = struct
   let term_of_ast ~tbl ast = match ast with
     | Ast.Const s
     | Ast.Quoted s ->
-      Const (StringSymbol.make s)
+      mk_const (StringSymbol.make s)
     | Ast.Var x ->
-      Var (getvar ~tbl x)
+      mk_var (getvar ~tbl x)
 
   let literal_of_ast ?(tbl=mk_vartbl ()) lit = match lit with
     | Ast.Atom (s, args) ->

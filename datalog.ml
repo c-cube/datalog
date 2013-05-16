@@ -123,6 +123,8 @@ module type S = sig
   val db_create : unit -> db
     (** Create a DB *)
 
+  (* TODO a copy operator (even if expensive) *)
+
   val db_mem : db -> clause -> bool
     (** Is the clause member of the DB? *)
 
@@ -185,23 +187,22 @@ module type S = sig
     val db_create : unit -> db
       (** Fresh db *)
 
-    val new_query : db -> query
-      (** Create a new (stateful) query *)
+    val iter_queries : db -> (query -> unit) -> unit
+      (** Iterate on the active queries *)
+
+    val ask : db -> literal list -> int list -> (term list -> unit) -> query
+      (** New query that runs against the given [db]. It will transmit
+          the instances of the given list of variables (int list) that
+          satisfy the list of literals, to the handler. *)
+
+    val register : query -> (term list -> unit) -> unit
+      (** Register another callback to the query *)
 
     val del_query : query -> unit
       (** Terminate the query. It will no longer receive updates from its [db] *)
 
-    val iter_queries : db -> (query -> unit) -> unit
-      (** Iterate on the active queries *)
-
-    val ask : query -> literal list -> term list -> (term list -> unit) -> unit
-      (** New query that runs against the given [db]. It  *)
-
-    val ask_db : db -> literal list -> term list -> (term list -> unit) -> query
-      (** Create a query, and call {! ask} on it *)
-
     val db_add : db -> clause -> unit
-      (** Add a clause *)
+      (** Add a clause to the environment (will update attached queries) *)
   end
 end
 
@@ -1099,65 +1100,92 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
   (** {2 Earley resolution} *)
 
   module Earley = struct
-    type 'a __query = {
-      q_id : int;
-      q_db : 'a;
-      q_vars : term list;
-      q_fact : literal;  (* literal composed of q_id(q_vars) *)
+    (** We roughly follow http://web.cecs.pdx.edu/~harry/earley/earley.htm 
+
+        Two inference rules:
+        
+        - instantiation:
+          A :- B1,...,Bn \in db       C :- D1,...,Dm \in query
+          ----------------------------------------------------  A\sigma = D1\sigma
+                A\sigma :- B1\sigma,...,Bn\sigma \in query
+
+        - reduction:
+          A :- B1,...,Bn \in query    C \in (query union db)
+          --------------------------------------------------  B1\sigma = C
+                A\sigma :- B2\sigma,...,Bn\sigma
+
+        The query set contains a growing set of clauses, starting from a query
+        clause. Clauses are added if they are the result of resolution
+        with a unit fact, or if they are the result of instantiating a
+        rule of the db so that the conclusion can help solving another
+        query clause.
+    *)
+
+    type query = {
+      q_id : int;                   (** unique ID *)
+      q_db : db;
+      q_all : explanation ClauseHashtbl.t;   (** maps clauses to their explanations *)
+      q_selected : ClausesIndex.t;  (** derived clauses, by their selected lit *)
+      q_facts : ClausesIndex.t;     (** derived facts *)
+      q_concl : literal;            (** literal dedicated to the query *)
+      mutable q_handlers : (term list -> unit) list;
     }
-
-    module rec QueryIndex : Index with type elt = DBTYPE.db __query =
-    MakeIndex(struct
-      type t = DBTYPE.db __query
-      open DBTYPE
-      let equal q1 q2 = q1.q_id = q2.q_id
-      let hash q = q.q_id
-    end)
-    and DBTYPE : sig
-      type db = {
-        db_all : explanation ClauseHashtbl.t;       (** maps clauses to their explanations *)
-        db_facts : ClausesIndex.t;                  (** index on facts *)
-        db_selected : ClausesIndex.t;               (** index on clauses' selected premises *)
-        db_queries : (int, query) Hashtbl.t;        (** Queries by index *)
-        db_queries_concl : QueryIndex.t;            (** Queries by fact *)
-      }
-      and query = db __query
-    end = struct
-      type db = {
-        db_all : explanation ClauseHashtbl.t;       (** maps clauses to their explanations *)
-        db_facts : ClausesIndex.t;                  (** index on facts *)
-        db_selected : ClausesIndex.t;               (** index on clauses' selected premises *)
-        db_queries : (int, query) Hashtbl.t;        (** Queries by index *)
-        db_queries_concl : QueryIndex.t;            (** Queries by fact *)
-      }
-      and query = db __query
-    end
-
-    type db = DBTYPE.db
-    type query = db __query
-    open DBTYPE
+    and db = {
+      mutable db_q_count : int;
+      db_all : explanation ClauseHashtbl.t;   (** maps clauses to their explanations *)
+      db_facts : ClausesIndex.t;              (** index on facts *)
+      db_selected : ClausesIndex.t;           (** index on clauses' selected premises *)
+      db_queries : (int, query) Hashtbl.t;    (** Queries by their ID *)
+    }
 
     let db_create () =
       let db = {
+        db_q_count = 0;
         db_all = ClauseHashtbl.create 15;
         db_facts = ClausesIndex.create ();
         db_selected = ClausesIndex.create ();
         db_queries = Hashtbl.create 3;
-        db_queries_concl = QueryIndex.create ();
       } in
       db
 
-    let new_query db = failwith "Datalog.Earley.new_query: not implemented"
+    let del_query q =
+      Hashtbl.remove q.q_db.db_queries q.q_id
 
-    let del_query q = failwith "Datalog.Earley.del_query: not implemented"
+    let iter_queries db k =
+      Hashtbl.iter (fun _ q -> k q) db.db_queries
 
-    let iter_queries db k = failwith "Datalog.Earley.iter_queries: not implemented"
+    let register q handler =
+      q.q_handlers <- handler :: q.q_handlers
 
-    let ask q lits vars k = failwith "Datalog.Earley.iter_queries: not implemented"
+    (* add a derived clause *)
+    let add_derived_clause q c =
+      failwith "Datalog.Earley.add_derived_clause: not implemented"
 
-    let ask_db db lits vars k = failwith "Datalog.Earley.ask_db: not implemented"
+    (* add a clause to the program (static clauses of [db]) *)
+    let db_add db c =
+      failwith "Datalog.Earley.add_clause: not implemented"
 
-    let db_add db c = failwith "Datalog.Earley.add_clause: not implemented"
+    let ask db lits vars k =
+      let n = db.db_q_count in
+      db.db_q_count <- db.db_q_count + 1;
+      (* special conclusion and clause *)
+      let concl = Array.of_list (Query n :: List.map mk_var vars) in
+      let args = lits in
+      let clause = mk_clause concl args in
+      (* query object *)
+      let q = {
+        q_id = n;
+        q_db = db;
+        q_all = ClauseHashtbl.create 15;
+        q_selected = ClausesIndex.create ();
+        q_facts = ClausesIndex.create ();
+        q_concl = concl;
+        q_handlers = [k];
+      } in
+      Hashtbl.add db.db_queries q.q_id q;
+      (* add the initial clause *)
+      add_derived_clause q clause;
+      q
   end
 end
 

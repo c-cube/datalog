@@ -125,6 +125,8 @@ module type S = sig
   val db_create : unit -> db
     (** Create a DB *)
 
+  (* TODO a copy operator (even if expensive) *)
+
   val db_mem : db -> clause -> bool
     (** Is the clause member of the DB? *)
 
@@ -187,23 +189,22 @@ module type S = sig
     val db_create : unit -> db
       (** Fresh db *)
 
-    val new_query : db -> query
-      (** Create a new (stateful) query *)
+    val iter_queries : db -> (query -> unit) -> unit
+      (** Iterate on the active queries *)
+
+    val ask : db -> literal list -> int list -> (term list -> unit) -> query
+      (** New query that runs against the given [db]. It will transmit
+          the instances of the given list of variables (int list) that
+          satisfy the list of literals, to the handler. *)
+
+    val register : query -> (term list -> unit) -> unit
+      (** Register another callback to the query *)
 
     val del_query : query -> unit
       (** Terminate the query. It will no longer receive updates from its [db] *)
 
-    val iter_queries : db -> (query -> unit) -> unit
-      (** Iterate on the active queries *)
-
-    val ask : query -> literal list -> term list -> (term list -> unit) -> unit
-      (** New query that runs against the given [db]. It  *)
-
-    val ask_db : db -> literal list -> term list -> (term list -> unit) -> query
-      (** Create a query, and call {! ask} on it *)
-
     val db_add : db -> clause -> unit
-      (** Add a clause *)
+      (** Add a clause to the environment (will update attached queries) *)
   end
 end
 

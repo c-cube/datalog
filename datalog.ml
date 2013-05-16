@@ -184,6 +184,12 @@ module type S = sig
     type db
       (** Contains user-provided clauses, as context for queries *)
 
+    type explanation =
+      | Program
+      | Instantiation of clause
+      | Reduction of clause * literal
+      (** explanations for Earley resolution *)
+
     val db_create : unit -> db
       (** Fresh db *)
 
@@ -1137,6 +1143,11 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
       db_selected : ClausesIndex.t;           (** index on clauses' selected premises *)
       db_queries : (int, query) Hashtbl.t;    (** Queries by their ID *)
     }
+    and explanation =
+      | Program
+      | Instantiation of clause
+      | Reduction of clause * literal
+      (** explanations for Earley resolution *)
 
     let db_create () =
       let db = {
@@ -1158,12 +1169,32 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
       q.q_handlers <- handler :: q.q_handlers
 
     (* add a derived clause *)
-    let add_derived_clause q c =
+    let add_derived_clause ~tasks q c =
       failwith "Datalog.Earley.add_derived_clause: not implemented"
+
+    (* given the fact [c], reduce clauses of [query] with it *)
+    let reduce_with_fact ~tasks query c =
+      failwith "Datalog.Earley.reduce: not implemented"
+
+    (* use the non-unit clause for instantiation *)
+    let instantiate_this_clause ~tasks query c =
+      failwith "Datalog.Earley.instantiate: not implemented"
 
     (* add a clause to the program (static clauses of [db]) *)
     let db_add db c =
-      failwith "Datalog.Earley.add_clause: not implemented"
+      if not (ClauseHashtbl.mem db.db_all c) then begin
+        ClauseHashtbl.add db.db_all c Program;
+        if is_fact c
+          then iter_queries db
+            (fun query -> reduce_with_fact ~tasks:(Queue.create ()) query c)
+          else iter_queries db
+            (fun query -> instantiate_this_clause ~tasks:(Queue.create ()) query c)
+        end
+    (* TODO figure out how to make this work: schedule tasks to do;
+      implement inferences;
+      implement subsumption
+    *)
+    (* TODO explanations *)
 
     let ask db lits vars k =
       let n = db.db_q_count in
@@ -1184,7 +1215,7 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
       } in
       Hashtbl.add db.db_queries q.q_id q;
       (* add the initial clause *)
-      add_derived_clause q clause;
+      add_derived_clause ~tasks:(Queue.create ()) q clause;
       q
   end
 end

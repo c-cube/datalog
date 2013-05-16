@@ -186,6 +186,12 @@ module type S = sig
     type db
       (** Contains user-provided clauses, as context for queries *)
 
+    type explanation =
+      | Program
+      | Instantiation of clause
+      | Reduction of clause * literal
+      (** explanations for Earley resolution *)
+
     val db_create : unit -> db
       (** Fresh db *)
 

@@ -23,226 +23,207 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 *)
 
-(** {2 Interface file} *)
+(** {1 Interface file} *)
 
 (** Main module, that exposes datatypes for logic literals and clauses,
     functions to manipulate them, and functions to compute the fixpoint
     of a set of clauses *)
-module Logic : sig
-  module type S = sig
-    (** {2 Literals and clauses} *)
+module type S = sig
+  (** {2 Literals and clauses} *)
 
-    type symbol
-      (** Abstract type of symbols *)
+  type symbol
+    (** Abstract type of symbols (individual objects) *)
 
-    type literal
-      (** A datalog atom, i.e. pred(arg_1, ..., arg_n). The first element of the
-          array is the predicate, then arguments follow *)
+  type term =
+    | Var of int
+    | Const of symbol
+    (** Individual object *)
 
-    type clause
-      (** A datalog clause, i.e. head :- body_1, ..., body_n *)
+  type literal
+    (** A datalog atom, i.e. pred(arg_1, ..., arg_n). The first element of the
+        array is the predicate, then arguments follow *)
 
-    type soft_lit = symbol * [`Var of int | `Symbol of symbol] list
-    type soft_clause = soft_lit * soft_lit list
+  type clause
+    (** A datalog clause, i.e. head :- body_1, ..., body_n *)
 
-    type subst
-      (** A substitution maps variables to symbols *)
+  type soft_lit = symbol * term list
+  type soft_clause = soft_lit * soft_lit list
 
-    type 'a bind = ('a * int)
-      (** A context in which to interpret variables in a literal or clause.
-          The context is an offset that is implicitely applied to variables *)
+  (** {3 Constructors and destructors} *)
 
-    (** {3 Constructors and destructors} *)
+  val mk_literal : symbol -> term list -> literal
+    (** Helper to build a literal. Arguments are either variables or symbols; if they
+        variables indexes *must* be negative (otherwise it will raise Invalid_argument *)
 
-    val mk_literal : symbol -> [< `Var of int | `Symbol of symbol] list -> literal
-      (** Helper to build a literal. Arguments are either variables or symbols; if they
-          variables indexes *must* be negative (otherwise it will raise Invalid_argument *)
+  val of_soft_lit : soft_lit -> literal
 
-    val of_soft_lit : soft_lit -> literal
+  val open_literal : literal -> soft_lit
+    (** Deconstruct a literal *)
 
-    val mk_literal_s : string -> [< `Var of int | `Symbol of string] list -> literal
-      (** Same as [mk_literal], but converts strings to symbols on-the-fly *)
+  val mk_clause : literal -> literal list -> clause
+    (** Create a clause from a conclusion and a list of premises *)
 
-    val open_literal : literal -> soft_lit
-      (** Deconstruct a literal *)
+  val of_soft_clause : soft_clause -> clause
 
-    val mk_clause : literal -> literal list -> clause
-      (** Create a clause from a conclusion and a list of premises *)
+  val open_clause : clause -> soft_clause
+    (** Deconstruct a clause *)
 
-    val of_soft_clause : soft_clause -> clause
+  val is_ground : literal -> bool
+    (** Is the literal ground (a fact)? *)
 
-    val open_clause : clause -> soft_clause
-      (** Deconstruct a clause *)
+  val arity : literal -> int
+    (** Number of subliterals of the literal. Ex for p(a,b,c) it returns 3 *)
 
-    val is_var : int -> bool
-      (** A variable is a negative int *)
+  (** {3 Comparisons} *)
 
-    val is_ground : literal -> bool
-      (** Is the literal ground (a fact)? *)
+  val eq_term : term -> term -> bool
 
-    val arity : literal -> int
-      (** Number of subliterals of the literal. Ex for p(a,b,c) it returns 3 *)
+  val eq_literal : literal -> literal -> bool
+    (** Are the literals equal? *)
 
-    (** {3 Comparisons} *)
+  val hash_literal : literal -> int
+    (** Hash the literal *)
 
-    val eq_literal : literal -> literal -> bool
-      (** Are the literals equal? *)
+  val check_safe : clause -> bool
+    (** A datalog clause is safe iff all variables in its head also occur in its body *)
 
-    val hash_literal : literal -> int
-      (** Hash the literal *)
+  val is_fact : clause -> bool
+    (** A fact is a ground clause with empty body *)
 
-    val compare_literal : literal -> literal -> int
-      (** Arbitrary comparison of literals (lexicographic) *)
+  val eq_clause : clause -> clause -> bool
+    (** Check whether clauses are (syntactically) equal *)
 
-    val check_safe : clause -> bool
-      (** A datalog clause is safe iff all variables in its head also occur in its body *)
+  val hash_clause : clause -> int
+    (** Hash the clause *)
 
-    val is_fact : clause -> bool
-      (** A fact is a ground clause with empty body *)
+  (** {3 Pretty-printing} *)
 
-    val compare_clause : clause -> clause -> int
-      (** Lexicographic comparison of clauses *)
+  val pp_term : Format.formatter -> term -> unit
 
-    val eq_clause : clause -> clause -> bool
-      (** Check whether clauses are (syntactically) equal *)
+  val pp_literal : Format.formatter -> literal -> unit
+    (** Pretty print the literal *)
 
-    val hash_clause : clause -> int
-      (** Hash the clause *)
+  val pp_clause : Format.formatter -> clause -> unit
+    (** Pretty print the clause *)
 
-    (** {3 Unification, matching and substitutions} *)
+  (** {2 The Datalog unit resolution algorithm} *)
 
-    exception UnifFailure
+  exception UnsafeClause
 
-    val empty_subst : subst
-      (** The empty substitution *)
+  type db
+    (** A database of facts and clauses, with incremental fixpoint computation *)
 
-    (* TODO external API to build substitutions *)
+  type explanation =
+    | Axiom
+    | Resolution of clause * literal
+    (** Explanation for a clause or fact *)
 
-    val offset : clause -> int
-      (** Offset to avoid collisions with the given clause *)
+  val db_create : unit -> db
+    (** Create a DB *)
 
-    val matching : ?subst:subst -> literal bind -> literal bind -> subst
-      (** [matching pattern l] matches [pattern] against [l]; variables in [l]
-          cannot be bound. Raise UnifFailure if they do not match. *)
+  val db_mem : db -> clause -> bool
+    (** Is the clause member of the DB? *)
 
-    val unify : ?subst:subst -> literal bind -> literal bind -> subst
-      (** [unify l1 l2] tries to unify [l1] with [l2].
-           Raise UnifFailure if they do not match. *)
+  val db_add : db -> clause -> unit
+    (** Add the clause/fact to the DB as an axiom, updating fixpoint.
+        UnsafeRule will be raised if the rule is not safe (see {!check_safe}) *)
 
-    val alpha_equiv : ?subst:subst -> literal bind -> literal bind -> subst
-      (** If the literals are alpha equivalent, return the corresponding renaming *)
+  val db_add_fact : db -> literal -> unit
+    (** Add a fact (ground unit clause) *)
 
-    val subst_literal : subst -> literal bind -> literal
-      (** Apply substitution to the literal *)
+  val db_goal : db -> literal -> unit
+    (** Add a goal to the DB. The goal is used to trigger backward chaining
+        (calling goal handlers that could help solve the goal) *)
 
-    val subst_clause : subst -> clause bind -> clause
-      (** Apply substitution to the clause *)
+  val db_match : db -> literal -> (literal -> unit) -> unit
+    (** match the given literal with facts of the DB, calling the handler on
+        each fact that match *)
 
-    (** {3 Pretty-printing} *)
+  val db_size : db -> int
+    (** Size of the DB *)
 
-    val pp_literal : Format.formatter -> literal -> unit
-      (** Pretty print the literal *)
+  val db_fold : ('a -> clause -> 'a) -> 'a -> db -> 'a
+    (** Fold on all clauses in the current DB (including fixpoint) *)
 
-    val pp_clause : Format.formatter -> clause -> unit
-      (** Pretty print the clause *)
+  type fact_handler = literal -> unit
+  type goal_handler = literal -> unit
 
-    val pp_subst : Format.formatter -> subst -> unit
-      (** Pretty print the substitution *)
+  val db_subscribe_fact : db -> symbol -> fact_handler -> unit
+  val db_subscribe_goal : db -> goal_handler -> unit
 
-    (** {2 The Datalog unit resolution algorithm} *)
+  type user_fun = soft_lit -> soft_lit
 
-    exception UnsafeClause
+  val db_add_fun : db -> symbol -> user_fun -> unit
+    (** Add a function to be called on new literals. Only one function per
+        symbol can be registered. *)
 
-    type db
-      (** A database of facts and clauses, with incremental fixpoint computation *)
+  val db_goals : db -> (literal -> unit) -> unit
+    (** Iterate on all current goals *)
 
-    type explanation =
-      | Axiom
-      | Resolution of clause * literal
-      (** Explanation for a clause or fact *)
+  val db_explain : db -> literal -> literal list
+    (** Explain the given fact by returning a list of facts that imply it
+        under the current clauses, or raise Not_found *)
 
-    val db_create : unit -> db
-      (** Create a DB *)
+  val db_premises : db -> literal -> clause * literal list
+    (** Immediate premises of the fact (ie the facts that resolved with
+        a clause to give the literal), plus the clause that has been used. *)
 
-    val db_mem : db -> clause -> bool
-      (** Is the clause member of the DB? *)
-
-    val db_add : db -> clause -> unit
-      (** Add the clause/fact to the DB as an axiom, updating fixpoint.
-          UnsafeRule will be raised if the rule is not safe (see {!check_safe}) *)
-
-    val db_add_fact : db -> literal -> unit
-      (** Add a fact (ground unit clause) *)
-
-    val db_goal : db -> literal -> unit
-      (** Add a goal to the DB. The goal is used to trigger backward chaining
-          (calling goal handlers that could help solve the goal) *)
-
-    val db_match : db -> literal -> (literal bind -> subst -> unit) -> unit
-      (** match the given literal with facts of the DB, calling the handler on
-          each fact that match (with the corresponding substitution) *)
-
-    val db_size : db -> int
-      (** Size of the DB *)
-
-    val db_fold : ('a -> clause -> 'a) -> 'a -> db -> 'a
-      (** Fold on all clauses in the current DB (including fixpoint) *)
-
-    type fact_handler = literal -> unit
-    type goal_handler = literal -> unit
-
-    val db_subscribe_fact : db -> symbol -> fact_handler -> unit
-    val db_subscribe_goal : db -> goal_handler -> unit
-
-    type user_fun = soft_lit -> soft_lit
-
-    val db_add_fun : db -> symbol -> user_fun -> unit
-      (** Add a function to be called on new literals. Only one function per
-          symbol can be registered. *)
-
-    val db_goals : db -> (literal -> unit) -> unit
-      (** Iterate on all current goals *)
-
-    val db_explain : db -> literal -> literal list
-      (** Explain the given fact by returning a list of facts that imply it
-          under the current clauses, or raise Not_found *)
-
-    val db_premises : db -> literal -> clause * literal list
-      (** Immediate premises of the fact (ie the facts that resolved with
-          a clause to give the literal), plus the clause that has been used. *)
-
-    val db_explanations : db -> clause -> explanation list
-      (** Get all the explanations that explain why this clause is true *)
-  end
-
-  (** Signature for a symbol type. It must be hashable, comparable and
-      in bijection with strings *)
-  module type SymbolType = sig
-    include Hashtbl.HashedType
-    val to_string : t -> string
-    val of_string : string -> t
-  end
-
-  (** Build a Datalog module *)
-  module Make(Symbol : SymbolType) : S with type symbol = Symbol.t
-
-  (** Default literal base, where symbols are just strings.
-      No locking. *)
-  module Default : S with type symbol = string
+  val db_explanations : db -> clause -> explanation list
+    (** Get all the explanations that explain why this clause is true *)
 end
+
+(** Signature for a symbol type. It must be hashable, comparable and printable *)
+module type SymbolType = sig
+  include Hashtbl.HashedType
+  val to_string : t -> string
+end
+
+(** Hashconsing of symbols *)
+module Hashcons(S : SymbolType) : sig
+  include SymbolType with type t = S.t
+
+  val make : S.t -> S.t
+    (** Hashcons the symbol *)
+end
+
+(** Build a Datalog module *)
+module Make(Symbol : SymbolType) : S with type symbol = Symbol.t
 
 (** Parser for Datalog files (syntax is a subset of prolog) *)
 module Parser : sig
   type token
   val parse_literal :
-    (Lexing.lexbuf  -> token) -> Lexing.lexbuf -> Logic.Default.literal
+    (Lexing.lexbuf  -> token) -> Lexing.lexbuf -> Ast.literal
   val parse_clause :
-    (Lexing.lexbuf  -> token) -> Lexing.lexbuf -> Logic.Default.clause
+    (Lexing.lexbuf  -> token) -> Lexing.lexbuf -> Ast.clause
   val parse_file :
-    (Lexing.lexbuf  -> token) -> Lexing.lexbuf -> Logic.Default.clause list
+    (Lexing.lexbuf  -> token) -> Lexing.lexbuf -> Ast.file
 end
 
 (** Lexer for parsing Datalog files *)
 module Lexer : sig
   val token : Lexing.lexbuf -> Parser.token
 end
+
+(** Symbols are just hashconsed strings *)
+module StringSymbol : SymbolType with type t = string
+
+(** Default literal base, where symbols are just strings.
+    No locking. *)
+module Default : sig
+  include S with type symbol = string
+
+  type vartbl = {
+    mutable vartbl_count : int;
+    vartbl_tbl : (string,int) Hashtbl.t;
+  }
+
+  val mk_vartbl : unit -> vartbl
+
+  val literal_of_ast : ?tbl:vartbl -> Ast.literal -> literal
+
+  val clause_of_ast : Ast.clause -> clause
+end
+
+val version : string
+  (** Version of the library *)

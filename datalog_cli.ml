@@ -26,9 +26,9 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 (** The main datalog file. It provides a CLI tool to parse clause/fact files and compute
     their fixpoint *)
 
-module DLogic = Logic.Default
-module DParser = Parser
-module DLexer = Lexer
+module DLogic = Datalog.Default
+module DParser = Datalog.Parser
+module DLexer = Datalog.Lexer
 
 let progress = ref false
 let print_input = ref false
@@ -77,11 +77,11 @@ let handle_goal db lit =
     with Invalid_argument _ -> compare a b
   in
   match DLogic.open_literal lit with
-  | "lt", [`Symbol a; `Symbol b] when compare a b < 0 ->
+  | "lt", [DLogic.Const a; DLogic.Const b] when compare a b < 0 ->
     DLogic.db_add_fact db lit (* literal is true *)
-  | "le", [`Symbol a; `Symbol b] when compare a b <= 0 ->
+  | "le", [DLogic.Const a; DLogic.Const b] when compare a b <= 0 ->
     DLogic.db_add_fact db lit (* literal is true *)
-  | "equal", [`Symbol a; `Symbol b] when a = b ->
+  | "equal", [DLogic.Const a; DLogic.Const b] when a = b ->
     DLogic.db_add_fact db lit (* literal is true *)
   | _ -> ()
 
@@ -119,12 +119,12 @@ let process_clauses clauses =
   List.iter (fun pattern ->
     Format.printf "%% facts matching pattern %a:@." DLogic.pp_literal pattern;
     DLogic.db_match db pattern
-      (fun (fact,_) subst -> Format.printf "  @[<h>%a.@]@." DLogic.pp_literal fact))
+      (fun fact -> Format.printf "  @[<h>%a.@]@." DLogic.pp_literal fact))
     !patterns;
   (* print explanations *)
   List.iter (fun pattern ->
     DLogic.db_match db pattern
-      (fun (fact,_) subst ->
+      (fun fact ->
         (* premises *)
         Format.printf "  premises of @[<h>%a@]: @[<h>" DLogic.pp_literal fact;
         let clause, premises = DLogic.db_premises db fact in
@@ -157,18 +157,21 @@ let add_sum symbol =
 let add_pattern p =
   let lexbuf = Lexing.from_string p in
   let literal = DParser.parse_literal DLexer.token lexbuf in
+  let literal = DLogic.literal_of_ast literal in
   patterns := literal :: !patterns
 
 (** Handler that add a goal *)
 let add_goal p =
   let lexbuf = Lexing.from_string p in
   let literal = DParser.parse_literal DLexer.token lexbuf in
+  let literal = DLogic.literal_of_ast literal in
   goals := literal :: !goals
 
 (** Add the pattern to the list of patterns to explain *)
 let add_explain p =
   let lexbuf = Lexing.from_string p in
   let literal = DParser.parse_literal DLexer.token lexbuf in
+  let literal = DLogic.literal_of_ast literal in
   explains := literal :: !explains
 
 (** parse CLI arguments *)
@@ -193,4 +196,5 @@ let () =
   parse_args ();
   (if !print_version then Printf.printf "%% version : %s\n" Const.version);
   let clauses = parse_files () in
+  let clauses = List.map DLogic.clause_of_ast clauses in
   process_clauses clauses

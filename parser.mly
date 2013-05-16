@@ -24,25 +24,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
 %{
-
-  (** Mapping string -> var in the current context *)
-  let vars = Hashtbl.create 3
-  let vars_num = ref (-1)
-
-  (** Reset the variables mapping *)
-  let reset_vars () =
-    Hashtbl.clear vars;
-    vars_num := (-1)
-
-  (** Get the number for this variable, in current variables context *)
-  let get_var name =
-    try Hashtbl.find vars name
-    with Not_found ->
-      let i = !vars_num in
-      decr vars_num;
-      Hashtbl.replace vars name (`Var i);
-      `Var i
-
 %}
 
 %token LEFT_PARENTHESIS
@@ -57,49 +38,48 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 %token <string> INT
 
 %start parse_literal
-%type <Logic.Default.literal> parse_literal
+%type <Ast.literal> parse_literal
 
 %start parse_clause
-%type <Logic.Default.clause> parse_clause
+%type <Ast.clause> parse_clause
 
 %start parse_file
-%type <Logic.Default.clause list> parse_file
+%type <Ast.file> parse_file
 
 %%
 
 parse_file:
-  | clauses EOI { Const.reset (); $1 }
+  | clauses EOI { $1 }
 
 parse_literal:
-  | literal EOI { Const.reset (); $1 }
+  | literal EOI { $1 }
 
 parse_clause:
-  | clause EOI { Const.reset (); $1 }
+  | clause EOI { $1 }
 
 clauses:
-  | clause { let r = [$1] in reset_vars (); r }
+  | clause { [$1] }
   | clause clauses { $1 :: $2 }
 
 clause:
-  | literal DOT { Logic.Default.mk_clause $1 [] }
-  | literal IF literals DOT { Logic.Default.mk_clause $1 $3 }
+  | literal DOT { Ast.Clause ($1, []) }
+  | literal IF literals DOT { Ast.Clause ($1, $3) }
 
 literals:
   | literal { [$1] }
   | literal COMMA literals { $1 :: $3 }
 
 literal:
-  | LOWER_WORD { Logic.Default.mk_literal $1 [] }
+  | LOWER_WORD { Ast.Atom ($1, []) }
   | LOWER_WORD LEFT_PARENTHESIS args RIGHT_PARENTHESIS
-    { Logic.Default.mk_literal $1 $3 }
+    { Ast.Atom ($1, $3) }
 
 args:
-  | const { [`Symbol $1] }
-  | UPPER_WORD { [get_var $1] }
-  | const COMMA args { (`Symbol $1) :: $3 }
-  | UPPER_WORD COMMA args { (get_var $1) :: $3 }
+  | term { [$1] }
+  | term COMMA args  { $1 :: $3 }
 
-const:
-  | INT { $1 }
-  | LOWER_WORD { $1 }
-  | SINGLE_QUOTED { $1 }
+term:
+  | INT { Ast.Const $1 }
+  | LOWER_WORD { Ast.Const $1 }
+  | UPPER_WORD { Ast.Var $1 }
+  | SINGLE_QUOTED { Ast.Quoted $1 }

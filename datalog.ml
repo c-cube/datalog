@@ -23,7 +23,7 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 *)
 
-(** Representation for Datalog literals and clauses, and the main algorithm *)
+(** {1 Main Datalog module} *)
 
 (** Module type for logic *)
 module type S = sig
@@ -140,6 +140,11 @@ module type S = sig
     (** match the given literal with facts of the DB, calling the handler on
         each fact that match *)
 
+  val db_query : db -> literal -> int list -> (term list -> unit) -> unit
+    (** Like {!db_match}, but the additional int list is used to select
+        bindings of variables in the literal. Their bindings, in the same
+        order, are given to the callback. *)
+
   val db_size : db -> int
     (** Size of the DB *)
 
@@ -171,6 +176,7 @@ module type S = sig
 
   val db_explanations : db -> clause -> explanation list
     (** Get all the explanations that explain why this clause is true *)
+
 end
 
 (** Signature for a symbol type. It must be hashable, comparable and printable *)
@@ -975,6 +981,22 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
       (fun () fact _ subst -> handler fact)
       () (db.db_facts,0) (pattern,1)
 
+  (** Like {!db_match}, but the additional int list is used to select
+      bindings of variables in the literal. Their bindings, in the same
+      order, are given to the callback. *)
+  let db_query db pattern vars k =
+    ClausesIndex.retrieve_specializations
+      (fun () lit _ subst ->
+        let terms = List.map
+          (fun i ->
+            let v = mk_var i in
+            let t, _ = deref subst v 1 in
+            t)
+          vars in
+        (* yield the list of terms *)
+        k terms)
+      () (db.db_facts,0) (pattern,1)
+
   (** Size of the DB *)
   let db_size db =
     ClausesIndex.size db.db_facts + ClausesIndex.size db.db_selected
@@ -1041,6 +1063,7 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
   (** Get all the explanations that explain why this clause is true *)
   let db_explanations db clause =
     ClauseHashtbl.find_all db.db_all clause
+
 end
 
 module Hashcons(S : SymbolType) = struct

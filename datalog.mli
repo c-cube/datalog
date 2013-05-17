@@ -23,7 +23,7 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 *)
 
-(** {1 Interface file} *)
+(** {1 Main Datalog module} *)
 
 (** Main module, that exposes datatypes for logic literals and clauses,
     functions to manipulate them, and functions to compute the fixpoint
@@ -142,6 +142,11 @@ module type S = sig
     (** match the given literal with facts of the DB, calling the handler on
         each fact that match *)
 
+  val db_query : db -> literal -> int list -> (term list -> unit) -> unit
+    (** Like {!db_match}, but the additional int list is used to select
+        bindings of variables in the literal. Their bindings, in the same
+        order, are given to the callback. *)
+
   val db_size : db -> int
     (** Size of the DB *)
 
@@ -173,6 +178,7 @@ module type S = sig
 
   val db_explanations : db -> clause -> explanation list
     (** Get all the explanations that explain why this clause is true *)
+
 end
 
 (** Signature for a symbol type. It must be hashable, comparable and printable *)

@@ -1,0 +1,8 @@
+#use "topfind";;
+#directory "_build";;
+#load "datalog.cma";;
+#install_printer Datalog.Default.pp_term;;
+#install_printer Datalog.Default.pp_literal;;
+#install_printer Datalog.Default.pp_clause;;
+(* vim:filetype=ocaml:
+*)

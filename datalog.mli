@@ -145,6 +145,11 @@ module type S = sig
     (** match the given literal with facts of the DB, calling the handler on
         each fact that match *)
 
+  val db_query : db -> literal -> int list -> (term list -> unit) -> unit
+    (** Like {!db_match}, but the additional int list is used to select
+        bindings of variables in the literal. Their bindings, in the same
+        order, are given to the callback. *)
+
   val db_size : db -> int
     (** Size of the DB *)
 
@@ -198,10 +203,12 @@ module type S = sig
     val iter_queries : db -> (query -> unit) -> unit
       (** Iterate on the active queries *)
 
-    val ask : db -> literal list -> int list -> (term list -> unit) -> query
+    val ask : ?within:clause list -> db -> literal list -> int list ->
+              (term list -> unit) -> query
       (** New query that runs against the given [db]. It will transmit
           the instances of the given list of variables (int list) that
-          satisfy the list of literals, to the handler. *)
+          satisfy the list of literals, to the handler. [within] contains
+          additional clauses for the processing of the query. *)
 
     val register : query -> (term list -> unit) -> unit
       (** Register another callback to the query *)

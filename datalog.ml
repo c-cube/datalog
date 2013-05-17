@@ -143,6 +143,11 @@ module type S = sig
     (** match the given literal with facts of the DB, calling the handler on
         each fact that match *)
 
+  val db_query : db -> literal -> int list -> (term list -> unit) -> unit
+    (** Like {!db_match}, but the additional int list is used to select
+        bindings of variables in the literal. Their bindings, in the same
+        order, are given to the callback. *)
+
   val db_size : db -> int
     (** Size of the DB *)
 
@@ -196,10 +201,12 @@ module type S = sig
     val iter_queries : db -> (query -> unit) -> unit
       (** Iterate on the active queries *)
 
-    val ask : db -> literal list -> int list -> (term list -> unit) -> query
+    val ask : ?within:clause list -> db -> literal list -> int list ->
+              (term list -> unit) -> query
       (** New query that runs against the given [db]. It will transmit
           the instances of the given list of variables (int list) that
-          satisfy the list of literals, to the handler. *)
+          satisfy the list of literals, to the handler. [within] contains
+          additional clauses for the processing of the query. *)
 
     val register : query -> (term list -> unit) -> unit
       (** Register another callback to the query *)
@@ -1036,6 +1043,22 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
       (fun () fact _ subst -> handler fact)
       () (db.db_facts,0) (pattern,1)
 
+  (** Like {!db_match}, but the additional int list is used to select
+      bindings of variables in the literal. Their bindings, in the same
+      order, are given to the callback. *)
+  let db_query db pattern vars k =
+    ClausesIndex.retrieve_specializations
+      (fun () lit _ subst ->
+        let terms = List.map
+          (fun i ->
+            let v = mk_var i in
+            let t, _ = deref subst v 1 in
+            t)
+          vars in
+        (* yield the list of terms *)
+        k terms)
+      () (db.db_facts,0) (pattern,1)
+
   (** Size of the DB *)
   let db_size db =
     ClausesIndex.size db.db_facts + ClausesIndex.size db.db_selected
@@ -1196,7 +1219,7 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
     *)
     (* TODO explanations *)
 
-    let ask db lits vars k =
+    let ask ?(within=[]) db lits vars k =
       let n = db.db_q_count in
       db.db_q_count <- db.db_q_count + 1;
       (* special conclusion and clause *)
@@ -1214,8 +1237,11 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
         q_handlers = [k];
       } in
       Hashtbl.add db.db_queries q.q_id q;
+      let tasks = Queue.create () in
+      (* add bonus clauses *)
+      List.iter (fun c -> add_derived_clause ~tasks q c) within;
       (* add the initial clause *)
-      add_derived_clause ~tasks:(Queue.create ()) q clause;
+      add_derived_clause ~tasks q clause;
       q
   end
 end

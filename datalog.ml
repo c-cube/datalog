@@ -1118,4 +1118,4 @@ module Default = struct
       mk_clause a l
 end
 
-let version = "0.3.1"
+let version = "0.4"

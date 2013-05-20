@@ -142,7 +142,7 @@ module type S = sig
     (** match the given literal with facts of the DB, calling the handler on
         each fact that match *)
 
-  val db_query : db -> literal -> int list -> (term list -> unit) -> unit
+  val db_query : db -> literal -> int list -> (symbol list -> unit) -> unit
     (** Like {!db_match}, but the additional int list is used to select
         bindings of variables in the literal. Their bindings, in the same
         order, are given to the callback. *)

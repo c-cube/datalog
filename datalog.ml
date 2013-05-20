@@ -143,7 +143,7 @@ module type S = sig
     (** match the given literal with facts of the DB, calling the handler on
         each fact that match *)
 
-  val db_query : db -> literal -> int list -> (term list -> unit) -> unit
+  val db_query : db -> literal -> int list -> (symbol list -> unit) -> unit
     (** Like {!db_match}, but the additional int list is used to select
         bindings of variables in the literal. Their bindings, in the same
         order, are given to the callback. *)
@@ -1053,7 +1053,9 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
           (fun i ->
             let v = mk_var i in
             let t, _ = deref subst v 1 in
-            t)
+            match t with 
+            | Var _ -> assert false  (* should be ground *)
+            | Const s -> s)
           vars in
         (* yield the list of terms *)
         k terms)

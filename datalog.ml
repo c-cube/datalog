@@ -155,6 +155,7 @@ module type S = sig
   type goal_handler = literal -> unit
 
   val db_subscribe_fact : db -> symbol -> fact_handler -> unit
+  val db_subscribe_all_facts : db -> fact_handler -> unit
   val db_subscribe_goal : db -> goal_handler -> unit
 
   type user_fun = soft_lit -> soft_lit
@@ -176,7 +177,6 @@ module type S = sig
 
   val db_explanations : db -> clause -> explanation list
     (** Get all the explanations that explain why this clause is true *)
-
 end
 
 (** Signature for a symbol type. It must be hashable, comparable and printable *)
@@ -818,6 +818,7 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
     db_selected : ClausesIndex.t;                     (** index on clauses' selected premises *)
     db_heads : ClausesIndex.t;                        (** index on clauses' heads *)
     db_fact_handlers : fact_handler SymbolHashtbl.t;  (** map symbol -> fact handlers *)
+    mutable db_all_facts : fact_handler list;
     mutable db_goal_handlers : goal_handler list;     (** goal handlers *)
     db_funs : user_fun SymbolHashtbl.t;               (** user-defined functions *)
     db_queue : queue_item Queue.t;                    (** queue of items to process *)
@@ -830,6 +831,7 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
       db_goals = GoalIndex.create ();
       db_selected = ClausesIndex.create ();
       db_heads = ClausesIndex.create ();
+      db_all_facts = [];
       db_fact_handlers = SymbolHashtbl.create 3;
       db_goal_handlers = [];
       db_funs = SymbolHashtbl.create 13;
@@ -874,15 +876,17 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
       ClausesIndex.add db.db_facts clause.(0) clause;
       (* call handler for this fact, if any *)
       let s = match clause.(0).(0) with Const s -> s | Var _ -> assert false in
-      let handlers = SymbolHashtbl.find_all db.db_fact_handlers s in
-      List.iter (fun h ->
+      let call_handler h =
         try h clause.(0)
         with e ->
           Format.eprintf
             "Datalog: exception while calling handler for %s@."
             (Symbol.to_string s);
-          raise e)
-        handlers;
+          raise e
+      in
+      let handlers = SymbolHashtbl.find_all db.db_fact_handlers s in
+      List.iter call_handler (SymbolHashtbl.find_all db.db_fact_handlers s);
+      List.iter call_handler db.db_all_facts;
       (* insertion of a fact: resolution with all clauses whose
          first body literal matches the fact. No offset is needed, because
          the fact is ground. *)
@@ -1016,6 +1020,9 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
 
   let db_subscribe_fact db symbol handler =
     SymbolHashtbl.add db.db_fact_handlers symbol handler
+
+  let db_subscribe_all_facts db handler =
+    db.db_all_facts <- handler :: db.db_all_facts
 
   let db_subscribe_goal db handler =
     db.db_goal_handlers <- handler :: db.db_goal_handlers

@@ -157,6 +157,7 @@ module type S = sig
   type goal_handler = literal -> unit
 
   val db_subscribe_fact : db -> symbol -> fact_handler -> unit
+  val db_subscribe_all_facts : db -> fact_handler -> unit
   val db_subscribe_goal : db -> goal_handler -> unit
 
   type user_fun = soft_lit -> soft_lit
@@ -178,7 +179,6 @@ module type S = sig
 
   val db_explanations : db -> clause -> explanation list
     (** Get all the explanations that explain why this clause is true *)
-
 end
 
 (** Signature for a symbol type. It must be hashable, comparable and printable *)

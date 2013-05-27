@@ -201,6 +201,9 @@ module type S = sig
 
     val cardinal : set -> int
       (** Number of elements of the set *)
+
+    val pp_plan : Format.formatter -> set -> unit
+      (** Print query plan *)
   end
 end
 
@@ -557,6 +560,8 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
     let equal = eq_literal
     let hash = hash_literal
   end)
+
+  (* TODO: SQL-like indexing for the fact index (hashtable on columns)? *)
 
   (** Type for an indexing structure on literals *)
   module type Index = sig
@@ -1241,6 +1246,11 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
 
     let cardinal set =
       List.length (to_list set)
+
+    let pp_plan formatter set =
+      let rec pp_q fmt q = match q.q_expr with
+      | _ -> failwith "not implemented"
+      in pp_q formatter set.query
   end
 end
 

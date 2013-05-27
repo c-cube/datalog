@@ -203,6 +203,9 @@ module type S = sig
 
     val cardinal : set -> int
       (** Number of elements of the set *)
+
+    val pp_plan : Format.formatter -> set -> unit
+      (** Print query plan *)
   end
 end
 

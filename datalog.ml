@@ -177,6 +177,31 @@ module type S = sig
 
   val db_explanations : db -> clause -> explanation list
     (** Get all the explanations that explain why this clause is true *)
+
+  (** {2 Querying} *)
+
+  module Query : sig
+    type set
+      (** mutable set of term lists *)
+
+    val ask : db -> int array -> literal list -> set
+      (** Given a list of variables, and a list of literals that contain those
+          variables, return a set. Each element of the set is an instantiation
+          of the variables such that all instantiated literals are facts of
+          the [db].
+          This is lazy, and will only be evaluated upon calls to {! iter},
+          {! to_list} or other similar functions. The answers will be cached
+          in the set and readily available thereafter. *)
+
+    val iter : set -> (term array -> unit) -> unit
+      (** Evaluate the set by iterating on it *)
+
+    val to_list : set -> term array list
+      (** Convert to a list *)
+
+    val cardinal : set -> int
+      (** Number of elements of the set *)
+  end
 end
 
 (** Signature for a symbol type. It must be hashable, comparable and printable *)
@@ -283,6 +308,12 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
   let hash_term t = match t with
     | Var i -> i
     | Const s -> Symbol.hash s
+
+  module THashtbl = Hashtbl.Make(struct
+    type t = term
+    let equal = eq_term
+    let hash = hash_term
+  end)
 
   (** Hash the literal *)
   let hash_literal t =
@@ -1072,6 +1103,145 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
   let db_explanations db clause =
     ClauseHashtbl.find_all db.db_all clause
 
+  (** {2 Querying} *)
+
+  module Query = struct
+    type set = {
+      db : db;
+      query : query;
+    } (** mutable set of term lists *)
+    and query = {
+      q_expr : query_expr;
+      mutable q_ans : term array list option;
+    } (** A query is an expression, plus a cached answer *)
+    and query_expr =
+      | Match of literal                    (* select literals that match *)
+      | Filter of int * term * query        (* filter by idx(i) = term *)
+      | Same of int * int * query           (* ensure idx(i) = idx(j) *)
+      | Join of int * query * int * query   (* join on respective indexes *)
+      | Product of query array              (* cartesian product *)
+      | Project of int array * query        (* selects given indexes *)
+      (** A query expression *)
+
+    (* find whether variable with index [i] occurs in this literal *)
+    let var_occurs_in_lit i lit =
+      let rec occurs_at j =
+        if j = Array.length lit then false
+        else match lit.(j) with
+          | Var i' when i = i' -> true
+          | _ -> occurs_at (j+1)
+      in
+      occurs_at 0
+
+    (* find which literals have [i] as a variable *)
+    let rec find_lits_with_var i lits = match lits with
+      | [] -> []
+      | lit::lits' ->
+        if var_occurs_in_lit i lit
+          then lit :: find_lits_with_var i lits'
+          else find_lits_with_var i lits'
+
+    (* TODO optimize query *)
+
+    (** Given a list of variables, and a list of literals that contain those
+        variables, return a set. Each element of the set is an instantiation
+        of the variables such that all instantiated literals are facts of
+        the [db].
+        This is lazy, and will only be evaluated upon calls to {! iter},
+        {! to_list} or other similar functions. *)
+    let ask db vars lits =
+      assert (Array.length vars > 0);
+      (* buid query for a given variable *)
+      let build_query v =
+        failwith "not implemented"
+      in
+      (* a query for each variable *)
+      let q_vars = Array.map build_query vars in
+      let q = ref q_vars.(0) in
+      for i = 1 to Array.length vars - 1 do
+        q := failwith "not implemented"
+      done;
+      { db; query = !q; }
+
+    (* select the given indexes of [arr] *)
+    let select_indexes indexes arr =
+      Array.map (fun i -> arr.(i)) indexes
+
+    (** Evaluate the query set *)
+    let rec eval db query =
+      match query.q_ans with
+      | Some l -> l
+      | None ->
+        let answers = match query.q_expr with
+        | Match lit ->
+          let l = ref [] in
+          (* literals that match lit *)
+          db_match db lit
+            (fun lit' ->
+              let args = Array.sub lit 1 (Array.length lit - 1) in
+              l := args :: !l);
+          !l
+        | Filter (i, term, query') ->
+          let answers = eval db query' in
+          List.filter (fun args -> eq_term args.(i) term) answers
+        | Same (i, j, query') ->
+          assert (i <> j);
+          let answers = eval db query' in
+          List.filter (fun args -> eq_term args.(i) args.(j)) answers
+        | Product queries ->
+          let a = Array.map (eval db) queries in
+          let ans = ref [] in
+          let rec iter partial_ans i =
+            if i = Array.length a
+              then ans := (Array.of_list (List.rev partial_ans)) :: !ans (* yield *)
+            else begin
+              let alternatives = a.(i) in
+              List.iter
+                (fun x ->
+                  let partial_ans' = List.rev_append (Array.to_list x) partial_ans in
+                  iter partial_ans' (i+1))
+                alternatives
+            end
+          in
+          iter [] 0;
+          !ans
+        | Join (i, q_i, j, q_j) ->
+          let l_i = eval db q_i in
+          let l_j = eval db q_j in
+          (* hash join: put elements of [l_i] in [h] by their [i]-th element *)
+          let h = THashtbl.create 17 in
+          List.iter (fun a_i -> THashtbl.add h a_i.(i) a_i) l_i;
+          (* result table *)
+          let result = ref [] in
+          (* iterate on [l_j] and perform join by hash *)
+          List.iter
+            (fun a_j ->
+              let matched = THashtbl.find_all h a_j.(j) in
+              List.iter
+                (fun a_i -> result := Array.append a_i a_j :: !result)
+                matched)
+            l_j;
+          !result
+        | Project (indexes, query') ->
+          (* filter arguments *)
+          let answers = eval db query' in
+          List.map (fun args -> select_indexes indexes args) answers
+      in
+      (* save result before returning it *)
+      query.q_ans <- Some answers;
+      answers
+
+    (** Evaluate the set and iter on it *)
+    let iter set k =
+      let answers = eval set.db set.query in
+      List.iter k answers
+
+    let to_list set =
+      eval set.db set.query
+
+    let cardinal set =
+      List.length (to_list set)
+  end
 end
 
 module Hashcons(S : SymbolType) = struct

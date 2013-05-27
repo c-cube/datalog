@@ -179,6 +179,31 @@ module type S = sig
 
   val db_explanations : db -> clause -> explanation list
     (** Get all the explanations that explain why this clause is true *)
+
+  (** {2 Querying} *)
+
+  module Query : sig
+    type set
+      (** mutable set of term lists *)
+
+    val ask : db -> int array -> literal list -> set
+      (** Given a list of variables, and a list of literals that contain those
+          variables, return a set. Each element of the set is an instantiation
+          of the variables such that all instantiated literals are facts of
+          the [db].
+          This is lazy, and will only be evaluated upon calls to {! iter},
+          {! to_list} or other similar functions. The answers will be cached
+          in the set and readily available thereafter. *)
+
+    val iter : set -> (term array -> unit) -> unit
+      (** Evaluate the set by iterating on it *)
+
+    val to_list : set -> term array list
+      (** Convert to a list *)
+
+    val cardinal : set -> int
+      (** Number of elements of the set *)
+  end
 end
 
 (** Signature for a symbol type. It must be hashable, comparable and printable *)

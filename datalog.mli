@@ -25,6 +25,25 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 (** {1 Main Datalog module} *)
 
+(** {2 Universal type} *)
+
+module Univ : sig
+  (** This is largely inspired by https://ocaml.janestreet.com/?q=node/18 . *)
+
+  type t (** The universal type *)
+
+  type 'a embedding 
+    (** Conversion between the universal type and 'a *)
+
+  val embed : unit -> 'a embedding
+    (** Create a new embedding. Values packed by a given embedding can
+        only be unpacked by the same embedding. *)
+
+  val pack : 'a embedding -> 'a -> t
+  val unpack : 'a embedding -> t -> 'a option
+  val compatible : 'a embedding -> t -> bool
+end
+
 (** Main module, that exposes datatypes for logic literals and clauses,
     functions to manipulate them, and functions to compute the fixpoint
     of a set of clauses *)
@@ -119,7 +138,8 @@ module type S = sig
   type explanation =
     | Axiom
     | Resolution of clause * literal
-    (** Explanation for a clause or fact *)
+    | ExtExplanation of string * Univ.t
+    (** Explanation for a clause or fact. It is extensible through universal types. *)
 
   val db_create : unit -> db
     (** Create a DB *)
@@ -130,11 +150,11 @@ module type S = sig
   val db_mem : db -> clause -> bool
     (** Is the clause member of the DB? *)
 
-  val db_add : db -> clause -> unit
+  val db_add : ?expl:explanation -> db -> clause -> unit
     (** Add the clause/fact to the DB as an axiom, updating fixpoint.
         UnsafeRule will be raised if the rule is not safe (see {!check_safe}) *)
 
-  val db_add_fact : db -> literal -> unit
+  val db_add_fact : ?expl:explanation -> db -> literal -> unit
     (** Add a fact (ground unit clause) *)
 
   val db_goal : db -> literal -> unit

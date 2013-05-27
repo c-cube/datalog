@@ -25,6 +25,42 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 (** {1 Main Datalog module} *)
 
+(** {2 Universal type} *)
+
+module Univ = struct
+  type t = unit -> unit
+    (** The universal type *)
+
+  type 'a embedding = {
+    pack : 'a -> t;           (** Pack a 'a into a univ value *)
+    unpack : t -> 'a option;  (** Try to unpack the univ value into an 'a *)
+  } (** Conversion between the universal type and 'a *)
+
+  (** Create a new embedding. Values packed by a given embedding can
+      only be unpacked by the same embedding. *)
+  let embed () = 
+    let r = ref None in (* place to store values *)
+    let pack a =        (* pack the 'a value into a new univ cell *)
+      let o = Some a in
+      fun () -> r := o
+    in
+    let unpack t =      (* try to extract the content of a univ cell *)
+      r := None;
+      t ();
+      let a = !r in
+      a
+    in
+    { pack; unpack; }
+
+  let pack emb x = emb.pack x
+
+  let unpack emb t = emb.unpack t
+
+  let compatible emb t = match unpack emb t with
+    | None -> false
+    | Some _ -> true
+end
+
 (** Module type for logic *)
 module type S = sig
   (** {2 Literals and clauses} *)
@@ -117,7 +153,8 @@ module type S = sig
   type explanation =
     | Axiom
     | Resolution of clause * literal
-    (** Explanation for a clause or fact *)
+    | ExtExplanation of string * Univ.t
+    (** Explanation for a clause or fact. It is extensible through universal types. *)
 
   val db_create : unit -> db
     (** Create a DB *)
@@ -128,11 +165,11 @@ module type S = sig
   val db_mem : db -> clause -> bool
     (** Is the clause member of the DB? *)
 
-  val db_add : db -> clause -> unit
+  val db_add : ?expl:explanation -> db -> clause -> unit
     (** Add the clause/fact to the DB as an axiom, updating fixpoint.
         UnsafeRule will be raised if the rule is not safe (see {!check_safe}) *)
 
-  val db_add_fact : db -> literal -> unit
+  val db_add_fact : ?expl:explanation -> db -> literal -> unit
     (** Add a fact (ground unit clause) *)
 
   val db_goal : db -> literal -> unit
@@ -841,10 +878,11 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
       let hash = hash_clause
     end)
 
-  (** Explanation for a clause or fact *)
+  (** Explanation for a clause or fact. It is extensible through universal types. *)
   type explanation =
     | Axiom
     | Resolution of clause * literal
+    | ExtExplanation of string * Univ.t
 
   type fact_handler = literal -> unit
   type goal_handler = literal -> unit
@@ -1022,14 +1060,14 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
     end
 
   (** Add the clause/fact to the DB, updating fixpoint *)
-  let db_add db clause =
+  let db_add ?(expl=Axiom) db clause =
     (if not (check_safe clause) then raise UnsafeClause);
-    process_items db (`AddClause (clause, Axiom))
+    process_items db (`AddClause (clause, expl))
 
   (** Add a fact (ground unit clause) *)
-  let db_add_fact db lit =
+  let db_add_fact ?(expl=Axiom) db lit =
     (if not (is_ground lit) then raise UnsafeClause);
-    process_items db (`AddClause ([|lit|], Axiom))
+    process_items db (`AddClause ([|lit|], expl))
 
   (** Add a goal to the DB. The goal is used to trigger backward chaining
       (calling goal handlers that could help solve the goal) *)
@@ -1105,6 +1143,7 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
         match explanation with
         | Axiom when is_fact clause ->
           LitHashtbl.replace set clause.(0) ();
+        | ExtExplanation _
         | Axiom -> ()
         | Resolution (clause, fact) -> begin
           search clause;
@@ -1122,6 +1161,7 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
     let rec search acc clause =
       let explanation = ClauseHashtbl.find db.db_all clause in
       match explanation with
+      | ExtExplanation _
       | Axiom -> clause, acc  (* no premises *)
       | Resolution (clause, fact) -> let acc = fact :: acc in search acc clause
     in

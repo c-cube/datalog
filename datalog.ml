@@ -122,6 +122,9 @@ module type S = sig
   val db_create : unit -> db
     (** Create a DB *)
 
+  val db_copy : db -> db
+    (** Deep copy of the DB *)
+
   val db_mem : db -> clause -> bool
     (** Is the clause member of the DB? *)
 
@@ -568,6 +571,9 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
 
     val create : unit -> t
       (** Create a new index *)
+  
+    val copy : t -> t
+      (** Deep copy (TODO copy-on-write?) *)
 
     val add : t -> literal -> elt -> unit
       (** Add an element indexed by the literal *)
@@ -631,6 +637,15 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
 
     (** Create a new index *)
     let create () = Node (DataSet.create 3, TermHashtbl.create 2)
+
+    let rec copy t = match t with
+      | Node (set, h) ->
+        let set' = DataSet.copy set in
+        let h' = TermHashtbl.create (TermHashtbl.length h) in
+        TermHashtbl.iter
+          (fun k t' -> TermHashtbl.add h' k (copy t'))
+          h;
+        Node (set', h')
 
     let __star = Var 0
 
@@ -866,6 +881,19 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
       db_fact_handlers = SymbolHashtbl.create 3;
       db_goal_handlers = [];
       db_funs = SymbolHashtbl.create 13;
+      db_queue = Queue.create ();
+    }
+
+  let db_copy db =
+    { db_all = ClauseHashtbl.copy db.db_all;
+      db_facts = ClausesIndex.copy db.db_facts;
+      db_goals = GoalIndex.copy db.db_goals;
+      db_selected= ClausesIndex.copy db.db_selected;
+      db_heads = ClausesIndex.copy db.db_heads;
+      db_all_facts = db.db_all_facts;
+      db_fact_handlers = SymbolHashtbl.copy db.db_fact_handlers;
+      db_goal_handlers = db.db_goal_handlers;
+      db_funs = SymbolHashtbl.copy db.db_funs;
       db_queue = Queue.create ();
     }
 

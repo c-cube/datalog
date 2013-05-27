@@ -124,6 +124,9 @@ module type S = sig
   val db_create : unit -> db
     (** Create a DB *)
 
+  val db_copy : db -> db
+    (** Deep copy of the DB *)
+
   val db_mem : db -> clause -> bool
     (** Is the clause member of the DB? *)
 

@@ -884,7 +884,6 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
             (Symbol.to_string s);
           raise e
       in
-      let handlers = SymbolHashtbl.find_all db.db_fact_handlers s in
       List.iter call_handler (SymbolHashtbl.find_all db.db_fact_handlers s);
       List.iter call_handler db.db_all_facts;
       (* insertion of a fact: resolution with all clauses whose

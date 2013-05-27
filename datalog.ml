@@ -882,7 +882,7 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
       db_goals = GoalIndex.create ();
       db_selected = ClausesIndex.create ();
       db_heads = ClausesIndex.create ();
-      db_all_facts = db.db_all_facts;
+      db_all_facts = [];
       db_fact_handlers = SymbolHashtbl.create 3;
       db_goal_handlers = [];
       db_funs = SymbolHashtbl.create 13;

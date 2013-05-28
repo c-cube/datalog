@@ -1229,7 +1229,7 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
     and expr =
       | Match of literal * int array * int array  (* match with literal, then project *)
       | Join of query * query                 (* join on common variables *)
-      | Reord of int array * query            (* reord columns *)
+      | Project of int array * query            (* project on given columns*)
     and table = {
       tbl_vars : int array;
       mutable tbl_rows : term array list;
@@ -1262,7 +1262,7 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
         if common_vars q1.q_vars q2.q_vars = [||]
           then Array.append q1.q_vars q2.q_vars
           else union_vars q1.q_vars q2.q_vars
-      | Reord (vars, _) -> vars
+      | Project (vars, _) -> vars
       in
       { q_expr = expr; q_table = None; q_vars; }
 
@@ -1285,10 +1285,10 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
 
     (* optimize query (TODO more optimization, e.g. re-balance joins) *)
     let rec optimize q = match q.q_expr with
-      | Reord (vars, q') ->
+      | Project (vars, q') ->
         if vars = q'.q_vars
           then optimize q'  (* reord is the identity *)
-          else mk_query (Reord (vars, optimize q'))
+          else mk_query (Project (vars, optimize q'))
       | Join (q1, q2) -> mk_query (Join (optimize q1, optimize q2)) 
       | Match _ -> q
 
@@ -1321,7 +1321,7 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
         combine_queries q_lit lits'
       in
       (* reorder columns *)
-      let q = mk_query (Reord (vars, q)) in
+      let q = mk_query (Project (vars, q)) in
       (* optimize *)
       let q = optimize q in
       (* return set *)
@@ -1361,18 +1361,18 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
               let row = Array.map (fun v -> by_idx lit' v) vars in
               add_table tbl row);
           tbl
-        | Reord (vars, q) ->
+        | Project (vars, q) ->
           let tbl = eval db q in
-          assert (Array.sort compare vars = Array.sort compare tbl.tbl_vars);  (* same vars *)
-          (* permutation that reorders columns *)
-          let perm = Bijection.compose
-            (Bijection.of_index tbl.tbl_vars)
-            (Bijection.rev (Bijection.of_index vars))
-          in
+          (* map variables to their index in the input table *)
+          let indexes = find_indexes vars tbl.tbl_vars in
+          let bij = Bijection.of_array vars indexes in
+          let by_idx row v = Bijection.apply_index bij row v in
+          let select row = Array.map (fun v -> by_idx row v) vars in
+          (* result table *)
           let result = mk_table vars [] in
           List.iter
             (fun row ->
-              let row' = Array.mapi (fun i _ -> row.(Bijection.apply perm i)) row in
+              let row' = select row in
               add_table result row')
             tbl.tbl_rows;
           result
@@ -1463,7 +1463,7 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
         (if not top then Format.pp_print_string fmt "(");
         Format.fprintf fmt "%a |><| %a" (pp_q ~top:false) q1 (pp_q ~top:false) q2;
         (if not top then Format.pp_print_string fmt ")");
-      | Reord (vars, q) -> Format.fprintf fmt "reord %a" (pp_q ~top:false) q
+      | Project (vars, q) -> Format.fprintf fmt "project %a" (pp_q ~top:false) q
       in pp_q ~top:true formatter set.query
   end
 end

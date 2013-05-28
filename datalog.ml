@@ -1467,14 +1467,23 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
       let tbl = eval set.db set.query in
       length_table tbl
 
+    let pp_array ~sep pp_elt fmt a =
+      Array.iteri (fun i x ->
+        (if i > 0 then Format.pp_print_string fmt sep);
+        pp_elt fmt x)
+      a
+
     let pp_plan formatter set =
+      let pp_var fmt i = Format.pp_print_int fmt i in
       let rec pp_q ~top fmt q = match q.q_expr with
-      | Match (lit, _, _) -> Format.fprintf fmt "match %a" pp_literal lit
+      | Match (lit, vars, _) ->
+        Format.fprintf fmt "match[%a] %a" (pp_array ~sep:"," pp_var) vars pp_literal lit
       | Join (q1, q2) ->
         (if not top then Format.pp_print_string fmt "(");
         Format.fprintf fmt "%a |><| %a" (pp_q ~top:false) q1 (pp_q ~top:false) q2;
         (if not top then Format.pp_print_string fmt ")");
-      | Project (vars, q) -> Format.fprintf fmt "project %a" (pp_q ~top:false) q
+      | Project (vars, q) ->
+        Format.fprintf fmt "project[%a] %a" (pp_array ~sep:"," pp_var) vars (pp_q ~top:false) q
       in pp_q ~top:true formatter set.query
   end
 end

@@ -24,7 +24,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 *)
 
 {
-open Parser
+open DatalogParser
 
 let print_location lexbuf =
   let open Lexing in

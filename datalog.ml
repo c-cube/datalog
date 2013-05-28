@@ -1334,8 +1334,9 @@ module Hashcons(S : SymbolType) = struct
     y
 end
 
-module Parser = Parser
-module Lexer = Lexer
+module Ast = DatalogAst
+module Parser = DatalogParser
+module Lexer = DatalogLexer
 
 module StringSymbol = Hashcons(struct
   type t = string

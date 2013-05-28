@@ -38,16 +38,16 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 %token <string> INT
 
 %start parse_literal
-%type <Ast.literal> parse_literal
+%type <DatalogAst.literal> parse_literal
 
 %start parse_literals
-%type <Ast.literal list> parse_literals
+%type <DatalogAst.literal list> parse_literals
 
 %start parse_clause
-%type <Ast.clause> parse_clause
+%type <DatalogAst.clause> parse_clause
 
 %start parse_file
-%type <Ast.file> parse_file
+%type <DatalogAst.file> parse_file
 
 %%
 
@@ -68,24 +68,24 @@ clauses:
   | clause clauses { $1 :: $2 }
 
 clause:
-  | literal DOT { Ast.Clause ($1, []) }
-  | literal IF literals DOT { Ast.Clause ($1, $3) }
+  | literal DOT { DatalogAst.Clause ($1, []) }
+  | literal IF literals DOT { DatalogAst.Clause ($1, $3) }
 
 literals:
   | literal { [$1] }
   | literal COMMA literals { $1 :: $3 }
 
 literal:
-  | LOWER_WORD { Ast.Atom ($1, []) }
+  | LOWER_WORD { DatalogAst.Atom ($1, []) }
   | LOWER_WORD LEFT_PARENTHESIS args RIGHT_PARENTHESIS
-    { Ast.Atom ($1, $3) }
+    { DatalogAst.Atom ($1, $3) }
 
 args:
   | term { [$1] }
   | term COMMA args  { $1 :: $3 }
 
 term:
-  | INT { Ast.Const $1 }
-  | LOWER_WORD { Ast.Const $1 }
-  | UPPER_WORD { Ast.Var $1 }
-  | SINGLE_QUOTED { Ast.Quoted $1 }
+  | INT { DatalogAst.Const $1 }
+  | LOWER_WORD { DatalogAst.Const $1 }
+  | UPPER_WORD { DatalogAst.Var $1 }
+  | SINGLE_QUOTED { DatalogAst.Quoted $1 }

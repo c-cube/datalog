@@ -32,6 +32,9 @@ profile:
 clean:
 	ocamlbuild -clean
 
+push_doc: prod
+	scp -r datalog.docdir/ cedeela.fr:~/simon/root/software/datalog
+
 install: prod
 	ocamlfind install $(NAME) META $(addprefix _build/,$(INSTALL_LIB))
 	cp _build/$(CLI) $(BINDIR)/datalog_cli
@@ -39,4 +42,4 @@ install: prod
 tags:
 	otags *.ml *.mli
 
-.PHONY: all clean install tags
+.PHONY: all clean install tags push_doc

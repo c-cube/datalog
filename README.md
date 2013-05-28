@@ -21,6 +21,10 @@ really true. Another example: if symbols are strings, then the goal
 definitions of `lt`, `le` (lower or equal) and `equal`; see the last example.
 Thus, goals are a way to call semantic attachments in a goal-oriented way.
 
+## Documentation
+
+You can consult the [API documentation](http://cedeela.fr/~simon/software/datalog/Datalog.html).
+
 ## License
 
 The code is distributed under the [BSD license](http://opensource.org/licenses/BSD-2-Clause).

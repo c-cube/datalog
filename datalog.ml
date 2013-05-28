@@ -216,84 +216,6 @@ module type SymbolType = sig
   val to_string : t -> string
 end
 
-(** {2 Finite bijections} *)
-
-module Bijection = struct
-  type ('a, 'b) t = ('a, 'b) Hashtbl.t
-
-  let of_array cur next =
-    assert (Array.length cur = Array.length next);
-    let h = Hashtbl.create (Array.length cur) in
-    (* build the hashtable *)
-    for i = 0 to Array.length cur - 1 do
-      let x = cur.(i) and y = next.(i) in
-      (if Hashtbl.mem h x then failwith "Util.Bijection: duplicate element");
-      Hashtbl.add h x y
-    done;
-    h
-
-  let of_list cur next =
-    of_array (Array.of_list cur) (Array.of_list next)
-
-  (** Bijection between elements and their index *)
-  let of_index ?(offset=0) a =
-    let h = Hashtbl.create (Array.length a) in
-    Array.iteri (fun i x -> Hashtbl.add h x (i+offset)) a;
-    h
-
-  let apply bij x = Hashtbl.find bij x
-
-  let apply_list bij l = List.map (fun x -> apply bij x) l
-
-  let apply_array bij a = Array.map (fun x -> apply bij x) a
-
-  (** Uses [bij] to convert arguments to ints, to access an array *)
-  let apply_index bij a x =
-    let i = Hashtbl.find bij x in
-    try
-      a.(i)
-    with Invalid_argument _ ->
-      raise Not_found
-  
-  (* check it's a bijutation *)
-  let is_permutation b =
-    try
-      Hashtbl.iter (fun x y -> if not (Hashtbl.mem b y) then raise Exit) b;
-      true
-    with Exit -> false
-
-  let compose p1 p2 =
-    let h = Hashtbl.create (Hashtbl.length p1) in
-    (* image of elements of p2 *)
-    Hashtbl.iter
-      (fun x y ->
-        try
-          let z = Hashtbl.find p1 y in
-          Hashtbl.add h x z  (* composition *)
-        with Not_found ->
-          Hashtbl.add h x y)
-      p2;
-    (* elements of [p1] that [p2] ignored *)
-    Hashtbl.iter
-      (fun y z -> if Hashtbl.mem h y then () else Hashtbl.add h y z)
-      p1;
-    h
-
-  (* naive composition of a list *)
-  let compose_list l =
-    let id = Hashtbl.create 3 in
-    List.fold_right (fun p right -> compose p right) l id
-
-  (* reverse function (composition = id) *)
-  let rev b =
-    let h = Hashtbl.create (Hashtbl.length b) in
-    Hashtbl.iter (fun x y -> Hashtbl.add h y x) b;
-    h
-  
-  let to_list p =
-    Hashtbl.fold (fun x y l -> (x,y)::l) p []
-end
-
 (** Build a Datalog module *)
 module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
   type symbol = Symbol.t
@@ -1235,6 +1157,7 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
     and expr =
       | Match of literal * int array * int array  (* match with literal, then project *)
       | Join of query * query                 (* join on common variables *)
+      | ProjectJoin of int array * query * query  (* join and project immediately *)
       | Project of int array * query            (* project on given columns*)
     and table = {
       tbl_vars : int array;             (* vars labelling columns *)
@@ -1268,6 +1191,7 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
         if common_vars q1.q_vars q2.q_vars = [||]
           then Array.append q1.q_vars q2.q_vars
           else union_vars q1.q_vars q2.q_vars
+      | ProjectJoin (vars, _, _) -> vars
       | Project (vars, _) -> vars
       in
       { q_expr = expr; q_table = None; q_vars; }
@@ -1296,10 +1220,18 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
 
     (* optimize query (TODO more optimization, e.g. re-balance joins) *)
     let rec optimize q = match q.q_expr with
+      | Project (vars, {q_expr=Join(q1,q2)}) ->
+        let q1 = optimize q1 in
+        let q2 = optimize q2 in
+        mk_query (ProjectJoin (vars, q1, q2))
       | Project (vars, q') ->
         if vars = q'.q_vars
           then optimize q'  (* reord is the identity *)
           else mk_query (Project (vars, optimize q'))
+      | ProjectJoin (vars, q1, q2) ->
+        let q1 = optimize q1 in
+        let q2 = optimize q2 in
+        mk_query (ProjectJoin (vars, q1, q2))
       | Join (q1, q2) -> mk_query (Join (optimize q1, optimize q2)) 
       | Match _ -> q
 
@@ -1363,64 +1295,76 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
         let tbl = match query.q_expr with
         | Match (lit, vars, indexes) ->
           let tbl = mk_table vars in
-          (* bij: var -> index of var *)
-          let bij = Bijection.of_array vars indexes in
-          let by_idx row v = Bijection.apply_index bij row v in
           (* iterate on literals that match [lit] *)
           db_match db lit
             (fun lit' ->
-              let row = Array.map (fun v -> by_idx lit' v) vars in
+              let row = project indexes lit' in
               add_table tbl row);
           tbl
         | Project (vars, q) ->
           let tbl = eval db q in
           (* map variables to their index in the input table *)
           let indexes = find_indexes vars tbl.tbl_vars in
-          let bij = Bijection.of_array vars indexes in
-          let by_idx row v = Bijection.apply_index bij row v in
-          let select row = Array.map (fun v -> by_idx row v) vars in
-          (* result table *)
           let result = mk_table vars in
           (* project each input tuple *)
           iter_table tbl
             (fun row ->
-              let row' = select row in
+              let row' = project indexes row in
               add_table result row');
           result
+        | ProjectJoin (vars, q1, q2) ->
+          eval_join ~vars db q1 q2
         | Join (q1, q2) ->
-          (* evaluate subqueries *)
-          let tbl1 = eval db q1 in
-          let tbl2 = eval db q2 in
-          (* common variables *)
-          let common = common_vars tbl1.tbl_vars tbl2.tbl_vars in
-          if common = [||]
-            then product tbl1 tbl2
-            else join tbl1 tbl2 common
+          eval_join ?vars:None db q1 q2
       in
       (* save result before returning it *)
       query.q_table <- Some tbl;
       tbl
-    (* cartesian product TODO: select inner loop based on table size *)
+    (* special case of joins *)
+    and eval_join ?vars db q1 q2 =
+      (* evaluate subqueries *)
+      let tbl1 = eval db q1 in
+      let tbl2 = eval db q2 in
+      (* common variables *)
+      let common = common_vars tbl1.tbl_vars tbl2.tbl_vars in
+      (* project on which vars? *)
+      match vars, common with
+      | None, [||] -> product tbl1 tbl2
+      | Some vars, [||] -> project_product ~vars tbl1 tbl2
+      | None, _ ->
+        let vars = union_vars tbl1.tbl_vars tbl2.tbl_vars in
+        join ~vars common tbl1 tbl2
+      | Some vars, _ ->
+        join ~vars common tbl1 tbl2
+    (* project on the given indexes *)
+    and project indexes row =
+      Array.map (fun i -> row.(i)) indexes
+    (* cartesian product *)
     and product tbl1 tbl2 =
       let vars = Array.append tbl1.tbl_vars tbl2.tbl_vars in
       let tbl = mk_table vars in
       iter_table tbl1
-        (fun l1 ->
+        (fun row1 ->
           iter_table tbl2
-            (fun l2 -> add_table tbl (Array.append l1 l2)));
+            (fun row2 -> let row = Array.append row1 row2 in add_table tbl row));
       tbl
-    (* join on the given list of common variables *)
-    and join tbl1 tbl2 common =
+    (* projection + cartesian product *)
+    and project_product ~vars tbl1 tbl2 =
+      let tbl = mk_table vars in
+      let indexes = find_indexes vars (Array.append tbl1.tbl_vars tbl2.tbl_vars) in
+      iter_table tbl1
+        (fun row1 ->
+          iter_table tbl2
+            (fun row2 ->
+              let row = Array.append row1 row2 in
+              let row = project indexes row in  (* project *)
+              add_table tbl row));
+      tbl
+    (* join on the given list of common variables, and project on [vars] *)
+    and join ~vars common tbl1 tbl2 =
       let vars1 = tbl1.tbl_vars and vars2 = tbl2.tbl_vars in
-      (* all variables *)
-      let vars = union_vars vars1 vars2 in
       (* bij: var -> index of var in joined columns *)
       let indexes = find_indexes vars (Array.append vars1 vars2) in
-      let bij = Bijection.of_array vars indexes in
-      let select_row row =
-        Array.map (fun v -> Bijection.apply_index bij row v) vars
-      in
-      (* result *)
       let result = mk_table vars in
       (* index rows of [tbl1] *)
       let idx1 = mk_index tbl1 common in
@@ -1434,7 +1378,7 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
           let rows1 = try Hashtbl.find idx1 join_items with Not_found -> [] in
           List.iter
             (fun row1 ->
-              let row = select_row (Array.append row1 row2) in
+              let row = project indexes (Array.append row1 row2) in
               add_table result row)
             rows1);
       result
@@ -1481,6 +1425,11 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
       | Join (q1, q2) ->
         (if not top then Format.pp_print_string fmt "(");
         Format.fprintf fmt "%a |><| %a" (pp_q ~top:false) q1 (pp_q ~top:false) q2;
+        (if not top then Format.pp_print_string fmt ")");
+      | ProjectJoin (vars, q1, q2) ->
+        (if not top then Format.pp_print_string fmt "(");
+        Format.fprintf fmt "%a |><|_[%a] %a" (pp_q ~top:false) q1
+          (pp_array ~sep:"," pp_var) vars (pp_q ~top:false) q2;
         (if not top then Format.pp_print_string fmt ")");
       | Project (vars, q) ->
         Format.fprintf fmt "project[%a] %a" (pp_array ~sep:"," pp_var) vars (pp_q ~top:false) q

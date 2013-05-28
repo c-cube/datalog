@@ -30,6 +30,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 %token RIGHT_PARENTHESIS
 %token DOT
 %token IF
+%token NOT
 %token COMMA
 %token EOI
 %token <string> SINGLE_QUOTED
@@ -49,6 +50,9 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 %start parse_file
 %type <DatalogAst.file> parse_file
 
+%start parse_query
+%type <Ast.query> parse_query
+
 %%
 
 parse_file:
@@ -62,6 +66,9 @@ parse_literals:
 
 parse_clause:
   | clause EOI { $1 }
+
+parse_query:
+  | query EOI { $1 }
 
 clauses:
   | clause { [$1] }
@@ -79,6 +86,21 @@ literal:
   | LOWER_WORD { DatalogAst.Atom ($1, []) }
   | LOWER_WORD LEFT_PARENTHESIS args RIGHT_PARENTHESIS
     { DatalogAst.Atom ($1, $3) }
+
+query:
+  | LEFT_PARENTHESIS args RIGHT_PARENTHESIS IF signed_literals
+    {
+      let pos_literals, neg_literal = $5 in
+      Ast.Query ($2, pos_literals, neg_literal)
+    }
+
+signed_literals:
+  | literal COMMA signed_literals
+    { let pos, neg = $3 in $1 :: pos, neg }
+  | NOT literal COMMA signed_literals
+    { let pos, neg = $4 in pos, $2 :: neg }
+  | literal { [$1], [] }
+  | NOT literal { [], [$2] }
 
 args:
   | term { [$1] }

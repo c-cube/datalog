@@ -224,11 +224,12 @@ module type S = sig
     type set
       (** mutable set of term lists *)
 
-    val ask : db -> int array -> literal list -> set
+    val ask : db -> ?neg:literal list -> int array -> literal list -> set
       (** Given a list of variables, and a list of literals that contain those
           variables, return a set. Each element of the set is an instantiation
           of the variables such that all instantiated literals are facts of
-          the [db].
+          the [db]. [neg] is an optional list of literals that must be false
+          for an instantiation to be an answer.
           This is lazy, and will only be evaluated upon calls to {! iter},
           {! to_list} or other similar functions. The answers will be cached
           in the set and readily available thereafter. *)
@@ -241,6 +242,9 @@ module type S = sig
 
     val cardinal : set -> int
       (** Number of elements of the set *)
+
+    val pp_plan : Format.formatter -> set -> unit
+      (** Print query plan *)
   end
 end
 
@@ -597,6 +601,8 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
     let equal = eq_literal
     let hash = hash_literal
   end)
+
+  (* TODO: SQL-like indexing for the fact index (hashtable on columns)? *)
 
   (** Type for an indexing structure on literals *)
   module type Index = sig
@@ -1174,42 +1180,110 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
   (** {2 Querying} *)
 
   module Query = struct
+    module RowTable = Hashtbl.Make(struct
+      type t = term array
+      let equal = eq_literal
+      let hash = hash_literal
+    end)
+
     type set = {
       db : db;
       query : query;
     } (** mutable set of term lists *)
     and query = {
-      q_expr : query_expr;
-      mutable q_ans : term array list option;
-    } (** A query is an expression, plus a cached answer *)
-    and query_expr =
-      | Match of literal                    (* select literals that match *)
-      | Filter of int * term * query        (* filter by idx(i) = term *)
-      | Same of int * int * query           (* ensure idx(i) = idx(j) *)
-      | Join of int * query * int * query   (* join on respective indexes *)
-      | Product of query array              (* cartesian product *)
-      | Project of int array * query        (* selects given indexes *)
-      (** A query expression *)
+      q_expr : expr;                    (* relational expression *)
+      q_vars : int array;               (* variables *)
+      mutable q_table : table option;   (* answer table *)
+    } (** A query *)
+    and expr =
+      | Match of literal * int array * int array  (* match with literal, then project *)
+      | Join of query * query                 (* join on common variables *)
+      | ProjectJoin of int array * query * query  (* join and project immediately *)
+      | Project of int array * query            (* project on given columns*)
+      | AntiJoin of query * query               (* tuples of q1 that are not joinable with q2 *)
+    and table = {
+      tbl_vars : int array;             (* vars labelling columns *)
+      tbl_rows : unit RowTable.t;       (* set of rows *)
+    } (** A relational table; column are labelled with variables *)
+    and index = (int array, term array list) Hashtbl.t
+      (** Index for a table. It indexes the given list of variables *)
 
-    (* find whether variable with index [i] occurs in this literal *)
-    let var_occurs_in_lit i lit =
-      let rec occurs_at j =
-        if j = Array.length lit then false
-        else match lit.(j) with
-          | Var i' when i = i' -> true
-          | _ -> occurs_at (j+1)
+    (* union of two sets of variable *)
+    let union_vars l1 l2 =
+      let l = Array.fold_left
+        (fun acc x -> if List.mem x acc then acc else x :: acc)
+        (Array.to_list l2) l1
       in
-      occurs_at 0
+      Array.of_list (List.sort compare l)
 
-    (* find which literals have [i] as a variable *)
-    let rec find_lits_with_var i lits = match lits with
-      | [] -> []
-      | lit::lits' ->
-        if var_occurs_in_lit i lit
-          then lit :: find_lits_with_var i lits'
-          else find_lits_with_var i lits'
+    (* variables that are common to [l1] and [l2] *)
+    let common_vars l1 l2 =
+      let l2 = Array.to_list l2 in
+      let l = Array.fold_left
+        (fun acc x -> if List.mem x l2 then x :: acc else acc)
+        [] l1
+      in
+      Array.of_list l
 
-    (* TODO optimize query *)
+    (* build a query from an expression *)
+    let mk_query expr =
+      let q_vars = match expr with
+      | Match (_, vars, _) -> vars
+      | Join (q1, q2) ->
+        if common_vars q1.q_vars q2.q_vars = [||]
+          then Array.append q1.q_vars q2.q_vars
+          else union_vars q1.q_vars q2.q_vars
+      | ProjectJoin (vars, _, _) -> vars
+      | Project (vars, _) -> vars
+      | AntiJoin (q1, q2) -> q1.q_vars
+      in
+      { q_expr = expr; q_table = None; q_vars; }
+
+    let mk_table vars =
+      { tbl_vars = vars; tbl_rows = RowTable.create 27; }
+
+    let add_table tbl row =
+      RowTable.replace tbl.tbl_rows row ()
+
+    let iter_table tbl k =
+      RowTable.iter (fun row () -> k row) tbl.tbl_rows
+
+    let length_table tbl = RowTable.length tbl.tbl_rows
+
+    (* list of (var, index) for each variables in literal *)
+    let vars_index_of_lit lit =
+      let vars, indexes, _ = Array.fold_left
+        (fun (vars,indexes,idx) t -> match t with
+          | Var i when not (List.mem i vars) ->
+            i::vars, idx::indexes, idx+1
+          | _ -> vars, indexes, idx+1)
+        ([], [], 0) lit
+      in
+      Array.of_list vars, Array.of_list indexes
+
+    (* optimize query (TODO more optimization, e.g. re-balance joins) *)
+    let rec optimize q = match q.q_expr with
+      | Project (vars, {q_expr=Join(q1,q2)}) ->
+        let q1 = optimize q1 in
+        let q2 = optimize q2 in
+        mk_query (ProjectJoin (vars, q1, q2))
+      | Project (vars, q') ->
+        if vars = q'.q_vars
+          then optimize q'  (* reord is the identity *)
+          else mk_query (Project (vars, optimize q'))
+      | ProjectJoin (vars, q1, q2) ->
+        let q1 = optimize q1 in
+        let q2 = optimize q2 in
+        mk_query (ProjectJoin (vars, q1, q2))
+      | Join (q1, q2) -> mk_query (Join (optimize q1, optimize q2)) 
+      | AntiJoin (q1, q2) ->
+        let q1 = optimize q1 in
+        let q2 = optimize q2 in
+        if common_vars q1.q_vars q2.q_vars = [||]
+          then q1 (* diff is trivial *)
+          else (* TODO: try to push antijoins in q1? *)
+            mk_query (AntiJoin (optimize q1, optimize q2))
+      | Match _ -> q
 
     (** Given a list of variables, and a list of literals that contain those
         variables, return a set. Each element of the set is an instantiation
@@ -1217,98 +1291,229 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
         the [db].
         This is lazy, and will only be evaluated upon calls to {! iter},
         {! to_list} or other similar functions. *)
-    let ask db vars lits =
+    let ask db ?(neg=[]) vars lits =
       assert (Array.length vars > 0);
-      (* buid query for a given variable *)
-      let build_query v =
-        failwith "not implemented"
+      (* buid query for a given lit *)
+      let rec build_query lit =
+        let vars, indexes = vars_index_of_lit lit in
+        mk_query (Match (lit, vars, indexes))
+      (* combine queries. [vars] is the list of variables in [q]. [lits']
+          are the remaining constraint literals *)
+      and combine_queries q lits = match lits with
+        | [] -> q
+        | lit::lits' ->
+          let q' = build_query lit in
+          let q'' = mk_query (Join (q, q')) in
+          combine_queries q'' lits'
       in
-      (* a query for each variable *)
-      let q_vars = Array.map build_query vars in
-      let q = ref q_vars.(0) in
-      for i = 1 to Array.length vars - 1 do
-        q := failwith "not implemented"
-      done;
-      { db; query = !q; }
+      let q = match lits with
+      | [] -> failwith "Datalog.Query.ask: require at least one literal"
+      | lit::lits' ->
+        (* initial query, to combine with other queries *)
+        let q_lit = build_query lit in
+        combine_queries q_lit lits'
+      in
+      (* negations *)
+      let q = match neg with
+      | [] -> q
+      | lit::lits ->
+        let q_neg = build_query lit in
+        let q_neg = combine_queries q_neg lits in
+        mk_query (AntiJoin (q, q_neg))
+      in
+      (* project columns *)
+      let q = mk_query (Project (vars, q)) in
+      (* optimize *)
+      let q = optimize q in
+      (* return set *)
+      { db; query = q; }
 
-    (* select the given indexes of [arr] *)
-    let select_indexes indexes arr =
-      Array.map (fun i -> arr.(i)) indexes
+    (* select the given indexes of [a] *)
+    let select_indexes indexes a =
+      Array.map (fun i -> Array.get a i) indexes
+
+    exception Found of int
+
+    (* column indexes of variables in [l]. For each [v] in [vars], finds
+        the index of the first occurrence of [v] in [l]. *)
+    let find_indexes vars l =
+      Array.map (fun v ->
+        try
+          Array.iteri (fun i v' -> if v = v' then raise (Found i)) l;
+          raise Not_found
+        with Found i ->
+          i)
+      vars
 
     (** Evaluate the query set *)
     let rec eval db query =
-      match query.q_ans with
+      match query.q_table with
       | Some l -> l
       | None ->
-        let answers = match query.q_expr with
-        | Match lit ->
-          let l = ref [] in
-          (* literals that match lit *)
+        let tbl = match query.q_expr with
+        | Match (lit, vars, indexes) ->
+          let tbl = mk_table vars in
+          (* iterate on literals that match [lit] *)
           db_match db lit
             (fun lit' ->
-              let args = Array.sub lit 1 (Array.length lit - 1) in
-              l := args :: !l);
-          !l
-        | Filter (i, term, query') ->
-          let answers = eval db query' in
-          List.filter (fun args -> eq_term args.(i) term) answers
-        | Same (i, j, query') ->
-          assert (i <> j);
-          let answers = eval db query' in
-          List.filter (fun args -> eq_term args.(i) args.(j)) answers
-        | Product queries ->
-          let a = Array.map (eval db) queries in
-          let ans = ref [] in
-          let rec iter partial_ans i =
-            if i = Array.length a
-              then ans := (Array.of_list (List.rev partial_ans)) :: !ans (* yield *)
-            else begin
-              let alternatives = a.(i) in
-              List.iter
-                (fun x ->
-                  let partial_ans' = List.rev_append (Array.to_list x) partial_ans in
-                  iter partial_ans' (i+1))
-                alternatives
-            end
-          in
-          iter [] 0;
-          !ans
-        | Join (i, q_i, j, q_j) ->
-          let l_i = eval db q_i in
-          let l_j = eval db q_j in
-          (* hash join: put elements of [l_i] in [h] by their [i]-th element *)
-          let h = THashtbl.create 17 in
-          List.iter (fun a_i -> THashtbl.add h a_i.(i) a_i) l_i;
-          (* result table *)
-          let result = ref [] in
-          (* iterate on [l_j] and perform join by hash *)
-          List.iter
-            (fun a_j ->
-              let matched = THashtbl.find_all h a_j.(j) in
-              List.iter
-                (fun a_i -> result := Array.append a_i a_j :: !result)
-                matched)
-            l_j;
-          !result
-        | Project (indexes, query') ->
-          (* filter arguments *)
-          let answers = eval db query' in
-          List.map (fun args -> select_indexes indexes args) answers
+              let row = project indexes lit' in
+              add_table tbl row);
+          tbl
+        | Project (vars, q) ->
+          let tbl = eval db q in
+          (* map variables to their index in the input table *)
+          let indexes = find_indexes vars tbl.tbl_vars in
+          let result = mk_table vars in
+          (* project each input tuple *)
+          iter_table tbl
+            (fun row ->
+              let row' = project indexes row in
+              add_table result row');
+          result
+        | ProjectJoin (vars, q1, q2) ->
+          eval_join ~vars db q1 q2
+        | Join (q1, q2) ->
+          eval_join ?vars:None db q1 q2
+        | AntiJoin (q1, q2) ->
+          let tbl1 = eval db q1 in
+          let tbl2 = eval db q2 in
+          antijoin tbl1 tbl2
       in
       (* save result before returning it *)
-      query.q_ans <- Some answers;
-      answers
+      query.q_table <- Some tbl;
+      tbl
+    (* special case of joins *)
+    and eval_join ?vars db q1 q2 =
+      (* evaluate subqueries *)
+      let tbl1 = eval db q1 in
+      let tbl2 = eval db q2 in
+      (* common variables *)
+      let common = common_vars tbl1.tbl_vars tbl2.tbl_vars in
+      (* project on which vars? *)
+      match vars, common with
+      | None, [||] -> product tbl1 tbl2
+      | Some vars, [||] -> project_product ~vars tbl1 tbl2
+      | None, _ ->
+        let vars = union_vars tbl1.tbl_vars tbl2.tbl_vars in
+        join ~vars common tbl1 tbl2
+      | Some vars, _ ->
+        join ~vars common tbl1 tbl2
+    (* project on the given indexes *)
+    and project indexes row =
+      Array.map (fun i -> row.(i)) indexes
+    (* cartesian product *)
+    and product tbl1 tbl2 =
+      let vars = Array.append tbl1.tbl_vars tbl2.tbl_vars in
+      let tbl = mk_table vars in
+      iter_table tbl1
+        (fun row1 ->
+          iter_table tbl2
+            (fun row2 -> let row = Array.append row1 row2 in add_table tbl row));
+      tbl
+    (* projection + cartesian product *)
+    and project_product ~vars tbl1 tbl2 =
+      let tbl = mk_table vars in
+      let indexes = find_indexes vars (Array.append tbl1.tbl_vars tbl2.tbl_vars) in
+      iter_table tbl1
+        (fun row1 ->
+          iter_table tbl2
+            (fun row2 ->
+              let row = Array.append row1 row2 in
+              let row = project indexes row in  (* project *)
+              add_table tbl row));
+      tbl
+    (* join on the given list of common variables, and project on [vars] *)
+    and join ~vars common tbl1 tbl2 =
+      let vars1 = tbl1.tbl_vars and vars2 = tbl2.tbl_vars in
+      (* bij: var -> index of var in joined columns *)
+      let indexes = find_indexes vars (Array.append vars1 vars2) in
+      let result = mk_table vars in
+      (* index rows of [tbl1] *)
+      let idx1 = mk_index tbl1 common in
+      (* which column in [tbl2] for variables of [common]? *)
+      let common_indexes = find_indexes common vars2 in
+      (* join on [tbl2] *)
+      iter_table tbl2
+        (fun row2 ->
+          let join_items = select_indexes common_indexes row2 in
+          (* join on [join_items] *)
+          let rows1 = try Hashtbl.find idx1 join_items with Not_found -> [] in
+          List.iter
+            (fun row1 ->
+              let row = project indexes (Array.append row1 row2) in
+              add_table result row)
+            rows1);
+      result
+    (* Antijoin of tables *)
+    and antijoin tbl1 tbl2 =
+      (* common variables *)
+      let common = common_vars tbl1.tbl_vars tbl2.tbl_vars in
+      assert (common <> [||]);
+      let common_indexes = find_indexes common tbl1.tbl_vars in
+      (* index tbl2, to test rows of tbl1 *)
+      let idx2 = mk_index tbl2 common in
+      let result = mk_table tbl1.tbl_vars in
+      iter_table tbl1
+        (fun row ->
+          let join_items = select_indexes common_indexes row in
+          if Hashtbl.mem idx2 join_items
+            then ()  (* drop row *)
+            else add_table result row);
+      result
+    (* Build an index for the given list of variables (in this order). The
+        indexed rows do not contain the selected columns. *)
+    and mk_index tbl vars =
+      let indexes = find_indexes vars tbl.tbl_vars in
+      let h = Hashtbl.create 17 in
+      iter_table tbl
+        (fun row ->
+          (* tuple of values to index with *)
+          let indexed_items = select_indexes indexes row in
+          (* add [row] to the rows indexed by the same items *)
+          let rows = try Hashtbl.find h indexed_items with Not_found -> [] in
+          Hashtbl.replace h indexed_items (row::rows));
+      h
 
     (** Evaluate the set and iter on it *)
     let iter set k =
       let answers = eval set.db set.query in
-      List.iter k answers
+      iter_table answers k
 
     let to_list set =
-      eval set.db set.query
+      let tbl = eval set.db set.query in
+      let l = ref [] in
+      iter_table tbl (fun row -> l := row :: !l);
+      !l
 
     let cardinal set =
-      List.length (to_list set)
+      let tbl = eval set.db set.query in
+      length_table tbl
+
+    let pp_array ~sep pp_elt fmt a =
+      Array.iteri (fun i x ->
+        (if i > 0 then Format.pp_print_string fmt sep);
+        pp_elt fmt x)
+      a
+
+    let pp_plan formatter set =
+      let pp_var fmt i = Format.pp_print_int fmt i in
+      let rec pp_q ~top fmt q = match q.q_expr with
+      | Match (lit, vars, _) ->
+        Format.fprintf fmt "match[%a] %a" (pp_array ~sep:"," pp_var) vars pp_literal lit
+      | Join (q1, q2) ->
+        (if not top then Format.pp_print_string fmt "(");
+        Format.fprintf fmt "%a |><| %a" (pp_q ~top:false) q1 (pp_q ~top:false) q2;
+        (if not top then Format.pp_print_string fmt ")");
+      | ProjectJoin (vars, q1, q2) ->
+        (if not top then Format.pp_print_string fmt "(");
+        Format.fprintf fmt "%a |><|_[%a] %a" (pp_q ~top:false) q1
+          (pp_array ~sep:"," pp_var) vars (pp_q ~top:false) q2;
+        (if not top then Format.pp_print_string fmt ")");
+      | AntiJoin (q1, q2) ->
+        Format.fprintf fmt "%a |> %a" (pp_q ~top:false) q1 (pp_q ~top:false) q2
+      | Project (vars, q) ->
+        Format.fprintf fmt "project[%a] %a" (pp_array ~sep:"," pp_var) vars (pp_q ~top:false) q
+      in pp_q ~top:true formatter set.query
   end
 end
 
@@ -1386,6 +1591,20 @@ module Default = struct
       let a = literal_of_ast ~tbl a in
       let l = List.map (literal_of_ast ~tbl) l in
       mk_clause a l
+
+  let query_of_ast q = match q with
+    | Ast.Query (vars, lits, neg) ->
+      let tbl = mk_vartbl () in
+      let lits = List.map (literal_of_ast ~tbl) lits in
+      let neg = List.map (literal_of_ast ~tbl) neg in
+      let vars = Array.of_list vars in
+      let vars = Array.map
+        (fun t -> match term_of_ast ~tbl t with
+        | Var i -> i
+        | Const _ -> failwith "query_of_ast: expected variables")
+        vars
+      in
+      vars, lits, neg
 end
 
 let version = "0.4"

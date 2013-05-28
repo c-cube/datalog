@@ -41,6 +41,7 @@ let patterns = (ref [] : DLogic.literal list ref)
 let goals = (ref [] : DLogic.literal list ref)
 let explains = ref []
 let files = ref []
+let queries = ref []
 
 (** Parse file and returns the clauses *)
 let parse_file filename =
@@ -121,6 +122,22 @@ let process_clauses clauses =
     DLogic.db_match db pattern
       (fun fact -> Format.printf "  @[<h>%a.@]@." DLogic.pp_literal fact))
     !patterns;
+  (* run queries *)
+  List.iter (fun (vars, lits, neg) ->
+    let set = DLogic.Query.ask ~neg db vars lits in
+    let l = DLogic.Query.to_list set in
+    Format.printf "%% query plan: @[<h>%a@]@." DLogic.Query.pp_plan set;
+    Format.printf "%% @[<v2>query answer:@ ";
+    List.iter
+      (fun terms ->
+        Array.iteri
+          (fun i t ->
+             (if i > 0 then Format.printf ", %a" else Format.printf "%a") DLogic.pp_term t)
+          terms;
+        Format.printf "@;")
+      l;
+    Format.printf "@]@.")
+  !queries;
   (* print explanations *)
   List.iter (fun pattern ->
     DLogic.db_match db pattern
@@ -174,6 +191,16 @@ let add_explain p =
   let literal = DLogic.literal_of_ast literal in
   explains := literal :: !explains
 
+(** Add a query to the list of queries to run *)
+let add_query q_str =
+  try
+    let lexbuf = Lexing.from_string q_str in
+    let ast = Parser.parse_query Lexer.token lexbuf in
+    let q = Datalog.Default.query_of_ast ast in
+    queries := q :: !queries
+  with Parsing.Parse_error ->
+    failwith ("could not parse query string " ^ q_str)
+
 (** parse CLI arguments *)
 let parse_args () =
   let options =
@@ -185,6 +212,7 @@ let parse_args () =
       ("-pattern", Arg.String add_pattern, "print facts matching this pattern");
       ("-goal", Arg.String add_goal, "add a goal for backward chaining");
       ("-explain", Arg.String add_explain, "explain facts matching this pattern");
+      ("-query", Arg.String add_query, "execute the query once fixpoint is reached");
       ("-size", Arg.Set print_size, "print number of clauses after fixpoint");
       ("-version", Arg.Set print_version, "print version");
     ]

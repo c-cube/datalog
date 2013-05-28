@@ -228,11 +228,12 @@ module type S = sig
     type set
       (** mutable set of term lists *)
 
-    val ask : db -> int array -> literal list -> set
+    val ask : db -> ?neg:literal list -> int array -> literal list -> set
       (** Given a list of variables, and a list of literals that contain those
           variables, return a set. Each element of the set is an instantiation
           of the variables such that all instantiated literals are facts of
-          the [db].
+          the [db]. [neg] is an optional list of literals that must be false
+          for an instantiation to be an answer.
           This is lazy, and will only be evaluated upon calls to {! iter},
           {! to_list} or other similar functions. The answers will be cached
           in the set and readily available thereafter. *)
@@ -245,6 +246,9 @@ module type S = sig
 
     val cardinal : set -> int
       (** Number of elements of the set *)
+
+    val pp_plan : Format.formatter -> set -> unit
+      (** Print query plan *)
   end
 end
 
@@ -332,6 +336,8 @@ module Default : sig
   val literal_of_ast : ?tbl:vartbl -> Ast.literal -> literal
 
   val clause_of_ast : Ast.clause -> clause
+
+  val query_of_ast : Ast.query -> (int array * literal list * literal list)
 end
 
 val version : string

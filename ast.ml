@@ -35,3 +35,5 @@ and term =
   | Var of string
   | Const of string
   | Quoted of string
+and query =
+  | Query of term list * literal list

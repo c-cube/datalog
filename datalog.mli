@@ -267,6 +267,8 @@ module Default : sig
   val literal_of_ast : ?tbl:vartbl -> Ast.literal -> literal
 
   val clause_of_ast : Ast.clause -> clause
+
+  val query_of_ast : Ast.query -> (int array * literal list)
 end
 
 val version : string

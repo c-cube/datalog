@@ -49,6 +49,9 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 %start parse_file
 %type <Ast.file> parse_file
 
+%start parse_query
+%type <Ast.query> parse_query
+
 %%
 
 parse_file:
@@ -62,6 +65,9 @@ parse_literals:
 
 parse_clause:
   | clause EOI { $1 }
+
+parse_query:
+  | query EOI { $1 }
 
 clauses:
   | clause { [$1] }
@@ -79,6 +85,10 @@ literal:
   | LOWER_WORD { Ast.Atom ($1, []) }
   | LOWER_WORD LEFT_PARENTHESIS args RIGHT_PARENTHESIS
     { Ast.Atom ($1, $3) }
+
+query:
+  | LEFT_PARENTHESIS args RIGHT_PARENTHESIS IF literals
+    { Ast.Query ($2, $5) }
 
 args:
   | term { [$1] }

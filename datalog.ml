@@ -1355,6 +1355,19 @@ module Default = struct
       let a = literal_of_ast ~tbl a in
       let l = List.map (literal_of_ast ~tbl) l in
       mk_clause a l
+
+  let query_of_ast q = match q with
+    | Ast.Query (vars, lits) ->
+      let tbl = mk_vartbl () in
+      let lits = List.map (literal_of_ast ~tbl) lits in
+      let vars = Array.of_list vars in
+      let vars = Array.map
+        (fun t -> match term_of_ast ~tbl t with
+        | Var i -> i
+        | Const _ -> failwith "query_of_ast: expected variables")
+        vars
+      in
+      vars, lits
 end
 
 let version = "0.4"

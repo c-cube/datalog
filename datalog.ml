@@ -1607,4 +1607,4 @@ module Default = struct
       vars, lits, neg
 end
 
-let version = "0.4"
+let version = "0.4.1"

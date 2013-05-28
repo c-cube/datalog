@@ -51,7 +51,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 %type <DatalogAst.file> parse_file
 
 %start parse_query
-%type <Ast.query> parse_query
+%type <DatalogAst.query> parse_query
 
 %%
 
@@ -91,7 +91,7 @@ query:
   | LEFT_PARENTHESIS args RIGHT_PARENTHESIS IF signed_literals
     {
       let pos_literals, neg_literal = $5 in
-      Ast.Query ($2, pos_literals, neg_literal)
+      DatalogAst.Query ($2, pos_literals, neg_literal)
     }
 
 signed_literals:

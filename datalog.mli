@@ -289,6 +289,9 @@ module Ast : sig
     | Var of string
     | Const of string
     | Quoted of string
+  and query =
+    | Query of term list * literal list * literal list
+    (** Query: projection, positive lits, negative lits *)
 end
 
 (** {2 Parser for Datalog files} *)
@@ -304,6 +307,8 @@ module Parser : sig
     (Lexing.lexbuf  -> token) -> Lexing.lexbuf -> Ast.clause
   val parse_file :
     (Lexing.lexbuf  -> token) -> Lexing.lexbuf -> Ast.file
+  val parse_query :
+    (Lexing.lexbuf  -> token) -> Lexing.lexbuf -> Ast.query
 end
 
 (** {2 Lexer for parsing Datalog files} *)

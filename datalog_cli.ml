@@ -195,7 +195,7 @@ let add_explain p =
 let add_query q_str =
   try
     let lexbuf = Lexing.from_string q_str in
-    let ast = Parser.parse_query Lexer.token lexbuf in
+    let ast = Datalog.Parser.parse_query Datalog.Lexer.token lexbuf in
     let q = Datalog.Default.query_of_ast ast in
     queries := q :: !queries
   with Parsing.Parse_error ->

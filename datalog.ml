@@ -1217,6 +1217,12 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
   (** {2 Querying} *)
 
   module Query = struct
+    module RowTable = Hashtbl.Make(struct
+      type t = term array
+      let equal = eq_literal
+      let hash = hash_literal
+    end)
+
     type set = {
       db : db;
       query : query;
@@ -1231,8 +1237,8 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
       | Join of query * query                 (* join on common variables *)
       | Project of int array * query            (* project on given columns*)
     and table = {
-      tbl_vars : int array;
-      mutable tbl_rows : term array list;
+      tbl_vars : int array;             (* vars labelling columns *)
+      tbl_rows : unit RowTable.t;       (* set of rows *)
     } (** A relational table; column are labelled with variables *)
     and index = (int array, term array list) Hashtbl.t
       (** Index for a table. It indexes the given list of variables *)
@@ -1266,11 +1272,16 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
       in
       { q_expr = expr; q_table = None; q_vars; }
 
-    let mk_table vars rows =
-      { tbl_vars = vars; tbl_rows = rows; }
+    let mk_table vars =
+      { tbl_vars = vars; tbl_rows = RowTable.create 27; }
 
     let add_table tbl row =
-      tbl.tbl_rows <- row :: tbl.tbl_rows
+      RowTable.replace tbl.tbl_rows row ()
+
+    let iter_table tbl k =
+      RowTable.iter (fun row () -> k row) tbl.tbl_rows
+
+    let length_table tbl = RowTable.length tbl.tbl_rows
 
     (* list of (var, index) for each variables in literal *)
     let vars_index_of_lit lit =
@@ -1351,7 +1362,7 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
       | None ->
         let tbl = match query.q_expr with
         | Match (lit, vars, indexes) ->
-          let tbl = mk_table vars [] in
+          let tbl = mk_table vars in
           (* bij: var -> index of var *)
           let bij = Bijection.of_array vars indexes in
           let by_idx row v = Bijection.apply_index bij row v in
@@ -1369,12 +1380,12 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
           let by_idx row v = Bijection.apply_index bij row v in
           let select row = Array.map (fun v -> by_idx row v) vars in
           (* result table *)
-          let result = mk_table vars [] in
-          List.iter
+          let result = mk_table vars in
+          (* project each input tuple *)
+          iter_table tbl
             (fun row ->
               let row' = select row in
-              add_table result row')
-            tbl.tbl_rows;
+              add_table result row');
           result
         | Join (q1, q2) ->
           (* evaluate subqueries *)
@@ -1392,11 +1403,11 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
     (* cartesian product TODO: select inner loop based on table size *)
     and product tbl1 tbl2 =
       let vars = Array.append tbl1.tbl_vars tbl2.tbl_vars in
-      let tbl = mk_table vars [] in
-      List.iter
+      let tbl = mk_table vars in
+      iter_table tbl1
         (fun l1 ->
-          List.iter (fun l2 -> add_table tbl (Array.append l1 l2)) tbl2.tbl_rows)
-        tbl1.tbl_rows;
+          iter_table tbl2
+            (fun l2 -> add_table tbl (Array.append l1 l2)));
       tbl
     (* join on the given list of common variables *)
     and join tbl1 tbl2 common =
@@ -1410,13 +1421,13 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
         Array.map (fun v -> Bijection.apply_index bij row v) vars
       in
       (* result *)
-      let result = mk_table vars [] in
+      let result = mk_table vars in
       (* index rows of [tbl1] *)
       let idx1 = mk_index tbl1 common in
       (* which column in [tbl2] for variables of [common]? *)
       let common_indexes = find_indexes common vars2 in
       (* join on [tbl2] *)
-      List.iter
+      iter_table tbl2
         (fun row2 ->
           let join_items = select_indexes common_indexes row2 in
           (* join on [join_items] *)
@@ -1425,36 +1436,36 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
             (fun row1 ->
               let row = select_row (Array.append row1 row2) in
               add_table result row)
-            rows1)
-        tbl2.tbl_rows;
+            rows1);
       result
     (* Build an index for the given list of variables (in this order). The
         indexed rows do not contain the selected columns. *)
     and mk_index tbl vars =
       let indexes = find_indexes vars tbl.tbl_vars in
       let h = Hashtbl.create 17 in
-      List.iter
+      iter_table tbl
         (fun row ->
           (* tuple of values to index with *)
           let indexed_items = select_indexes indexes row in
           (* add [row] to the rows indexed by the same items *)
           let rows = try Hashtbl.find h indexed_items with Not_found -> [] in
-          Hashtbl.replace h indexed_items (row::rows))
-        tbl.tbl_rows;
+          Hashtbl.replace h indexed_items (row::rows));
       h
 
     (** Evaluate the set and iter on it *)
     let iter set k =
       let answers = eval set.db set.query in
-      List.iter k answers.tbl_rows
+      iter_table answers k
 
     let to_list set =
       let tbl = eval set.db set.query in
-      tbl.tbl_rows
+      let l = ref [] in
+      iter_table tbl (fun row -> l := row :: !l);
+      !l
 
     let cardinal set =
       let tbl = eval set.db set.query in
-      List.length tbl.tbl_rows
+      length_table tbl
 
     let pp_plan formatter set =
       let rec pp_q ~top fmt q = match q.q_expr with

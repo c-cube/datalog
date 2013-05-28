@@ -33,7 +33,7 @@ clean:
 	ocamlbuild -clean
 
 push_doc: prod
-	scp -r datalog.docdir/ cedeela.fr:~/simon/root/software/datalog
+	scp -r datalog.docdir/* cedeela.fr:~/simon/root/software/datalog/
 
 install: prod
 	ocamlfind install $(NAME) META $(addprefix _build/,$(INSTALL_LIB))

@@ -25,10 +25,27 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 (** {1 Main Datalog module} *)
 
+(** Datalog is a fragment of first-order logic. It can be viewed as
+    relational algebra with deduction/recursion (through {b Horn clauses}).
+
+    A Datalog database contains {b facts} and {b clauses} (or rules). A fact
+    is simply a relational atom, like [mother(mary, john)]. A Horn clause 
+    is a deduction rule, for instance [grandmother(X,Y) :- mother(X,Z), parent(Z,Y)] 
+    and [parent(X,Y) :- mother(X,Y)].
+
+    The {! Datalog_cli} module provides a simple client that demonstrates most
+    of the features of Datalog. Some basic examples can be found in the
+    {i tests/} directory.
+
+    {!indexlist}
+*)
+
 (** {2 Universal type} *)
 
+(** This module is present to allow the user to extend explanations
+    with her own types. *)
 module Univ : sig
-  (** This is largely inspired by https://ocaml.janestreet.com/?q=node/18 . *)
+  (** This is largely inspired by {{: https://ocaml.janestreet.com/?q=node/18}this thread} *)
 
   type t (** The universal type *)
 
@@ -43,6 +60,8 @@ module Univ : sig
   val unpack : 'a embedding -> t -> 'a option
   val compatible : 'a embedding -> t -> bool
 end
+
+(** {2 Main module type} *)
 
 (** Main module, that exposes datatypes for logic literals and clauses,
     functions to manipulate them, and functions to compute the fixpoint
@@ -229,13 +248,16 @@ module type S = sig
   end
 end
 
-(** Signature for a symbol type. It must be hashable, comparable and printable *)
+(** {2 Signature for a symbol type} *)
+
+(** A symbol must be hashable, comparable and printable. *)
 module type SymbolType = sig
   include Hashtbl.HashedType
   val to_string : t -> string
 end
 
-(** Hashconsing of symbols *)
+(** {2 Hashconsing of symbols} *)
+
 module Hashcons(S : SymbolType) : sig
   include SymbolType with type t = S.t
 
@@ -243,10 +265,31 @@ module Hashcons(S : SymbolType) : sig
     (** Hashcons the symbol *)
 end
 
-(** Build a Datalog module *)
+(** {2 Main functor} *)
+
+(** Build a Datalog module. This allows to specialize Datalog for a user-defined
+  type of {b atoms}. Strings are a good default, but more complicated types
+  can be useful.  *)
 module Make(Symbol : SymbolType) : S with type symbol = Symbol.t
 
-(** Parser for Datalog files (syntax is a subset of prolog) *)
+(** {2 AST for Datalog files} *)
+
+module Ast : sig
+  type file = clause list
+    (** Toplevel statement *)
+  and clause =
+    | Clause of literal * literal list
+  and literal =
+    | Atom of string * term list
+  and term =
+    | Var of string
+    | Const of string
+    | Quoted of string
+end
+
+(** {2 Parser for Datalog files} *)
+
+(** The syntax is a subset of prolog. *)
 module Parser : sig
   type token
   val parse_literal :
@@ -259,18 +302,23 @@ module Parser : sig
     (Lexing.lexbuf  -> token) -> Lexing.lexbuf -> Ast.file
 end
 
-(** Lexer for parsing Datalog files *)
+(** {2 Lexer for parsing Datalog files} *)
+
 module Lexer : sig
   val token : Lexing.lexbuf -> Parser.token
 
   val print_location : Lexing.lexbuf -> string
 end
 
-(** Symbols are just hashconsed strings *)
+(** {2 Default symbols: hashconsed strings} *)
+
 module StringSymbol : SymbolType with type t = string
 
-(** Default literal base, where symbols are just strings.
-    No locking. *)
+(** {2 Default implementation} *)
+
+(** This is a ready-to-use instance of {!Make}, with hashconsed strings
+    as symbols. It also features some handy conversion functions from {! Ast}.
+*)
 module Default : sig
   include S with type symbol = string
 

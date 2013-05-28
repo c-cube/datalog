@@ -21,6 +21,12 @@ really true. Another example: if symbols are strings, then the goal
 definitions of `lt`, `le` (lower or equal) and `equal`; see the last example.
 Thus, goals are a way to call semantic attachments in a goal-oriented way.
 
+A relational query mode is available (its signature is in `Datalog.S.Query`,
+see [its documentation](http://cedeela.fr/~simon/software/datalog/Datalog.S.Query.html).
+It allows to make one-shot queries on a `db` (the result won't update
+if facts or clauses are added later), with a simple relational model
+with negation.
+
 ## Documentation
 
 You can consult the [API documentation](http://cedeela.fr/~simon/software/datalog/Datalog.html).
@@ -120,6 +126,21 @@ Or
     increasing(3, 4).
     increasing(3, 9).
     increasing(3, 10).
+    % max_heap_size: 126976; minor_collections: 0; major collections: 0
+
+Or
+
+    $ ./datalog_cli.native tests/small.pl -query '(X,Y) :- ancestor(X,john), father(X,Y), not mother(Y,Z)'
+    % start datalog
+    % parse file tests/small.pl
+    % process 12 clauses
+    % computing fixpoint...
+    % done.
+    % query plan: (match[0] ancestor(X0, john) |><| match[1,0] father(X0, X1)) |> match[2,1] mother(X1, X2)
+    % query answer:
+        'jean-jacques', alphonse
+        brad, john
+        
     % max_heap_size: 126976; minor_collections: 0; major collections: 0
 
 ## TODOs/ideas

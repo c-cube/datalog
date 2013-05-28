@@ -216,6 +216,84 @@ module type SymbolType = sig
   val to_string : t -> string
 end
 
+(** {2 Finite bijections} *)
+
+module Bijection = struct
+  type ('a, 'b) t = ('a, 'b) Hashtbl.t
+
+  let of_array cur next =
+    assert (Array.length cur = Array.length next);
+    let h = Hashtbl.create (Array.length cur) in
+    (* build the hashtable *)
+    for i = 0 to Array.length cur - 1 do
+      let x = cur.(i) and y = next.(i) in
+      (if Hashtbl.mem h x then failwith "Util.Bijection: duplicate element");
+      Hashtbl.add h x y
+    done;
+    h
+
+  let of_list cur next =
+    of_array (Array.of_list cur) (Array.of_list next)
+
+  (** Bijection between elements and their index *)
+  let of_index ?(offset=0) a =
+    let h = Hashtbl.create (Array.length a) in
+    Array.iteri (fun i x -> Hashtbl.add h x (i+offset)) a;
+    h
+
+  let apply bij x = Hashtbl.find bij x
+
+  let apply_list bij l = List.map (fun x -> apply bij x) l
+
+  let apply_array bij a = Array.map (fun x -> apply bij x) a
+
+  (** Uses [bij] to convert arguments to ints, to access an array *)
+  let apply_index bij a x =
+    let i = Hashtbl.find bij x in
+    try
+      a.(i)
+    with Invalid_argument _ ->
+      raise Not_found
+  
+  (* check it's a bijutation *)
+  let is_permutation b =
+    try
+      Hashtbl.iter (fun x y -> if not (Hashtbl.mem b y) then raise Exit) b;
+      true
+    with Exit -> false
+
+  let compose p1 p2 =
+    let h = Hashtbl.create (Hashtbl.length p1) in
+    (* image of elements of p2 *)
+    Hashtbl.iter
+      (fun x y ->
+        try
+          let z = Hashtbl.find p1 y in
+          Hashtbl.add h x z  (* composition *)
+        with Not_found ->
+          Hashtbl.add h x y)
+      p2;
+    (* elements of [p1] that [p2] ignored *)
+    Hashtbl.iter
+      (fun y z -> if Hashtbl.mem h y then () else Hashtbl.add h y z)
+      p1;
+    h
+
+  (* naive composition of a list *)
+  let compose_list l =
+    let id = Hashtbl.create 3 in
+    List.fold_right (fun p right -> compose p right) l id
+
+  (* reverse function (composition = id) *)
+  let rev b =
+    let h = Hashtbl.create (Hashtbl.length b) in
+    Hashtbl.iter (fun x y -> Hashtbl.add h y x) b;
+    h
+  
+  let to_list p =
+    Hashtbl.fold (fun x y l -> (x,y)::l) p []
+end
+
 (** Build a Datalog module *)
 module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
   type symbol = Symbol.t
@@ -1144,37 +1222,75 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
       query : query;
     } (** mutable set of term lists *)
     and query = {
-      q_expr : query_expr;
-      mutable q_ans : term array list option;
-    } (** A query is an expression, plus a cached answer *)
-    and query_expr =
-      | Match of literal                    (* select literals that match *)
-      | Filter of int * term * query        (* filter by idx(i) = term *)
-      | Same of int * int * query           (* ensure idx(i) = idx(j) *)
-      | Join of int * query * int * query   (* join on respective indexes *)
-      | Product of query array              (* cartesian product *)
-      | Project of int array * query        (* selects given indexes *)
-      (** A query expression *)
+      q_expr : expr;                    (* relational expression *)
+      q_vars : int array;               (* variables *)
+      mutable q_table : table option;   (* answer table *)
+    } (** A query *)
+    and expr =
+      | Match of literal * int array * int array  (* match with literal, then project *)
+      | Join of query * query                 (* join on common variables *)
+      | Reord of int array * query            (* reord columns *)
+    and table = {
+      tbl_vars : int array;
+      mutable tbl_rows : term array list;
+    } (** A relational table; column are labelled with variables *)
+    and index = (int array, term array list) Hashtbl.t
+      (** Index for a table. It indexes the given list of variables *)
 
-    (* find whether variable with index [i] occurs in this literal *)
-    let var_occurs_in_lit i lit =
-      let rec occurs_at j =
-        if j = Array.length lit then false
-        else match lit.(j) with
-          | Var i' when i = i' -> true
-          | _ -> occurs_at (j+1)
+    (* union of two sets of variable *)
+    let union_vars l1 l2 =
+      let l = Array.fold_left
+        (fun acc x -> if List.mem x acc then acc else x :: acc)
+        (Array.to_list l2) l1
       in
-      occurs_at 0
+      Array.of_list (List.sort compare l)
 
-    (* find which literals have [i] as a variable *)
-    let rec find_lits_with_var i lits = match lits with
-      | [] -> []
-      | lit::lits' ->
-        if var_occurs_in_lit i lit
-          then lit :: find_lits_with_var i lits'
-          else find_lits_with_var i lits'
+    (* variables that are common to [l1] and [l2] *)
+    let common_vars l1 l2 =
+      let l2 = Array.to_list l2 in
+      let l = Array.fold_left
+        (fun acc x -> if List.mem x l2 then x :: acc else acc)
+        [] l1
+      in
+      Array.of_list l
 
-    (* TODO optimize query *)
+    (* build a query from an expression *)
+    let mk_query expr =
+      let q_vars = match expr with
+      | Match (_, vars, _) -> vars
+      | Join (q1, q2) ->
+        if common_vars q1.q_vars q2.q_vars = [||]
+          then Array.append q1.q_vars q2.q_vars
+          else union_vars q1.q_vars q2.q_vars
+      | Reord (vars, _) -> vars
+      in
+      { q_expr = expr; q_table = None; q_vars; }
+
+    let mk_table vars rows =
+      { tbl_vars = vars; tbl_rows = rows; }
+
+    let add_table tbl row =
+      tbl.tbl_rows <- row :: tbl.tbl_rows
+
+    (* list of (var, index) for each variables in literal *)
+    let vars_index_of_lit lit =
+      let vars, indexes, _ = Array.fold_left
+        (fun (vars,indexes,idx) t -> match t with
+          | Var i when not (List.mem i vars) ->
+            i::vars, idx::indexes, idx+1
+          | _ -> vars, indexes, idx+1)
+        ([], [], 0) lit
+      in
+      Array.of_list vars, Array.of_list indexes
+
+    (* optimize query (TODO more optimization, e.g. re-balance joins) *)
+    let rec optimize q = match q.q_expr with
+      | Reord (vars, q') ->
+        if vars = q'.q_vars
+          then optimize q'  (* reord is the identity *)
+          else mk_query (Reord (vars, optimize q'))
+      | Join (q1, q2) -> mk_query (Join (optimize q1, optimize q2)) 
+      | Match _ -> q
 
     (** Given a list of variables, and a list of literals that contain those
         variables, return a set. Each element of the set is an instantiation
@@ -1184,101 +1300,171 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
         {! to_list} or other similar functions. *)
     let ask db vars lits =
       assert (Array.length vars > 0);
-      (* buid query for a given variable *)
-      let build_query v =
-        failwith "not implemented"
+      (* buid query for a given lit *)
+      let rec build_query lit =
+        let vars, indexes = vars_index_of_lit lit in
+        mk_query (Match (lit, vars, indexes))
+      (* combine queries. [vars] is the list of variables in [q]. [lits']
+          are the remaining constraint literals *)
+      and combine_queries q lits = match lits with
+        | [] -> q
+        | lit::lits' ->
+          let q' = build_query lit in
+          let q'' = mk_query (Join (q, q')) in
+          combine_queries q'' lits'
       in
-      (* a query for each variable *)
-      let q_vars = Array.map build_query vars in
-      let q = ref q_vars.(0) in
-      for i = 1 to Array.length vars - 1 do
-        q := failwith "not implemented"
-      done;
-      { db; query = !q; }
+      let q = match lits with
+      | [] -> failwith "Datalog.Query.ask: require at least one literal"
+      | lit::lits' ->
+        (* initial query, to combine with other queries *)
+        let q_lit = build_query lit in
+        combine_queries q_lit lits'
+      in
+      (* reorder columns *)
+      let q = mk_query (Reord (vars, q)) in
+      (* optimize *)
+      let q = optimize q in
+      (* return set *)
+      { db; query = q; }
 
-    (* select the given indexes of [arr] *)
-    let select_indexes indexes arr =
-      Array.map (fun i -> arr.(i)) indexes
+    (* select the given indexes of [a] *)
+    let select_indexes indexes a =
+      Array.map (fun i -> Array.get a i) indexes
+
+    exception Found of int
+
+    (* column indexes of variables in [l]. For each [v] in [vars], finds
+        the index of the first occurrence of [v] in [l]. *)
+    let find_indexes vars l =
+      Array.map (fun v ->
+        try
+          Array.iteri (fun i v' -> if v = v' then raise (Found i)) l;
+          raise Not_found
+        with Found i ->
+          i)
+      vars
 
     (** Evaluate the query set *)
     let rec eval db query =
-      match query.q_ans with
+      match query.q_table with
       | Some l -> l
       | None ->
-        let answers = match query.q_expr with
-        | Match lit ->
-          let l = ref [] in
-          (* literals that match lit *)
+        let tbl = match query.q_expr with
+        | Match (lit, vars, indexes) ->
+          let tbl = mk_table vars [] in
+          (* bij: var -> index of var *)
+          let bij = Bijection.of_array vars indexes in
+          let by_idx row v = Bijection.apply_index bij row v in
+          (* iterate on literals that match [lit] *)
           db_match db lit
             (fun lit' ->
-              let args = Array.sub lit 1 (Array.length lit - 1) in
-              l := args :: !l);
-          !l
-        | Filter (i, term, query') ->
-          let answers = eval db query' in
-          List.filter (fun args -> eq_term args.(i) term) answers
-        | Same (i, j, query') ->
-          assert (i <> j);
-          let answers = eval db query' in
-          List.filter (fun args -> eq_term args.(i) args.(j)) answers
-        | Product queries ->
-          let a = Array.map (eval db) queries in
-          let ans = ref [] in
-          let rec iter partial_ans i =
-            if i = Array.length a
-              then ans := (Array.of_list (List.rev partial_ans)) :: !ans (* yield *)
-            else begin
-              let alternatives = a.(i) in
-              List.iter
-                (fun x ->
-                  let partial_ans' = List.rev_append (Array.to_list x) partial_ans in
-                  iter partial_ans' (i+1))
-                alternatives
-            end
+              let row = Array.map (fun v -> by_idx lit' v) vars in
+              add_table tbl row);
+          tbl
+        | Reord (vars, q) ->
+          let tbl = eval db q in
+          assert (Array.sort compare vars = Array.sort compare tbl.tbl_vars);  (* same vars *)
+          (* permutation that reorders columns *)
+          let perm = Bijection.compose
+            (Bijection.of_index tbl.tbl_vars)
+            (Bijection.rev (Bijection.of_index vars))
           in
-          iter [] 0;
-          !ans
-        | Join (i, q_i, j, q_j) ->
-          let l_i = eval db q_i in
-          let l_j = eval db q_j in
-          (* hash join: put elements of [l_i] in [h] by their [i]-th element *)
-          let h = THashtbl.create 17 in
-          List.iter (fun a_i -> THashtbl.add h a_i.(i) a_i) l_i;
-          (* result table *)
-          let result = ref [] in
-          (* iterate on [l_j] and perform join by hash *)
+          let result = mk_table vars [] in
           List.iter
-            (fun a_j ->
-              let matched = THashtbl.find_all h a_j.(j) in
-              List.iter
-                (fun a_i -> result := Array.append a_i a_j :: !result)
-                matched)
-            l_j;
-          !result
-        | Project (indexes, query') ->
-          (* filter arguments *)
-          let answers = eval db query' in
-          List.map (fun args -> select_indexes indexes args) answers
+            (fun row ->
+              let row' = Array.mapi (fun i _ -> row.(Bijection.apply perm i)) row in
+              add_table result row')
+            tbl.tbl_rows;
+          result
+        | Join (q1, q2) ->
+          (* evaluate subqueries *)
+          let tbl1 = eval db q1 in
+          let tbl2 = eval db q2 in
+          (* common variables *)
+          let common = common_vars tbl1.tbl_vars tbl2.tbl_vars in
+          if common = [||]
+            then product tbl1 tbl2
+            else join tbl1 tbl2 common
       in
       (* save result before returning it *)
-      query.q_ans <- Some answers;
-      answers
+      query.q_table <- Some tbl;
+      tbl
+    (* cartesian product TODO: select inner loop based on table size *)
+    and product tbl1 tbl2 =
+      let vars = Array.append tbl1.tbl_vars tbl2.tbl_vars in
+      let tbl = mk_table vars [] in
+      List.iter
+        (fun l1 ->
+          List.iter (fun l2 -> add_table tbl (Array.append l1 l2)) tbl2.tbl_rows)
+        tbl1.tbl_rows;
+      tbl
+    (* join on the given list of common variables *)
+    and join tbl1 tbl2 common =
+      let vars1 = tbl1.tbl_vars and vars2 = tbl2.tbl_vars in
+      (* all variables *)
+      let vars = union_vars vars1 vars2 in
+      (* bij: var -> index of var in joined columns *)
+      let indexes = find_indexes vars (Array.append vars1 vars2) in
+      let bij = Bijection.of_array vars indexes in
+      let select_row row =
+        Array.map (fun v -> Bijection.apply_index bij row v) vars
+      in
+      (* result *)
+      let result = mk_table vars [] in
+      (* index rows of [tbl1] *)
+      let idx1 = mk_index tbl1 common in
+      (* which column in [tbl2] for variables of [common]? *)
+      let common_indexes = find_indexes common vars2 in
+      (* join on [tbl2] *)
+      List.iter
+        (fun row2 ->
+          let join_items = select_indexes common_indexes row2 in
+          (* join on [join_items] *)
+          let rows1 = try Hashtbl.find idx1 join_items with Not_found -> [] in
+          List.iter
+            (fun row1 ->
+              let row = select_row (Array.append row1 row2) in
+              add_table result row)
+            rows1)
+        tbl2.tbl_rows;
+      result
+    (* Build an index for the given list of variables (in this order). The
+        indexed rows do not contain the selected columns. *)
+    and mk_index tbl vars =
+      let indexes = find_indexes vars tbl.tbl_vars in
+      let h = Hashtbl.create 17 in
+      List.iter
+        (fun row ->
+          (* tuple of values to index with *)
+          let indexed_items = select_indexes indexes row in
+          (* add [row] to the rows indexed by the same items *)
+          let rows = try Hashtbl.find h indexed_items with Not_found -> [] in
+          Hashtbl.replace h indexed_items (row::rows))
+        tbl.tbl_rows;
+      h
 
     (** Evaluate the set and iter on it *)
     let iter set k =
       let answers = eval set.db set.query in
-      List.iter k answers
+      List.iter k answers.tbl_rows
 
     let to_list set =
-      eval set.db set.query
+      let tbl = eval set.db set.query in
+      tbl.tbl_rows
 
     let cardinal set =
-      List.length (to_list set)
+      let tbl = eval set.db set.query in
+      List.length tbl.tbl_rows
 
     let pp_plan formatter set =
-      let rec pp_q fmt q = match q.q_expr with
-      | _ -> failwith "not implemented"
-      in pp_q formatter set.query
+      let rec pp_q ~top fmt q = match q.q_expr with
+      | Match (lit, _, _) -> Format.fprintf fmt "match %a" pp_literal lit
+      | Join (q1, q2) ->
+        (if not top then Format.pp_print_string fmt "(");
+        Format.fprintf fmt "%a |><| %a" (pp_q ~top:false) q1 (pp_q ~top:false) q2;
+        (if not top then Format.pp_print_string fmt ")");
+      | Reord (vars, q) -> Format.fprintf fmt "reord %a" (pp_q ~top:false) q
+      in pp_q ~top:true formatter set.query
   end
 end
 

@@ -126,10 +126,14 @@ let process_clauses clauses =
   List.iter (fun (vars, lits) ->
     let set = DLogic.Query.ask db vars lits in
     let l = DLogic.Query.to_list set in
+    Format.printf "%% query plan: @[<h>%a@]@." DLogic.Query.pp_plan set;
     Format.printf "%% @[<v2>query answer:@ ";
     List.iter
       (fun terms ->
-        Array.iter (fun t -> Format.printf " %a" DLogic.pp_term t) terms;
+        Array.iteri
+          (fun i t ->
+             (if i > 0 then Format.printf ", %a" else Format.printf "%a") DLogic.pp_term t)
+          terms;
         Format.printf "@;")
       l;
     Format.printf "@]@.")

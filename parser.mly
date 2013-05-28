@@ -30,6 +30,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 %token RIGHT_PARENTHESIS
 %token DOT
 %token IF
+%token NOT
 %token COMMA
 %token EOI
 %token <string> SINGLE_QUOTED
@@ -87,8 +88,19 @@ literal:
     { Ast.Atom ($1, $3) }
 
 query:
-  | LEFT_PARENTHESIS args RIGHT_PARENTHESIS IF literals
-    { Ast.Query ($2, $5) }
+  | LEFT_PARENTHESIS args RIGHT_PARENTHESIS IF signed_literals
+    {
+      let pos_literals, neg_literal = $5 in
+      Ast.Query ($2, pos_literals, neg_literal)
+    }
+
+signed_literals:
+  | literal COMMA signed_literals
+    { let pos, neg = $3 in $1 :: pos, neg }
+  | NOT literal COMMA signed_literals
+    { let pos, neg = $4 in pos, $2 :: neg }
+  | literal { [$1], [] }
+  | NOT literal { [], [$2] }
 
 args:
   | term { [$1] }

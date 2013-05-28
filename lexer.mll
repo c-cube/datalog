@@ -56,6 +56,7 @@ rule token =
       | [' ' '\t' '\r']              { token lexbuf } (* skip blanks *)
       | ['\n']                       { Lexing.new_line lexbuf;
                                        token lexbuf } (* skip new lines *)
+      | "not"                        { NOT }
       | one_line_comment             { token lexbuf } (* skip comment *)
       | multi_line_comment           { token lexbuf } (* skip comment *)
       | multi_line_comment_unclosed  { lexing_error "Unclosed Comment" lexbuf }

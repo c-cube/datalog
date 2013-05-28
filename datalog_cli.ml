@@ -123,8 +123,8 @@ let process_clauses clauses =
       (fun fact -> Format.printf "  @[<h>%a.@]@." DLogic.pp_literal fact))
     !patterns;
   (* run queries *)
-  List.iter (fun (vars, lits) ->
-    let set = DLogic.Query.ask db vars lits in
+  List.iter (fun (vars, lits, neg) ->
+    let set = DLogic.Query.ask ~neg db vars lits in
     let l = DLogic.Query.to_list set in
     Format.printf "%% query plan: @[<h>%a@]@." DLogic.Query.pp_plan set;
     Format.printf "%% @[<v2>query answer:@ ";

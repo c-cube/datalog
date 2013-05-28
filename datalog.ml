@@ -187,11 +187,12 @@ module type S = sig
     type set
       (** mutable set of term lists *)
 
-    val ask : db -> int array -> literal list -> set
+    val ask : db -> ?neg:literal list -> int array -> literal list -> set
       (** Given a list of variables, and a list of literals that contain those
           variables, return a set. Each element of the set is an instantiation
           of the variables such that all instantiated literals are facts of
-          the [db].
+          the [db]. [neg] is an optional list of literals that must be false
+          for an instantiation to be an answer.
           This is lazy, and will only be evaluated upon calls to {! iter},
           {! to_list} or other similar functions. The answers will be cached
           in the set and readily available thereafter. *)
@@ -1159,6 +1160,7 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
       | Join of query * query                 (* join on common variables *)
       | ProjectJoin of int array * query * query  (* join and project immediately *)
       | Project of int array * query            (* project on given columns*)
+      | AntiJoin of query * query               (* tuples of q1 that are not joinable with q2 *)
     and table = {
       tbl_vars : int array;             (* vars labelling columns *)
       tbl_rows : unit RowTable.t;       (* set of rows *)
@@ -1193,6 +1195,7 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
           else union_vars q1.q_vars q2.q_vars
       | ProjectJoin (vars, _, _) -> vars
       | Project (vars, _) -> vars
+      | AntiJoin (q1, q2) -> q1.q_vars
       in
       { q_expr = expr; q_table = None; q_vars; }
 
@@ -1233,6 +1236,13 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
         let q2 = optimize q2 in
         mk_query (ProjectJoin (vars, q1, q2))
       | Join (q1, q2) -> mk_query (Join (optimize q1, optimize q2)) 
+      | AntiJoin (q1, q2) ->
+        let q1 = optimize q1 in
+        let q2 = optimize q2 in
+        if common_vars q1.q_vars q2.q_vars = [||]
+          then q1 (* diff is trivial *)
+          else (* TODO: try to push antijoins in q1? *)
+            mk_query (AntiJoin (optimize q1, optimize q2))
       | Match _ -> q
 
     (** Given a list of variables, and a list of literals that contain those
@@ -1241,7 +1251,7 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
         the [db].
         This is lazy, and will only be evaluated upon calls to {! iter},
         {! to_list} or other similar functions. *)
-    let ask db vars lits =
+    let ask db ?(neg=[]) vars lits =
       assert (Array.length vars > 0);
       (* buid query for a given lit *)
       let rec build_query lit =
@@ -1263,7 +1273,15 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
         let q_lit = build_query lit in
         combine_queries q_lit lits'
       in
-      (* reorder columns *)
+      (* negations *)
+      let q = match neg with
+      | [] -> q
+      | lit::lits ->
+        let q_neg = build_query lit in
+        let q_neg = combine_queries q_neg lits in
+        mk_query (AntiJoin (q, q_neg))
+      in
+      (* project columns *)
       let q = mk_query (Project (vars, q)) in
       (* optimize *)
       let q = optimize q in
@@ -1316,6 +1334,10 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
           eval_join ~vars db q1 q2
         | Join (q1, q2) ->
           eval_join ?vars:None db q1 q2
+        | AntiJoin (q1, q2) ->
+          let tbl1 = eval db q1 in
+          let tbl2 = eval db q2 in
+          antijoin tbl1 tbl2
       in
       (* save result before returning it *)
       query.q_table <- Some tbl;
@@ -1382,6 +1404,22 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
               add_table result row)
             rows1);
       result
+    (* Antijoin of tables *)
+    and antijoin tbl1 tbl2 =
+      (* common variables *)
+      let common = common_vars tbl1.tbl_vars tbl2.tbl_vars in
+      assert (common <> [||]);
+      let common_indexes = find_indexes common tbl1.tbl_vars in
+      (* index tbl2, to test rows of tbl1 *)
+      let idx2 = mk_index tbl2 common in
+      let result = mk_table tbl1.tbl_vars in
+      iter_table tbl1
+        (fun row ->
+          let join_items = select_indexes common_indexes row in
+          if Hashtbl.mem idx2 join_items
+            then ()  (* drop row *)
+            else add_table result row);
+      result
     (* Build an index for the given list of variables (in this order). The
         indexed rows do not contain the selected columns. *)
     and mk_index tbl vars =
@@ -1431,6 +1469,8 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
         Format.fprintf fmt "%a |><|_[%a] %a" (pp_q ~top:false) q1
           (pp_array ~sep:"," pp_var) vars (pp_q ~top:false) q2;
         (if not top then Format.pp_print_string fmt ")");
+      | AntiJoin (q1, q2) ->
+        Format.fprintf fmt "%a |> %a" (pp_q ~top:false) q1 (pp_q ~top:false) q2
       | Project (vars, q) ->
         Format.fprintf fmt "project[%a] %a" (pp_array ~sep:"," pp_var) vars (pp_q ~top:false) q
       in pp_q ~top:true formatter set.query
@@ -1512,9 +1552,10 @@ module Default = struct
       mk_clause a l
 
   let query_of_ast q = match q with
-    | Ast.Query (vars, lits) ->
+    | Ast.Query (vars, lits, neg) ->
       let tbl = mk_vartbl () in
       let lits = List.map (literal_of_ast ~tbl) lits in
+      let neg = List.map (literal_of_ast ~tbl) neg in
       let vars = Array.of_list vars in
       let vars = Array.map
         (fun t -> match term_of_ast ~tbl t with
@@ -1522,7 +1563,7 @@ module Default = struct
         | Const _ -> failwith "query_of_ast: expected variables")
         vars
       in
-      vars, lits
+      vars, lits, neg
 end
 
 let version = "0.4"

@@ -66,6 +66,7 @@ end
 (** Main module, that exposes datatypes for logic literals and clauses,
     functions to manipulate them, and functions to compute the fixpoint
     of a set of clauses *)
+
 module type S = sig
   (** {2 Literals and clauses} *)
 
@@ -93,8 +94,7 @@ module type S = sig
   (** {3 Constructors and destructors} *)
 
   val mk_literal : symbol -> term list -> literal
-    (** Helper to build a literal. Arguments are either variables or symbols; if they
-        variables indexes *must* be negative (otherwise it will raise Invalid_argument *)
+    (** Helper to build a literal. Arguments are either variables or constants *)
 
   val of_soft_lit : soft_lit -> literal
 

@@ -353,7 +353,7 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
     | Var i -> i
     | Const s -> Symbol.hash s
 
-  module THashtbl = Hashtbl.Make(struct
+  module TermHashtbl = Hashtbl.Make(struct
     type t = term
     let equal = eq_term
     let hash = hash_term
@@ -654,12 +654,6 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
       is based on non-perfect discrimination trees. *)
   module MakeIndex(X : Hashtbl.HashedType) : Index with type elt = X.t = struct
     type char_ = term
-
-    module TermHashtbl = Hashtbl.Make(struct
-      type t = term
-      let equal = eq_term
-      let hash = hash_term
-    end)
 
     (** A set of literal+indexed data *)
     module DataSet = Hashtbl.Make(struct

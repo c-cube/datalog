@@ -147,6 +147,19 @@ module type S = sig
   val pp_clause : Format.formatter -> clause -> unit
     (** Pretty print the clause *)
 
+  (** {2 Higher level API} *)
+
+  (** This part of the API can be used to avoid building variables
+      yourself. Calling [quantify3 f] with call [f] with 3 distinct
+      variables, and [f] can use those variables to, for instance,
+      build a clause *)
+
+  val quantify1 : (term -> 'a) -> 'a
+  val quantify2 : (term -> term -> 'a) -> 'a
+  val quantify3 : (term -> term -> term -> 'a) -> 'a
+  val quantify4 : (term -> term -> term -> term -> 'a) -> 'a
+  val quantifyn : int -> (term list -> 'a) -> 'a
+
   (** {2 The Datalog unit resolution algorithm} *)
 
   exception UnsafeClause

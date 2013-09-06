@@ -89,8 +89,7 @@ module type S = sig
   (** {3 Constructors and destructors} *)
 
   val mk_literal : symbol -> term list -> literal
-    (** Helper to build a literal. Arguments are either variables or symbols; if they
-        variables indexes *must* be negative (otherwise it will raise Invalid_argument *)
+    (** Helper to build a literal. Arguments are either variables or constants *)
 
   val of_soft_lit : soft_lit -> literal
 
@@ -142,6 +141,19 @@ module type S = sig
 
   val pp_clause : Format.formatter -> clause -> unit
     (** Pretty print the clause *)
+
+  (** {2 Higher level API} *)
+
+  (** This part of the API can be used to avoid building variables
+      yourself. Calling [quantify3 f] with call [f] with 3 distinct
+      variables, and [f] can use those variables to, for instance,
+      build a clause *)
+
+  val quantify1 : (term -> 'a) -> 'a
+  val quantify2 : (term -> term -> 'a) -> 'a
+  val quantify3 : (term -> term -> term -> 'a) -> 'a
+  val quantify4 : (term -> term -> term -> term -> 'a) -> 'a
+  val quantifyn : int -> (term list -> 'a) -> 'a
 
   (** {2 The Datalog unit resolution algorithm} *)
 
@@ -592,6 +604,38 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
         done;
         Format.fprintf formatter ".";
       end
+
+  (** {2 Higher level API} *)
+
+  let quantify1 f =
+    let v1 = mk_var 1 in
+    f v1
+
+  let quantify2 f =
+    let v1 = mk_var 1 in
+    let v2 = mk_var 2 in
+    f v1 v2
+
+  let quantify3 f =
+    let v1 = mk_var 1 in
+    let v2 = mk_var 2 in
+    let v3 = mk_var 3 in
+    f v1 v2 v3
+
+  let quantify4 f =
+    let v1 = mk_var 1 in
+    let v2 = mk_var 2 in
+    let v3 = mk_var 3 in
+    let v4 = mk_var 4 in
+    f v1 v2 v3 v4
+
+  let quantifyn n f =
+    let rec mk_vars = function
+      | 0 -> []
+      | n -> mk_var n :: mk_vars (n-1)
+    in
+    assert(n >= 0);
+    f (mk_vars n)
 
   (** {2 Term index for generalization/specialization retrieval} *)
 

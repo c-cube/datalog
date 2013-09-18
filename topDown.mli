@@ -38,7 +38,7 @@ module type S = sig
   (** {2 Terms} *)
 
   module T : sig
-    type t =
+    type t = private
     | Var of int
     | Apply of const * t array
 
@@ -52,6 +52,7 @@ module type S = sig
 
     val ground : t -> bool
     val vars : t -> int list
+    val max_var : t -> int    (** max var, or 0 if ground *)
     val head_symbol : t -> const
 
     val to_string : t -> string
@@ -74,6 +75,9 @@ module type S = sig
     val eq : t -> t -> bool
     val hash : t -> int
 
+    val to_term : t -> T.t
+    val fmap : (T.t -> T.t) -> t -> t
+
     val to_string : t -> string
     val pp : out_channel -> t -> unit
   end
@@ -95,6 +99,8 @@ module type S = sig
     val hash : t -> int
 
     val head_symbol : t -> const
+    val max_var : t -> int
+    val fmap : (T.t -> T.t) -> t -> t
 
     val to_string : t -> string
     val pp : out_channel -> t -> unit
@@ -102,12 +108,90 @@ module type S = sig
     module Tbl : Hashtbl.S with type key = t
   end
 
-  (** {2 State} *)
+  (** {2 Substs} *)
 
-  module State : sig
+  (** This module is used for variable bindings. *)
+
+  module Subst : sig
+    type t
+    type scope = int
+    type renaming
+
+    val empty : t
+      (** Empty subst *)
+    
+    val bind : t -> T.t -> scope -> T.t -> scope -> t
+      (** Bind a variable,scope to a term,scope *)
+
+    val deref : t -> T.t -> scope -> T.t * scope
+      (** While the term is a variable bound in subst, follow its binding.
+          Returns the final term and scope *)
+
+    val create_renaming : unit -> renaming
+
+    val reset_renaming : renaming -> unit
+
+    val rename : renaming:renaming -> T.t -> scope -> T.t
+      (** Rename the given variable into a variable that is unique
+          within variables known to the given [renaming] *)
+
+    val eval : t -> renaming:renaming -> T.t -> scope -> T.t
+      (** Apply the substitution to the term. Free variables are renamed
+          using [renaming] *)
+
+    val eval_clause : t -> renaming:renaming -> C.t -> scope -> C.t
+      (** Apply substitution to the clause. *)
+  end
+
+  (** {2 Unification, matching...} *)
+
+  type scope = Subst.scope
+
+  exception UnifFail
+
+  (** For {!unify} and {!match_}, the optional parameter [oc] is used to
+      enable or disable occur-check. It is disabled by default. *)
+
+  val unify : ?oc:bool -> ?subst:Subst.t -> T.t -> scope -> T.t -> scope -> Subst.t
+    (** Unify the two terms.
+        @raise UnifFail if it fails *)
+
+  val match_ : ?oc:bool -> ?subst:Subst.t -> T.t -> scope -> T.t -> scope -> Subst.t
+    (** [match_ a sa b sb] matches the pattern [a] in scope [sa] with term
+        [b] in scope [sb].
+        @raise UnifFail if it fails *)
+
+  val alpha_equiv : ?subst:Subst.t -> T.t -> scope -> T.t -> scope -> Subst.t
+    (** Test for alpha equivalence.
+        @raise UnifFail if it fails *)
+
+  val are_alpha_equiv : T.t -> T.t -> bool
+    (** Special version of [alpha_equiv], using distinct scopes for the two
+        terms to test, and discarding the result *)
+
+  val clause_are_alpha_equiv : C.t -> C.t -> bool
+    (** Alpha equivalence of clauses. *)
+
+  (** The following hashtables use alpha-equivalence checking instead of
+      regular, syntactic equality *)
+
+  module TVariantTbl : Hashtbl.S with type key = T.t
+  module CVariantTbl : Hashtbl.S with type key = C.t
+
+  (** {2 DB} *)
+
+  (** A DB stores facts and clauses, that constitute a logic program.
+      Facts and clauses can only be added.
+      
+      TODO: interpreted symbols (with OCaml handlers)
+  *)
+
+  module DB : sig
     type t
 
     val create : unit -> t
+
+    val copy : t -> t
 
     val add_fact : t -> T.t -> unit
     val add_facts : t -> T.t list -> unit
@@ -116,10 +200,23 @@ module type S = sig
     val add_clauses : t -> C.t list -> unit
   end
 
-  (** {2 Query computation} *)
+  (** {2 Query} *)
 
-  val query : State.t -> T.t -> (T.t -> unit) -> unit
-    (** Iterate on the answers of the given query *)
+  module Query : sig
+    type t
+
+    val ask : DB.t -> T.t -> t
+      (** Create a query in a given DB *)
+
+    val next : t -> T.t option
+      (** Compute next answer, if any *)
+
+    val answers : t -> T.t list
+      (** All answers so far *)
+
+    val get_all : t -> T.t list
+      (** Compute all answers and return them *)
+  end
 end
 
 module type CONST = sig
@@ -139,8 +236,10 @@ module Make(Const : CONST) : S with type const = Const.t
 module Default : sig
   include S with type const = string
 
-  val term_of_ast : DatalogAst.term -> T.t
-  val lit_of_ast : DatalogAst.literal -> Lit.t 
-  val clause_of_ast : DatalogAst.clause -> C.t
-  val clauses_of_ast : DatalogAst.clause list -> C.t list
+  type name_ctx = (string, T.t) Hashtbl.t
+
+  val term_of_ast : ctx:name_ctx -> DatalogAst.term -> T.t
+  val lit_of_ast : ctx:name_ctx -> DatalogAst.literal -> Lit.t 
+  val clause_of_ast : ?ctx:name_ctx -> DatalogAst.clause -> C.t
+  val clauses_of_ast : ?ctx:name_ctx -> DatalogAst.clause list -> C.t list
 end

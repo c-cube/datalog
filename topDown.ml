@@ -38,7 +38,7 @@ module type S = sig
   (** {2 Terms} *)
 
   module T : sig
-    type t =
+    type t = private
     | Var of int
     | Apply of const * t array
 
@@ -52,6 +52,7 @@ module type S = sig
 
     val ground : t -> bool
     val vars : t -> int list
+    val max_var : t -> int    (** max var, or 0 if ground *)
     val head_symbol : t -> const
 
     val to_string : t -> string
@@ -74,6 +75,9 @@ module type S = sig
     val eq : t -> t -> bool
     val hash : t -> int
 
+    val to_term : t -> T.t
+    val fmap : (T.t -> T.t) -> t -> t
+
     val to_string : t -> string
     val pp : out_channel -> t -> unit
   end
@@ -95,6 +99,8 @@ module type S = sig
     val hash : t -> int
 
     val head_symbol : t -> const
+    val max_var : t -> int
+    val fmap : (T.t -> T.t) -> t -> t
 
     val to_string : t -> string
     val pp : out_channel -> t -> unit
@@ -102,12 +108,90 @@ module type S = sig
     module Tbl : Hashtbl.S with type key = t
   end
 
-  (** {2 State} *)
+  (** {2 Substs} *)
 
-  module State : sig
+  (** This module is used for variable bindings. *)
+
+  module Subst : sig
+    type t
+    type scope = int
+    type renaming
+
+    val empty : t
+      (** Empty subst *)
+    
+    val bind : t -> T.t -> scope -> T.t -> scope -> t
+      (** Bind a variable,scope to a term,scope *)
+
+    val deref : t -> T.t -> scope -> T.t * scope
+      (** While the term is a variable bound in subst, follow its binding.
+          Returns the final term and scope *)
+
+    val create_renaming : unit -> renaming
+
+    val reset_renaming : renaming -> unit
+
+    val rename : renaming:renaming -> T.t -> scope -> T.t
+      (** Rename the given variable into a variable that is unique
+          within variables known to the given [renaming] *)
+
+    val eval : t -> renaming:renaming -> T.t -> scope -> T.t
+      (** Apply the substitution to the term. Free variables are renamed
+          using [renaming] *)
+
+    val eval_clause : t -> renaming:renaming -> C.t -> scope -> C.t
+      (** Apply substitution to the clause. *)
+  end
+
+  (** {2 Unification, matching...} *)
+
+  type scope = Subst.scope
+
+  exception UnifFail
+
+  (** For {!unify} and {!match_}, the optional parameter [oc] is used to
+      enable or disable occur-check. It is disabled by default. *)
+
+  val unify : ?oc:bool -> ?subst:Subst.t -> T.t -> scope -> T.t -> scope -> Subst.t
+    (** Unify the two terms.
+        @raise UnifFail if it fails *)
+
+  val match_ : ?oc:bool -> ?subst:Subst.t -> T.t -> scope -> T.t -> scope -> Subst.t
+    (** [match_ a sa b sb] matches the pattern [a] in scope [sa] with term
+        [b] in scope [sb].
+        @raise UnifFail if it fails *)
+
+  val alpha_equiv : ?subst:Subst.t -> T.t -> scope -> T.t -> scope -> Subst.t
+    (** Test for alpha equivalence.
+        @raise UnifFail if it fails *)
+
+  val are_alpha_equiv : T.t -> T.t -> bool
+    (** Special version of [alpha_equiv], using distinct scopes for the two
+        terms to test, and discarding the result *)
+
+  val clause_are_alpha_equiv : C.t -> C.t -> bool
+    (** Alpha equivalence of clauses. *)
+
+  (** The following hashtables use alpha-equivalence checking instead of
+      regular, syntactic equality *)
+
+  module TVariantTbl : Hashtbl.S with type key = T.t
+  module CVariantTbl : Hashtbl.S with type key = C.t
+
+  (** {2 DB} *)
+
+  (** A DB stores facts and clauses, that constitute a logic program.
+      Facts and clauses can only be added.
+      
+      TODO: interpreted symbols (with OCaml handlers)
+  *)
+
+  module DB : sig
     type t
 
     val create : unit -> t
+
+    val copy : t -> t
 
     val add_fact : t -> T.t -> unit
     val add_facts : t -> T.t list -> unit
@@ -116,10 +200,23 @@ module type S = sig
     val add_clauses : t -> C.t list -> unit
   end
 
-  (** {2 Query computation} *)
+  (** {2 Query} *)
 
-  val query : State.t -> T.t -> (T.t -> unit) -> unit
-    (** Iterate on the answers of the given query *)
+  module Query : sig
+    type t
+
+    val ask : DB.t -> T.t -> t
+      (** Create a query in a given DB *)
+
+    val next : t -> T.t option
+      (** Compute next answer, if any *)
+
+    val answers : t -> T.t list
+      (** All answers so far *)
+
+    val get_all : t -> T.t list
+      (** Compute all answers and return them *)
+  end
 end
 
 module type CONST = sig
@@ -150,6 +247,23 @@ let _array_forall2 p a1 a2 =
     with Exit -> false
     else false
 
+let _array_exists p a =
+  try
+    for i = 0 to Array.length a - 1 do
+      if p a.(i) then raise Exit
+    done;
+    false
+  with Exit -> true
+
+let _array_fold2 f acc a1 a2 =
+  if Array.length a1 <> Array.length a2
+    then failwith "_array_fold2: arrays must have same length";
+  let acc = ref acc in
+  for i = 0 to Array.length a1 - 1 do
+    acc := f !acc a1.(i) a2.(i)
+  done;
+  !acc
+
 module Make(Const : CONST) = struct
   type const = Const.t
 
@@ -164,7 +278,7 @@ module Make(Const : CONST) = struct
 
     let __const_table = ConstWeak.create 255
 
-    let mk_var i = Var i
+    let mk_var i = assert (i>=0); Var i
     let mk_apply const args =
       let const = ConstWeak.merge __const_table const in
       Apply (const, args)
@@ -212,6 +326,11 @@ module Make(Const : CONST) = struct
       | j::l' -> i = j || _var_present l' i
       in
       _gather [] t
+
+    let rec max_var t = match t with
+    | Var i -> i
+    | Apply (_, args) ->
+      Array.fold_left (fun m t' -> max m (max_var t')) 0 args
 
     let head_symbol t = match t with
     | Var _ -> failwith "variable has no head symbol"
@@ -262,6 +381,14 @@ module Make(Const : CONST) = struct
     | LitPos t -> T.hash t
     | LitNeg t -> T.hash t + 65599 * 13
 
+    let to_term = function
+    | LitPos t
+    | LitNeg t -> t
+
+    let fmap f lit = match lit with
+    | LitPos t -> LitPos (f t)
+    | LitNeg t -> LitNeg (f t)
+
     let to_string lit = match lit with
     | LitPos t -> T.to_string t
     | LitNeg t -> Printf.sprintf "~%s" (T.to_string t)
@@ -299,6 +426,16 @@ module Make(Const : CONST) = struct
 
     let head_symbol c = T.head_symbol c.head
 
+    let max_var c =
+      List.fold_left
+        (fun m lit -> max m (T.max_var (Lit.to_term lit)))
+        (T.max_var c.head) c.body
+
+    let fmap f c =
+      let head = f c.head in
+      let body = List.map (Lit.fmap f) c.body in
+      mk_clause head body
+
     let to_string c = match c.body with
     | [] -> Printf.sprintf "%s." (T.to_string c.head)
     | _ ->
@@ -322,63 +459,308 @@ module Make(Const : CONST) = struct
     end)
   end
 
-  (** {2 State} *)
+  (** {2 Substitutions} *)
 
-  module State = struct
-    let __no_term = T.mk_var (~-1);
+  module Subst = struct
+    type scope = int
+    type t =
+      | Nil
+      | Bind of int * scope * T.t * scope * t
 
+    type renaming = ((int*int), T.t) Hashtbl.t
+
+    let empty = Nil
+
+    let bind subst v s_v t s_t = match v with
+    | T.Var i -> Bind (i, s_v, t, s_t, subst)
+    | _ -> failwith "Subst.bind: expected variable"
+
+    let deref subst t scope =
+      let rec search subst v i scope = match subst with
+      | Nil -> v, scope
+      | Bind (i', s_i', t, s_t, _) when i = i' && scope = s_i' ->
+        begin match t with
+        | T.Var j -> search subst t j s_t
+        | _ -> t, s_t
+        end
+      | Bind (_, _, _, _, subst') -> search subst' v i scope
+      in
+      match t with
+      | T.Var i -> search subst t i scope
+      | _ -> t, scope
+
+    let create_renaming () =
+      Hashtbl.create 7
+
+    let reset_renaming r = Hashtbl.clear r
+
+    let rename ~renaming v scope = match v with
+    | T.Var i ->
+      begin try
+        let v' = Hashtbl.find renaming (i, scope) in
+        v'
+      with Not_found ->
+        let n = Hashtbl.length renaming in
+        let v' = T.mk_var n in
+        Hashtbl.add renaming (i, scope) v';
+        v'
+      end
+    | _ -> failwith "Subst.rename: expected variable"
+
+    let rec eval subst ~renaming t scope =
+      let t, scope = deref subst t scope in
+      match t with
+      | T.Var _ -> rename ~renaming t scope  (* free var *)
+      | T.Apply (c, [| |]) -> t
+      | T.Apply (c, args) ->
+        let args' = Array.map
+          (fun t' -> eval subst ~renaming t' scope)
+          args
+        in
+        T.mk_apply c args'
+
+    let eval_clause subst ~renaming c scope =
+      C.fmap (fun t -> eval subst ~renaming t scope) c
+  end
+
+  (** {2 Unification, matching...} *)
+
+  type scope = Subst.scope
+
+  exception UnifFail
+
+  let rec _occur_check subst v sc_v t sc_t = match t with
+  | T.Var _ when T.eq v t && sc_v = sc_t -> true
+  | T.Var _ -> false
+  | T.Apply (_, [| |]) -> false
+  | T.Apply (_, args) ->
+    _array_exists (fun t' -> _occur_check subst v sc_v t' sc_t) args
+
+  let rec unify ?(oc=false) ?(subst=Subst.empty) t1 sc1 t2 sc2 =
+    let t1, sc1 = Subst.deref subst t1 sc1 in
+    let t2, sc2 = Subst.deref subst t2 sc2 in
+    match t1, t2 with
+    | T.Var i, T.Var j when i = j && sc1 = sc2 -> subst
+    | T.Var _, _ when not oc || not (_occur_check subst t1 sc1 t2 sc2) ->
+      Subst.bind subst t1 sc1 t2 sc2
+    | _, T.Var _ when not oc || not (_occur_check subst t2 sc2 t1 sc1) ->
+      Subst.bind subst t1 sc1 t2 sc2
+    | T.Apply (c1, [| |]), T.Apply (c2, [| |]) when Const.equal c1 c2 -> subst
+    | T.Apply (c1, l1), T.Apply (c2, l2)
+      when Const.equal c1 c2 && Array.length l1 = Array.length l2 ->
+      _array_fold2
+        (fun subst t1' t2' -> unify ~oc ~subst t1' sc1 t2' sc2)
+        subst l1 l2
+    | _, _ -> raise UnifFail
+
+  let rec match_ ?(oc=false) ?(subst=Subst.empty) t1 sc1 t2 sc2 =
+    let t1, sc1 = Subst.deref subst t1 sc1 in
+    let t2, sc2 = Subst.deref subst t2 sc2 in
+    match t1, t2 with
+    | T.Var i, T.Var j when i = j && sc1 = sc2 -> subst
+    | T.Var _, _ when not oc || not (_occur_check subst t1 sc1 t2 sc2) ->
+      Subst.bind subst t1 sc1 t2 sc2
+    | T.Apply (c1, [| |]), T.Apply (c2, [| |]) when Const.equal c1 c2 -> subst
+    | T.Apply (c1, l1), T.Apply (c2, l2)
+      when Const.equal c1 c2 && Array.length l1 = Array.length l2 ->
+      _array_fold2
+        (fun subst t1' t2' -> match_ ~oc ~subst t1' sc1 t2' sc2)
+        subst l1 l2
+    | _, _ -> raise UnifFail
+
+  let rec alpha_equiv ?(subst=Subst.empty) t1 sc1 t2 sc2 =
+    let t1, sc1 = Subst.deref subst t1 sc1 in
+    let t2, sc2 = Subst.deref subst t2 sc2 in
+    match t1, t2 with
+    | T.Var i, T.Var j when i = j && sc1 = sc2 -> subst
+    | T.Apply (c1, [| |]), T.Apply (c2, [| |]) when Const.equal c1 c2 -> subst
+    | T.Apply (c1, l1), T.Apply (c2, l2)
+      when Const.equal c1 c2 && Array.length l1 = Array.length l2 ->
+      _array_fold2
+        (fun subst t1' t2' -> alpha_equiv ~subst t1' sc1 t2' sc2)
+        subst l1 l2
+    | _, _ -> raise UnifFail
+
+  let are_alpha_equiv t1 t2 =
+    try
+      let _ = alpha_equiv t1 0 t2 1 in
+      true
+    with UnifFail ->
+      false
+
+  let _lit_alpha_equiv ~subst lit1 sc1 lit2 sc2 = match lit1, lit2 with
+  | Lit.LitPos t1, Lit.LitPos t2
+  | Lit.LitNeg t1, Lit.LitNeg t2 ->
+    alpha_equiv ~subst t1 sc1 t2 sc2
+  | _ -> raise UnifFail
+
+  let clause_are_alpha_equiv c1 c2 =
+    List.length c1.C.body = List.length c2.C.body &&
+    try
+      let subst = alpha_equiv c1.C.head 0 c2.C.head 1 in
+      let _ = List.fold_left2
+        (fun subst lit1 lit2 -> _lit_alpha_equiv ~subst lit1 0 lit2 1)
+        subst c1.C.body c2.C.body
+      in
+      true
+    with UnifFail ->
+      false
+
+  (* hashtable on terms that use alpha-equiv-checking as equality *)
+  module TVariantTbl = Hashtbl.Make(struct
+    type t = T.t
+    let equal = are_alpha_equiv
+    let hash = T.hash
+  end)
+
+  module CVariantTbl = Hashtbl.Make(struct
+    type t = C.t
+    let equal = clause_are_alpha_equiv
+    let hash = C.hash
+  end)
+
+  (** {2 DB} *)
+  
+  (* TODO interpreted symbols (for given arity) *)
+  (* TODO aggregates? *)
+
+  module DB = struct
     type t = {
-      mutable bindings : T.t array;   (* stack of bindings *)
-      mutable bindings_n : int;       (* its height *)
-      forest : goal T.Tbl.t;          (* forest of goals *)
-      rules : unit C.Tbl.t ConstTbl.t;  (* maps constants to non-fact clauses *)
-      facts : unit T.Tbl.t ConstTbl.t;  (* maps constants to facts *)
-    }
-    and goal = {
-      goal : T.t;
-      mutable answers : T.t list;
+      rules : unit CVariantTbl.t ConstTbl.t;  (* maps constants to non-fact clauses *)
+      facts : unit TVariantTbl.t ConstTbl.t;  (* maps constants to facts *)
     }
 
     let create () =
-      let st = {
-        bindings = Array.make 4096 __no_term;
-        bindings_n = 0;
-        forest = T.Tbl.create 127;
+      let db = {
         rules = ConstTbl.create 23;
         facts = ConstTbl.create 23;
       } in
-      st
+      db
 
-    let add_fact st t =
+    let copy db = failwith "DB.copy: not implemented" (* TODO *)
+
+    let add_fact db t =
       let sym = T.head_symbol t in
       try
-        let set = ConstTbl.find st.facts sym in
-        T.Tbl.replace set t ()
+        let set = ConstTbl.find db.facts sym in
+        TVariantTbl.replace set t ()
       with Not_found ->
-        let set = T.Tbl.create 5 in
-        T.Tbl.add set t ();
-        ConstTbl.add st.facts sym set
+        let set = TVariantTbl.create 5 in
+        TVariantTbl.add set t ();
+        ConstTbl.add db.facts sym set
 
-    let add_facts st l = List.iter (add_fact st) l
+    let add_facts db l = List.iter (add_fact db) l
 
-    let add_clause st c =
+    let add_clause db c =
       match c.C.body with
-      | [] -> add_fact st c.C.head
+      | [] -> add_fact db c.C.head
       | _::_ ->
         let sym = C.head_symbol c in
         try
-          let set = ConstTbl.find st.rules sym in
-          C.Tbl.replace set c ()
+          let set = ConstTbl.find db.rules sym in
+          CVariantTbl.replace set c ()
         with Not_found ->
-          let set= C.Tbl.create 5 in
-          C.Tbl.add set c ();
-          ConstTbl.add st.rules sym set
+          let set= CVariantTbl.create 5 in
+          CVariantTbl.add set c ();
+          ConstTbl.add db.rules sym set
 
-    let add_clauses st l = List.iter (add_clause st) l
+    let add_clauses db l = List.iter (add_clause db) l
   end
 
-  let query st lit k =
-    failwith "query: not implemented"
+  (** {2 Query} *)
+
+  module Query = struct
+    type x_clause = {
+      head : T.t;
+      delayed : T.t list;
+      body : Lit.t list;
+    } (** CLause with delayed negative literals *)
+
+    type t = {
+      db : DB.t;
+      mutable count : int;                    (* global DFS count *)
+      forest : goal_entry TVariantTbl.t;      (* forest of goals *)
+      goals : stack_cell Stack.t;             (* stack of goals *)
+      mutable top_answers : T.t list;         (* already known answers *)
+    } (** A global state for querying *)
+
+    and goal_entry = {
+      goal : T.t;
+      mutable answers : T.t list;
+      mutable poss : (T.t * x_clause) list;   (* positive waiters *)
+      mutable negs : (T.t * x_clause) list;   (* negative waiters *)
+      mutable complete : bool;                (* goal evaluation completed? *)
+    } (** Root of the proof forest *)
+
+    and stack_cell = {
+      sc_goal : T.t;
+      dfn : int;                (* depth-first number *)
+      mutable poslink : int;    (* lowest stack frame depended on positively *)
+      mutable neglink : int;    (* lowest stack frame depended on negatively *)
+    }
+
+    (** In a goal entry, [poss] and [negs] are other goals that depend
+        on this given goal. IT's the reverse dependency graph.
+        When an answer is added to this goal, it's also propagated
+        to waiters. *)
+
+    let create db =
+      let query = {
+        db;
+        count = 1;
+        forest = TVariantTbl.create 127;
+        goals = Stack.create ();
+        top_answers = [];
+      } in
+      query
+
+    (* get goal entry for this term *)
+    let _get_goal query t =
+      try
+        TVariantTbl.find query.forest t
+      with Not_found ->
+        let goal_entry = {
+          goal = t;
+          answers = [];
+          poss = [];
+          negs = [];
+          complete = false;
+        } in
+        TVariantTbl.add query.forest t goal_entry;
+        goal_entry
+
+    (* push goal [t] on stack, return the stack frame *)
+    let _push query t =
+      let frame = {
+        sc_goal = t;
+        dfn = query.count;
+        poslink = query.count;
+        neglink = max_int;
+      } in
+      query.count <- query.count + 1;
+      (* push frame *)
+      Stack.push frame query.goals;
+      frame
+
+    (* TODO *)
+
+    let ask db lit =
+      let query = create db in
+      failwith "Query.ask: not implemented"
+
+    let next query =
+      failwith "Query.next: not implemented"
+
+    let answers query = query.top_answers
+
+    let get_all query =
+      let rec exhaust () = match next query with
+      | None -> ()
+      | Some _ -> exhaust ()
+      in
+      exhaust ();
+      query.top_answers
+  end
 end
 
 (** {2 Default Implementation with Strings} *)
@@ -393,8 +775,33 @@ module Default = struct
  
   include TD
 
-  let term_of_ast t = assert false
-  let lit_of_ast lit = assert false
-  let clause_of_ast c = assert false
-  let clauses_of_ast l = List.map clause_of_ast l
+  module A = DatalogAst
+
+  type name_ctx = (string, T.t) Hashtbl.t
+
+  let rec term_of_ast ~ctx t = match t with
+  | A.Const s
+  | A.Quoted s -> T.mk_const s
+  | A.Var s ->
+    begin try
+      Hashtbl.find ctx s
+    with Not_found ->
+      let n = Hashtbl.length ctx in
+      let v = T.mk_var n in
+      Hashtbl.add ctx s v;
+      v
+    end
+  and _lit_of_ast ~ctx lit = match lit with
+  | A.Atom (s, l) ->
+    T.mk_apply_l s (List.map (term_of_ast ~ctx) l)
+  and lit_of_ast ~ctx lit =
+    Lit.mk_pos (_lit_of_ast ~ctx lit)
+
+  let clause_of_ast ?(ctx=Hashtbl.create 3) c = match c with
+    | A.Clause (head, body) ->
+      let head = _lit_of_ast ~ctx head in
+      let body = List.map (lit_of_ast ~ctx) body in
+      C.mk_clause head body
+
+  let clauses_of_ast ?ctx l = List.map (clause_of_ast ?ctx) l
 end

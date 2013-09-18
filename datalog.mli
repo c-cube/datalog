@@ -358,5 +358,7 @@ module Default : sig
   val query_of_ast : Ast.query -> (int array * literal list * literal list)
 end
 
+module TopDown : module type of TopDown
+
 val version : string
   (** Version of the library *)

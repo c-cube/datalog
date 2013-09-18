@@ -22,21 +22,3 @@ CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 *)
-
-(** {1 Parsing AST} *)
-
-type file = clause list
-  (** Toplevel statement *)
-and clause =
-  | Clause of literal * literal list
-and literal =
-  | Atom of string * term list
-and term =
-  | Var of string
-  | Const of string
-  | Quoted of string
-and query =
-  | Query of term list * literal list * literal list
-  (** Query: projection, positive lits, negative lits *)
-
-(* TODO: negation in body *)

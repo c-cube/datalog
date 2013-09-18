@@ -1645,4 +1645,6 @@ module Default = struct
       vars, lits, neg
 end
 
-let version = "0.4.1"
+module TopDown = TopDown
+
+let version = "0.5.0"

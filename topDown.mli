@@ -205,7 +205,7 @@ module type S = sig
   module Query : sig
     type t
 
-    val ask : DB.t -> T.t -> t
+    val ask : ?oc:bool -> DB.t -> T.t -> t
       (** Create a query in a given DB *)
 
     val next : t -> T.t option

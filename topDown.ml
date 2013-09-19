@@ -298,10 +298,21 @@ module Make(Const : CONST) = struct
     (* hash *)
     let rec hash t = match t with
     | Var i -> i
+    | Apply (c, [| |]) -> Const.hash c
     | Apply (c, args) ->
       let h = ref (Const.hash c) in
       for i = 0 to Array.length args -1 do
         h := combine_hash !h (hash args.(i))
+      done;
+      !h
+
+    (* hash invariant by var renaming *)
+    let rec hash_novar t = match t with
+    | Var _ -> 42
+    | Apply(c, args) ->
+      let h = ref (Const.hash c) in
+      for i = 0 to Array.length args -1 do
+        h := combine_hash !h (hash_novar args.(i))
       done;
       !h
 
@@ -381,6 +392,10 @@ module Make(Const : CONST) = struct
     | LitPos t -> T.hash t
     | LitNeg t -> T.hash t + 65599 * 13
 
+    let hash_novar lit = match lit with
+    | LitPos t -> T.hash_novar t
+    | LitNeg t -> T.hash_novar t + 65599 * 13
+
     let to_term = function
     | LitPos t
     | LitNeg t -> t
@@ -423,6 +438,10 @@ module Make(Const : CONST) = struct
     let hash c = match c.body with
       | [] -> T.hash c.head
       | _ -> hash_list Lit.hash (T.hash c.head) c.body
+
+    let hash_novar c = match c.body with
+      | [] -> T.hash_novar c.head
+      | _ -> hash_list Lit.hash_novar (T.hash_novar c.head) c.body
 
     let head_symbol c = T.head_symbol c.head
 
@@ -610,13 +629,13 @@ module Make(Const : CONST) = struct
   module TVariantTbl = Hashtbl.Make(struct
     type t = T.t
     let equal = are_alpha_equiv
-    let hash = T.hash
+    let hash = T.hash_novar
   end)
 
   module CVariantTbl = Hashtbl.Make(struct
     type t = C.t
     let equal = clause_are_alpha_equiv
-    let hash = C.hash
+    let hash = C.hash_novar
   end)
 
   (** {2 DB} *)
@@ -678,6 +697,7 @@ module Make(Const : CONST) = struct
 
     type t = {
       db : DB.t;
+      oc : bool;                              (* perform occur-check? *)
       mutable count : int;                    (* global DFS count *)
       forest : goal_entry TVariantTbl.t;      (* forest of goals *)
       goals : stack_cell Stack.t;             (* stack of goals *)
@@ -704,9 +724,10 @@ module Make(Const : CONST) = struct
         When an answer is added to this goal, it's also propagated
         to waiters. *)
 
-    let create db =
+    let create ~oc ~db =
       let query = {
         db;
+        oc;
         count = 1;
         forest = TVariantTbl.create 127;
         goals = Stack.create ();
@@ -744,9 +765,9 @@ module Make(Const : CONST) = struct
 
     (* TODO *)
 
-    let ask db lit =
-      let query = create db in
-      failwith "Query.ask: not implemented"
+    let ask ?(oc=false) db lit =
+      let query = create ~oc ~db in
+      query
 
     let next query =
       failwith "Query.next: not implemented"

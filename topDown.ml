@@ -139,8 +139,11 @@ module type S = sig
       (** Apply the substitution to the term. Free variables are renamed
           using [renaming] *)
 
+    val eval_lit : t -> renaming:renaming -> Lit.t -> scope -> Lit.t
+
+    val eval_lits : t -> renaming:renaming -> Lit.t list -> scope -> Lit.t list
+
     val eval_clause : t -> renaming:renaming -> C.t -> scope -> C.t
-      (** Apply substitution to the clause. *)
   end
 
   (** {2 Unification, matching...} *)
@@ -205,17 +208,11 @@ module type S = sig
   module Query : sig
     type t
 
-    val ask : DB.t -> T.t -> t
+    val ask : ?oc:bool -> DB.t -> T.t -> t
       (** Create a query in a given DB *)
-
-    val next : t -> T.t option
-      (** Compute next answer, if any *)
 
     val answers : t -> T.t list
       (** All answers so far *)
-
-    val get_all : t -> T.t list
-      (** Compute all answers and return them *)
   end
 end
 
@@ -538,6 +535,18 @@ module Make(Const : CONST) = struct
         in
         T.mk_apply c args'
 
+    let eval_lit subst ~renaming lit scope =
+      match lit with
+      | Lit.LitPos t -> Lit.LitPos (eval subst ~renaming t scope)
+      | Lit.LitNeg t -> Lit.LitNeg (eval subst ~renaming t scope)
+
+    let eval_lits subst ~renaming lits scope =
+      List.map
+        (function
+        | Lit.LitPos t -> Lit.LitPos (eval subst ~renaming t scope)
+        | Lit.LitNeg t -> Lit.LitNeg (eval subst ~renaming t scope))
+        lits
+
     let eval_clause subst ~renaming c scope =
       C.fmap (fun t -> eval subst ~renaming t scope) c
   end
@@ -691,9 +700,19 @@ module Make(Const : CONST) = struct
   module Query = struct
     type x_clause = {
       head : T.t;
-      delayed : T.t list;
+      delayed : Lit.t list;
       body : Lit.t list;
     } (** CLause with delayed negative literals *)
+
+    module XClauseTbl = Hashtbl.Make(struct
+      type t = x_clause
+      let hash xc = Hashtbl.hash xc
+      let equal xc1 xc2 =
+        try T.eq xc1.head xc2.head
+          && List.for_all2 Lit.eq xc1.delayed xc2.delayed
+          && List.for_all2 Lit.eq xc1.body xc2.body
+        with Invalid_argument _ -> false
+    end)
 
     type t = {
       db : DB.t;
@@ -701,12 +720,14 @@ module Make(Const : CONST) = struct
       mutable count : int;                    (* global DFS count *)
       forest : goal_entry TVariantTbl.t;      (* forest of goals *)
       goals : stack_cell Stack.t;             (* stack of goals *)
+      stack : (unit -> unit) Stack.t;         (* stack of tasks *)
+      renaming : Subst.renaming;              (* renaming *)
       mutable top_answers : T.t list;         (* already known answers *)
     } (** A global state for querying *)
 
     and goal_entry = {
       goal : T.t;
-      mutable answers : T.t list;
+      mutable answers : unit XClauseTbl.t;    (* set of answers *)
       mutable poss : (T.t * x_clause) list;   (* positive waiters *)
       mutable negs : (T.t * x_clause) list;   (* negative waiters *)
       mutable complete : bool;                (* goal evaluation completed? *)
@@ -731,18 +752,20 @@ module Make(Const : CONST) = struct
         count = 1;
         forest = TVariantTbl.create 127;
         goals = Stack.create ();
+        stack = Stack.create ();  (* TODO: more efficient stack (e.g. Vector)? *)
+        renaming = Subst.create_renaming ();
         top_answers = [];
       } in
       query
 
     (* get goal entry for this term *)
-    let _get_goal query t =
+    let _get_goal ~query t =
       try
         TVariantTbl.find query.forest t
       with Not_found ->
         let goal_entry = {
           goal = t;
-          answers = [];
+          answers = XClauseTbl.create 7;
           poss = [];
           negs = [];
           complete = false;
@@ -751,7 +774,7 @@ module Make(Const : CONST) = struct
         goal_entry
 
     (* push goal [t] on stack, return the stack frame *)
-    let _push query t =
+    let _push ~query t =
       let frame = {
         sc_goal = t;
         dfn = query.count;
@@ -763,24 +786,223 @@ module Make(Const : CONST) = struct
       Stack.push frame query.goals;
       frame
 
-    (* TODO *)
+    (* reset and return the renaming *)
+    let _get_renaming ~query =
+      Subst.reset_renaming query.renaming;
+      query.renaming
+
+    (* resolution of [clause] with [lit] *)
+    let compute_resolvent ~renaming lit s_lit clause s_clause subst =
+      { head = Subst.eval subst ~renaming lit s_lit;
+        delayed = [];
+        body = Subst.eval_lits subst ~renaming clause.C.body s_clause;
+      }
+
+    (* try to resolve fact with clause *)
+    let resolve ~query fact clause =
+      match clause.body with
+      | (Lit.LitPos lit) :: body' ->
+        begin try
+          let subst = unify fact 0 lit 1 in
+          let renaming = _get_renaming ~query in
+          Some {
+            head=Subst.eval subst ~renaming clause.head 1;
+            delayed=Subst.eval_lits subst ~renaming clause.delayed 1;
+            body=Subst.eval_lits subst ~renaming body' 1;
+          }
+        with UnifFail -> None
+        end
+      | _ -> None
+
+
+    (* factoring of [clause] w.r.t [subst], by delaying its selected
+        literal *)
+    let factor_clause ~renaming clause s_clause subst =
+      match clause.body with
+      | [] -> assert false
+      | lit::body' ->
+        let eval_lits lits = List.map
+          (fun lit -> Subst.eval_lit subst ~renaming lit s_clause) lits
+        in
+        { head=Subst.eval subst ~renaming clause.head s_clause;
+          delayed=eval_lits (lit :: clause.delayed);
+          body=eval_lits body';
+        }
+
+    (* solve the subgoal [lit] by all possible means. *)
+    let rec slg_subgoal ~query ~pos_min ~neg_min goal =
+      let c = T.head_symbol goal in
+      (* once results of resolution with clauses have been processed,
+          we will have to call slg_complete *)
+      Stack.push
+        (fun () -> slg_complete ~query ~pos_min ~neg_min goal)
+        query.stack;
+      (* first, match with facts (can give answers directly) *)
+      begin try
+        let facts = ConstTbl.find query.db.DB.facts c in
+        TVariantTbl.iter
+          (fun fact () ->
+            try
+              let subst = unify goal 0 fact 1 in
+              let renaming = _get_renaming ~query in
+              let answer =
+                {head=Subst.eval subst ~renaming goal 0;
+                delayed=[]; body=[]; }
+              in
+              (* process the new answer to the goal *)
+              slg_answer ~query ~pos_min ~neg_min goal answer
+            with UnifFail -> ())
+          facts;
+      with Not_found -> ()
+      end;
+      (* then, resolve with rules *)
+      try
+        let rules = ConstTbl.find query.db.DB.rules c in
+        (* resolve with clauses *)
+        CVariantTbl.iter
+          (fun clause () ->
+            try
+              let subst = unify goal 0 clause.C.head 1 in
+              let renaming = _get_renaming ~query in
+              let clause' = compute_resolvent ~renaming goal 0 clause 1 subst in
+              (* eval [slg_newclause goal clause'] recursively, with external stack *)
+              Stack.push
+                (fun () -> slg_newclause ~query ~pos_min ~neg_min goal clause')
+                query.stack
+            with UnifFail -> ())
+          rules;
+      with Not_found -> ()
+
+    (* called when a new clause appears in the forest
+        of [goal] *)
+    and slg_newclause ~query ~pos_min ~neg_min goal clause =
+      assert (clause.delayed <> [] || clause.body <> []);
+      match clause.body with
+      | [] ->
+        (* new fact (or clause with only delayed lits) *)
+        slg_answer ~query ~pos_min ~neg_min goal clause
+      | (Lit.LitPos subgoal)::_ ->
+        (* positive subgoal  *)
+        slg_positive ~query ~pos_min ~neg_min goal clause subgoal
+      | (Lit.LitNeg neg_subgoal)::_ when T.ground neg_subgoal ->
+        (* negative subgoal *)
+        slg_negative ~query ~pos_min ~neg_min goal clause neg_subgoal
+      | _ -> failwith "slg_newclause with non-ground negative goal"
+
+    (* add an answer [ans] to the given [goal]. If [ans] is new,
+      insert it into the list of answers of [goal], and update
+      positive and negative dependencies depending on whether
+      [ans] has delayed negative lits *)
+    and slg_answer ~query ~pos_min ~neg_min goal ans =
+      assert (ans.body = []);
+      let node = _get_goal ~query goal in
+      if not (XClauseTbl.mem node.answers ans) then begin
+        (* new answer! *)
+        XClauseTbl.add node.answers ans ();
+        if ans.delayed = [] then begin
+          (* it's a fact, negative dependencies must fail *)
+          node.negs <- [];
+          (* resolve ans.head with positive dependencies *)
+          List.iter
+            (fun (goal', clause') ->
+              match resolve ~query ans.head clause' with
+              | None -> ()
+              | Some clause'' ->
+                (* resolution succeeded, call slg_newclause recursively *)
+                Stack.push
+                  (fun () -> slg_newclause ~query ~pos_min ~neg_min goal' clause'')
+                  query.stack)
+            node.poss
+        end else
+          (* is there another answer with the same head? *)
+          let new_head = try
+            XClauseTbl.iter (fun ans' () ->
+              if T.eq ans.head ans'.head then raise Exit)
+              node.answers;
+            true
+            with Exit -> false
+          in
+          if new_head then
+            (* factor clauses whose selected literal unifies with ans.head *)
+            List.iter
+              (fun (goal', clause') ->
+                match clause'.body with
+                | []
+                | (Lit.LitNeg _) :: _ -> ()
+                | (Lit.LitPos lit') :: _ ->
+                  try
+                    let subst = unify ans.head 0 lit' 1 in
+                    let renaming = _get_renaming ~query in
+                    let clause'' = factor_clause ~renaming clause' 1 subst in
+                    (* call slg_newclause for the given factored clause *)
+                    Stack.push
+                      (fun () -> slg_newclause ~query ~pos_min ~neg_min goal' clause'')
+                      query.stack
+                  with UnifFail -> ())
+              node.poss
+      end
+
+    (* positive subgoal *)
+    and slg_positive ~query ~pos_min ~neg_min goal clause subgoal =
+      if not (TVariantTbl.mem query.forest subgoal)
+      then begin
+        let sub_pos_min = ref query.count in
+        let sub_neg_min = ref max_int in
+        (* afterwards, update solutions of node *)
+        Stack.push
+          (fun () -> update_solutions ~query
+            ~pos_min ~neg_min ~sub_pos_min ~sub_neg_min goal clause)
+          query.stack;
+        (* call slg_subgoal *)
+        Stack.push
+          (fun () ->
+            ignore (_push ~query subgoal);
+            slg_subgoal ~query ~pos_min:sub_pos_min ~neg_min:sub_neg_min subgoal)
+          query.stack
+      end else begin
+        let node = _get_goal ~query subgoal in
+        (* subgoal not complete? try to complete it *)
+        if not node.complete then begin
+          node.poss <- (goal, clause) :: node.poss;
+          update_lookup ~query node
+          end;
+        assert false  (* TODO *)
+      end
+
+    (* negative subgoal *)
+    and slg_negative ~query ~pos_min ~neg_min goal clause neg_subgoal =
+      failwith "slg_negative: not implemented"  (* TODO *)
+
+    and update_solutions ~query ~pos_min ~neg_min ~sub_pos_min ~sub_neg_min goal clause =
+      assert false  (* TODO *)
+
+    (* mark the [goal] as completed. *)
+    and slg_complete ~query ~pos_min ~neg_min goal =
+      assert false (* TODO *)
+
+    and update_lookup ~query node =
+      assert false (* TODO *)
 
     let ask ?(oc=false) db lit =
       let query = create ~oc ~db in
+      let _ = _push ~query lit in
+      let pos_min = ref query.count in
+      let neg_min = ref max_int in
+      (* recursive search for answers *)
+      slg_subgoal ~query ~pos_min ~neg_min lit;
+      while not (Stack.is_empty query.stack) do
+        let task = Stack.pop query.stack in
+        task ()
+      done;
+      let forest = _get_goal ~query lit in
+      (* get fact answers into [query.top_answers] *)
+      XClauseTbl.iter
+        (fun clause () -> if clause.delayed = []
+          then query.top_answers <- clause.head :: query.top_answers)
+        forest.answers;
       query
 
-    let next query =
-      failwith "Query.next: not implemented"
-
     let answers query = query.top_answers
-
-    let get_all query =
-      let rec exhaust () = match next query with
-      | None -> ()
-      | Some _ -> exhaust ()
-      in
-      exhaust ();
-      query.top_answers
   end
 end
 

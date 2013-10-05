@@ -139,8 +139,11 @@ module type S = sig
       (** Apply the substitution to the term. Free variables are renamed
           using [renaming] *)
 
+    val eval_lit : t -> renaming:renaming -> Lit.t -> scope -> Lit.t
+
+    val eval_lits : t -> renaming:renaming -> Lit.t list -> scope -> Lit.t list
+
     val eval_clause : t -> renaming:renaming -> C.t -> scope -> C.t
-      (** Apply substitution to the clause. *)
   end
 
   (** {2 Unification, matching...} *)
@@ -208,14 +211,8 @@ module type S = sig
     val ask : ?oc:bool -> DB.t -> T.t -> t
       (** Create a query in a given DB *)
 
-    val next : t -> T.t option
-      (** Compute next answer, if any *)
-
     val answers : t -> T.t list
       (** All answers so far *)
-
-    val get_all : t -> T.t list
-      (** Compute all answers and return them *)
   end
 end
 

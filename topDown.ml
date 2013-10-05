@@ -185,9 +185,13 @@ module type S = sig
 
   (** A DB stores facts and clauses, that constitute a logic program.
       Facts and clauses can only be added.
+
+      Non-stratified programs will be rejected with NonStratifiedProgram.
       
       TODO: interpreted symbols (with OCaml handlers)
   *)
+
+  exception NonStratifiedProgram
 
   module DB : sig
     type t
@@ -652,11 +656,15 @@ module Make(Const : CONST) = struct
   (* TODO interpreted symbols (for given arity) *)
   (* TODO aggregates? *)
 
+  exception NonStratifiedProgram
+
   module DB = struct
     type t = {
       rules : unit CVariantTbl.t ConstTbl.t;  (* maps constants to non-fact clauses *)
       facts : unit TVariantTbl.t ConstTbl.t;  (* maps constants to facts *)
     }
+
+    (* TODO: dependency graph to check whether program is stratified *)
 
     let create () =
       let db = {
@@ -665,7 +673,12 @@ module Make(Const : CONST) = struct
       } in
       db
 
-    let copy db = failwith "DB.copy: not implemented" (* TODO *)
+    let copy db =
+      let rules = ConstTbl.create 23 in
+      let facts = ConstTbl.create 23 in
+      ConstTbl.iter (fun c set -> ConstTbl.add rules c (CVariantTbl.copy set)) db.rules;
+      ConstTbl.iter (fun c set -> ConstTbl.add facts c (TVariantTbl.copy set)) db.facts;
+      { rules; facts; }
 
     let add_fact db t =
       let sym = T.head_symbol t in

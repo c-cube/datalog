@@ -185,9 +185,13 @@ module type S = sig
 
   (** A DB stores facts and clauses, that constitute a logic program.
       Facts and clauses can only be added.
+
+      Non-stratified programs will be rejected with NonStratifiedProgram.
       
       TODO: interpreted symbols (with OCaml handlers)
   *)
+
+  exception NonStratifiedProgram
 
   module DB : sig
     type t

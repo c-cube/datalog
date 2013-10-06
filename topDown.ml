@@ -34,6 +34,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 module type S = sig
   type const
+  
+  val set_debug : bool -> unit
 
   (** {2 Terms} *)
 
@@ -47,6 +49,10 @@ module type S = sig
     val mk_apply : const -> t array -> t
     val mk_apply_l : const -> t list -> t
 
+    val is_var : t -> bool
+    val is_apply : t -> bool
+    val is_const : t -> bool
+
     val eq : t -> t -> bool
     val hash : t -> int
 
@@ -57,6 +63,7 @@ module type S = sig
 
     val to_string : t -> string
     val pp : out_channel -> t -> unit
+    val fmt : Format.formatter -> t -> unit
 
     module Tbl : Hashtbl.S with type key = t
   end
@@ -80,6 +87,7 @@ module type S = sig
 
     val to_string : t -> string
     val pp : out_channel -> t -> unit
+    val fmt : Format.formatter -> t -> unit
   end
 
   (** {2 Clauses} *)
@@ -104,6 +112,7 @@ module type S = sig
 
     val to_string : t -> string
     val pp : out_channel -> t -> unit
+    val fmt : Format.formatter -> t -> unit
 
     module Tbl : Hashtbl.S with type key = t
   end
@@ -196,7 +205,7 @@ module type S = sig
   module DB : sig
     type t
 
-    val create : unit -> t
+    val create : ?parent:t -> unit -> t
 
     val copy : t -> t
 
@@ -205,6 +214,20 @@ module type S = sig
 
     val add_clause : t -> C.t -> unit
     val add_clauses : t -> C.t list -> unit
+
+    val num_facts : t -> int
+    val num_clauses : t -> int
+    val size : t -> int
+
+    val find_facts : ?oc:bool -> t -> scope -> T.t -> scope ->
+                     (T.t -> Subst.t -> unit) -> unit
+      (** find facts unifying with the given term, and give them
+          along with the unifier, to the callback *)
+
+    val find_clauses : ?oc:bool -> t -> scope -> T.t -> scope ->
+                      (C.t -> Subst.t -> unit) -> unit
+      (** find clauses whose first body literal unifies with the given term,
+          and give them along with the unifier, to the callback *)
   end
 
   (** {2 Query} *)
@@ -212,8 +235,11 @@ module type S = sig
   module Query : sig
     type t
 
-    val ask : ?oc:bool -> DB.t -> T.t -> t
-      (** Create a query in a given DB *)
+    val ask : ?oc:bool -> ?with_rules:C.t list -> ?with_facts:T.t list ->
+              DB.t -> T.t -> t
+      (** Create a query in a given DB. Additional facts and rules can be
+          added in a local scope.
+          @param oc enable occur-check in unification (default [false]) *)
 
     val answers : t -> T.t list
       (** All answers so far *)
@@ -268,6 +294,18 @@ let _array_fold2 f acc a1 a2 =
 module Make(Const : CONST) = struct
   type const = Const.t
 
+  let _debug_enabled = ref false
+  let _debug format = 
+    if !_debug_enabled
+      then
+        Printf.kfprintf
+          (fun oc -> output_char oc '\n')
+          stderr format
+      else
+        Printf.ifprintf stderr format
+
+  let set_debug b = _debug_enabled := b
+
   module ConstTbl = Hashtbl.Make(Const)
   module ConstWeak = Weak.Make(Const)
 
@@ -285,6 +323,10 @@ module Make(Const : CONST) = struct
       Apply (const, args)
     let mk_apply_l const args = mk_apply const (Array.of_list args)
     let mk_const const = mk_apply const [| |]
+
+    let is_var = function | Var _ -> true | Apply _ -> false
+    let is_apply = function | Var _ -> false | Apply _ -> true
+    let is_const = function Apply (_, [||]) -> true | _ -> false
 
     (* equality *)
     let rec eq t1 t2 = match t1, t2 with
@@ -367,6 +409,8 @@ module Make(Const : CONST) = struct
 
     let pp oc t = output_string oc (to_string t)
 
+    let fmt fmt t = Format.pp_print_string fmt (to_string t)
+
     module Tbl = Hashtbl.Make(struct
       type t = term
       let equal = eq
@@ -410,6 +454,8 @@ module Make(Const : CONST) = struct
     | LitNeg t -> Printf.sprintf "~%s" (T.to_string t)
 
     let pp oc lit = output_string oc (to_string lit)
+
+    let fmt fmt lit = Format.pp_print_string fmt (to_string lit)
   end
 
   module C = struct
@@ -471,6 +517,8 @@ module Make(Const : CONST) = struct
 
     let pp oc c =
       output_string oc (to_string c)
+
+    let fmt fmt c = Format.pp_print_string fmt (to_string c)
 
     module Tbl = Hashtbl.Make(struct
       type t = clause
@@ -662,23 +710,29 @@ module Make(Const : CONST) = struct
     type t = {
       rules : unit CVariantTbl.t ConstTbl.t;  (* maps constants to non-fact clauses *)
       facts : unit TVariantTbl.t ConstTbl.t;  (* maps constants to facts *)
+      parent : t option;                      (* for further query *)
     }
 
     (* TODO: dependency graph to check whether program is stratified *)
 
-    let create () =
+    let create ?parent () =
       let db = {
         rules = ConstTbl.create 23;
         facts = ConstTbl.create 23;
+        parent;
       } in
       db
 
-    let copy db =
+    let rec copy db =
       let rules = ConstTbl.create 23 in
       let facts = ConstTbl.create 23 in
+      let parent = match db.parent with
+        | None -> None
+        | Some db' -> Some db'
+      in
       ConstTbl.iter (fun c set -> ConstTbl.add rules c (CVariantTbl.copy set)) db.rules;
       ConstTbl.iter (fun c set -> ConstTbl.add facts c (TVariantTbl.copy set)) db.facts;
-      { rules; facts; }
+      { rules; facts; parent; }
 
     let add_fact db t =
       let sym = T.head_symbol t in
@@ -706,6 +760,56 @@ module Make(Const : CONST) = struct
           ConstTbl.add db.rules sym set
 
     let add_clauses db l = List.iter (add_clause db) l
+
+    let num_facts db =
+      ConstTbl.fold
+        (fun _ set acc -> acc + TVariantTbl.length set)
+        db.facts 0
+
+    let num_clauses db =
+      ConstTbl.fold
+        (fun _ set acc -> acc + CVariantTbl.length set)
+        db.rules 0
+
+    let size db = num_facts db + num_clauses db
+    
+    let rec find_facts ?(oc=false) db s_db t s_t k =
+      assert (not (T.is_var t));
+      let c = T.head_symbol t in
+      (* forst, match with facts (can give answers directly). *)
+      begin try
+        let facts = ConstTbl.find db.facts c in
+        TVariantTbl.iter
+          (fun fact () ->
+            try
+              let subst = unify ~oc t s_t  fact s_db in
+              k fact subst
+            with UnifFail -> ())
+          facts;
+      with Not_found -> ()
+      end;
+      match db.parent with
+      | None -> ()
+      | Some db' -> find_facts db' s_db t s_t k
+    
+    let rec find_clauses ?(oc=false) db s_db t s_t k =
+      assert (not (T.is_var t));
+      let c = T.head_symbol t in
+      begin try
+        let rules = ConstTbl.find db.rules c in
+        (* resolve with clauses *)
+        CVariantTbl.iter
+          (fun clause () ->
+            try
+              let subst = unify ~oc t s_t clause.C.head s_db in
+              k clause subst
+            with UnifFail -> ())
+          rules;
+      with Not_found -> ()
+      end;
+      match db.parent with
+      | None -> ()
+      | Some db' -> find_clauses db' s_db t s_t k
   end
 
   (** {2 Query} *)
@@ -765,7 +869,7 @@ module Make(Const : CONST) = struct
       match clause.C.body with
       | (Lit.LitPos lit) :: body' ->
         begin try
-          let subst = unify fact 0 lit 1 in
+          let subst = unify ~oc:query.oc fact 0 lit 1 in
           let renaming = _get_renaming ~query in
           Some {
             C.head=Subst.eval subst ~renaming clause.C.head 1;
@@ -815,37 +919,20 @@ module Make(Const : CONST) = struct
     (* [goal_entry] is a fresh goal, resolve it with facts and clauses to
        obtain its answers *)
     and slg_subgoal ~query goal_entry =
-      let c = T.head_symbol goal_entry.goal in
-      (* forst, match with facts (can give answers directly). *)
-      begin try
-        let facts = ConstTbl.find query.db.DB.facts c in
-        TVariantTbl.iter
-          (fun fact () ->
-            try
-              let subst = unify goal_entry.goal 0 fact 1 in
-              let renaming = _get_renaming ~query in
-              let answer = Subst.eval subst ~renaming goal_entry.goal 0 in
-              (* process the new answer to the goal *)
-              slg_answer ~query goal_entry answer
-            with UnifFail -> ())
-          facts;
-      with Not_found -> ()
-      end;
+      DB.find_facts query.db 1 goal_entry.goal 0
+        (fun fact subst ->
+          let renaming = _get_renaming ~query in
+          let answer = Subst.eval subst ~renaming goal_entry.goal 0 in
+          (* process the new answer to the goal *)
+          slg_answer ~query goal_entry answer);
       (* resolve with rules *)
-      try
-        let rules = ConstTbl.find query.db.DB.rules c in
-        (* resolve with clauses *)
-        CVariantTbl.iter
-          (fun clause () ->
-            try
-              let subst = unify goal_entry.goal 0 clause.C.head 1 in
-              let renaming = _get_renaming ~query in
-              let clause' = compute_resolvent ~renaming goal_entry.goal 0 clause 1 subst in
-              (* add a new clause to the forest of [goal] *)
-              slg_newclause ~query goal_entry clause'
-            with UnifFail -> ())
-          rules;
-      with Not_found -> ()
+      DB.find_clauses query.db 1 goal_entry.goal 0
+        (fun clause subst ->
+          let renaming = _get_renaming ~query in
+          let clause' = compute_resolvent ~renaming goal_entry.goal 0 clause 1 subst in
+          (* add a new clause to the forest of [goal] *)
+          slg_newclause ~query goal_entry clause');
+      ()
 
     (* called when a new clause appears in the forest of [goal] *)
     and slg_newclause ~query goal_entry clause =
@@ -866,6 +953,7 @@ module Make(Const : CONST) = struct
       insert it into the list of answers of [goal], and update
       positive and negative dependencies *)
     and slg_answer ~query goal_entry ans =
+      assert (T.ground ans);
       if not (T.Tbl.mem goal_entry.answers ans) then begin
         (* new answer! *)
         T.Tbl.add goal_entry.answers ans ();
@@ -879,7 +967,11 @@ module Make(Const : CONST) = struct
             | Some clause'' ->
               (* resolution succeeded, call slg_newclause recursively *)
               slg_newclause ~query goal' clause'')
-          goal_entry.poss
+          goal_entry.poss;
+        (* special case: ground goal. Can only have one answer, so
+          now it's complete. *)
+        if T.ground goal_entry.goal then
+          slg_complete ~query goal_entry;
       end
 
     (* positive subgoal. *)
@@ -901,7 +993,7 @@ module Make(Const : CONST) = struct
         else
           () (* failure, there are already positive answers; do nothing *)
 
-    (* goal is completely evaluated *)
+    (* goal is completely evaluated, no more answers will arrive. *)
     and slg_complete ~query goal_entry =
       assert (not goal_entry.complete);
       goal_entry.complete <- true;
@@ -910,11 +1002,22 @@ module Make(Const : CONST) = struct
           (* all negative goals succeed *)
           List.iter
             (fun (goal, clause) -> slg_newclause ~query goal clause)
-            goal_entry.negs
-        else
-          goal_entry.negs <- []
+            goal_entry.negs;
+      (* reclaim memory *)
+      goal_entry.negs <- [];
+      goal_entry.poss <- [];
+      ()
 
-    let ask ?(oc=false) db lit =
+    let ask ?(oc=false) ?(with_rules=[]) ?(with_facts=[]) db lit =
+      (* create a DB on top of the given one? *)
+      let db = match with_rules, with_facts with
+      | [], [] -> db
+      | _ ->
+        let db' = DB.create ~parent:db () in
+        DB.add_facts db' with_facts;
+        DB.add_clauses db' with_rules;
+        db'
+      in
       let query = create ~oc ~db in
       (* recursive search for answers *)
       let goal_node = slg_solve ~query lit in
@@ -942,13 +1045,16 @@ module Default = struct
  
   include TD
 
-  module A = DatalogAst
+  module A = TopDownAst
 
   type name_ctx = (string, T.t) Hashtbl.t
 
+  let create_ctx () = Hashtbl.create 5
+
   let rec term_of_ast ~ctx t = match t with
-  | A.Const s
-  | A.Quoted s -> T.mk_const s
+  | A.Apply (s, args) ->
+    let args = List.map (term_of_ast ~ctx) args in
+    T.mk_apply_l s args
   | A.Var s ->
     begin try
       Hashtbl.find ctx s
@@ -958,15 +1064,14 @@ module Default = struct
       Hashtbl.add ctx s v;
       v
     end
-  and _lit_of_ast ~ctx lit = match lit with
-  | A.Atom (s, l) ->
-    T.mk_apply_l s (List.map (term_of_ast ~ctx) l)
   and lit_of_ast ~ctx lit =
-    Lit.mk_pos (_lit_of_ast ~ctx lit)
+    match lit with
+    | A.LitPos t -> Lit.mk_pos (term_of_ast ~ctx t)
+    | A.LitNeg t -> Lit.mk_neg (term_of_ast ~ctx t)
 
   let clause_of_ast ?(ctx=Hashtbl.create 3) c = match c with
-    | A.Clause (head, body) ->
-      let head = _lit_of_ast ~ctx head in
+    | (head, body) ->
+      let head = term_of_ast ~ctx head in
       let body = List.map (lit_of_ast ~ctx) body in
       C.mk_clause head body
 

@@ -34,6 +34,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 module type S = sig
   type const
+  
+  val set_debug : bool -> unit
 
   (** {2 Terms} *)
 
@@ -47,6 +49,10 @@ module type S = sig
     val mk_apply : const -> t array -> t
     val mk_apply_l : const -> t list -> t
 
+    val is_var : t -> bool
+    val is_apply : t -> bool
+    val is_const : t -> bool
+
     val eq : t -> t -> bool
     val hash : t -> int
 
@@ -57,6 +63,7 @@ module type S = sig
 
     val to_string : t -> string
     val pp : out_channel -> t -> unit
+    val fmt : Format.formatter -> t -> unit
 
     module Tbl : Hashtbl.S with type key = t
   end
@@ -80,6 +87,7 @@ module type S = sig
 
     val to_string : t -> string
     val pp : out_channel -> t -> unit
+    val fmt : Format.formatter -> t -> unit
   end
 
   (** {2 Clauses} *)
@@ -104,6 +112,7 @@ module type S = sig
 
     val to_string : t -> string
     val pp : out_channel -> t -> unit
+    val fmt : Format.formatter -> t -> unit
 
     module Tbl : Hashtbl.S with type key = t
   end
@@ -196,7 +205,7 @@ module type S = sig
   module DB : sig
     type t
 
-    val create : unit -> t
+    val create : ?parent:t -> unit -> t
 
     val copy : t -> t
 
@@ -205,6 +214,20 @@ module type S = sig
 
     val add_clause : t -> C.t -> unit
     val add_clauses : t -> C.t list -> unit
+
+    val num_facts : t -> int
+    val num_clauses : t -> int
+    val size : t -> int
+
+    val find_facts : ?oc:bool -> t -> scope -> T.t -> scope ->
+                     (T.t -> Subst.t -> unit) -> unit
+      (** find facts unifying with the given term, and give them
+          along with the unifier, to the callback *)
+
+    val find_clauses : ?oc:bool -> t -> scope -> T.t -> scope ->
+                      (C.t -> Subst.t -> unit) -> unit
+      (** find clauses whose first body literal unifies with the given term,
+          and give them along with the unifier, to the callback *)
   end
 
   (** {2 Query} *)
@@ -212,8 +235,11 @@ module type S = sig
   module Query : sig
     type t
 
-    val ask : ?oc:bool -> DB.t -> T.t -> t
-      (** Create a query in a given DB *)
+    val ask : ?oc:bool -> ?with_rules:C.t list -> ?with_facts:T.t list ->
+              DB.t -> T.t -> t
+      (** Create a query in a given DB. Additional facts and rules can be
+          added in a local scope.
+          @param oc enable occur-check in unification (default [false]) *)
 
     val answers : t -> T.t list
       (** All answers so far *)
@@ -239,8 +265,10 @@ module Default : sig
 
   type name_ctx = (string, T.t) Hashtbl.t
 
-  val term_of_ast : ctx:name_ctx -> DatalogAst.term -> T.t
-  val lit_of_ast : ctx:name_ctx -> DatalogAst.literal -> Lit.t 
-  val clause_of_ast : ?ctx:name_ctx -> DatalogAst.clause -> C.t
-  val clauses_of_ast : ?ctx:name_ctx -> DatalogAst.clause list -> C.t list
+  val create_ctx : unit -> name_ctx
+
+  val term_of_ast : ctx:name_ctx -> TopDownAst.term -> T.t
+  val lit_of_ast : ctx:name_ctx -> TopDownAst.literal -> Lit.t 
+  val clause_of_ast : ?ctx:name_ctx -> TopDownAst.clause -> C.t
+  val clauses_of_ast : ?ctx:name_ctx -> TopDownAst.clause list -> C.t list
 end

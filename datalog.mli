@@ -360,5 +360,9 @@ end
 
 module TopDown : module type of TopDown
 
+module TopDownAst : module type of TopDownAst
+module TopDownLexer : module type of TopDownLexer
+module TopDownParser : module type of TopDownParser
+
 val version : string
   (** Version of the library *)

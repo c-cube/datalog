@@ -1647,4 +1647,8 @@ end
 
 module TopDown = TopDown
 
+module TopDownAst = TopDownAst
+module TopDownLexer = TopDownLexer
+module TopDownParser = TopDownParser
+
 let version = "0.5.0"

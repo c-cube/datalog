@@ -4,7 +4,7 @@ BINDIR ?= /usr/bin/
 # name of the library
 NAME = datalog
 
-CLI = datalog_cli.native
+CLI = datalog_cli.native topDownCli.native
 LIB = datalog.cmxa datalog.cma
 DOC = datalog.docdir/index.html
 TARGETS = $(DOC) $(LIB) $(CLI)

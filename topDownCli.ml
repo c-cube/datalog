@@ -46,8 +46,9 @@ let parse_files_into db files =
         ())
     files
 
-let eval_query ~oc files goal =
+let eval_query ~builtin ~oc files goal =
   let db = D.DB.create () in
+  if builtin then D.DB.interpret_list db D.default_interpreters;
   parse_files_into db files;
   let query = D.Query.ask ~oc db goal in
   List.iter
@@ -59,11 +60,13 @@ let eval_query ~oc files goal =
 let files = ref []
 let add_file f = files := f :: !files
 let oc = ref false
+let builtin = ref false
 
 let options =
   [ "-debug", Arg.Unit (fun () -> D.set_debug true), "enable debug"
   ; "-load", Arg.String add_file, "load given file"
   ; "-oc", Arg.Set oc, "enable occur-check in unification"
+  ; "-builtin", Arg.Set builtin, "enable some builtin predicates"
   ]
 
 let help = "topDownCli [options] goal: evaluates goal"
@@ -75,4 +78,4 @@ let _ =
     then failwith "require a goal";
   let goal = TopDownParser.parse_term TopDownLexer.token (Lexing.from_string !goal) in
   let goal = D.term_of_ast ~ctx:(D.create_ctx ()) goal in
-  eval_query ~oc:!oc !files goal
+  eval_query ~builtin:!builtin ~oc:!oc !files goal

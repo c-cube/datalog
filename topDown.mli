@@ -226,6 +226,9 @@ module type S = sig
           of which can add new clauses. The returned clauses must
           have the constant as head symbol. *)
 
+    val interpret_list : t -> (const * interpreter) list -> unit
+      (** Add several interpreters *)
+
     val is_interpreted : t -> const -> bool
       (** Is the constant interpreted by some OCaml code? *)
 
@@ -291,4 +294,8 @@ module Default : sig
   val lit_of_ast : ctx:name_ctx -> TopDownAst.literal -> Lit.t 
   val clause_of_ast : ?ctx:name_ctx -> TopDownAst.clause -> C.t
   val clauses_of_ast : ?ctx:name_ctx -> TopDownAst.clause list -> C.t list
+
+  val default_interpreters : (const * DB.interpreter) list
+    (** List of default interpreters for some symbols, mostly
+        infix predicates *)
 end

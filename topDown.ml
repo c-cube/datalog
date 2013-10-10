@@ -226,6 +226,9 @@ module type S = sig
           of which can add new clauses. The returned clauses must
           have the constant as head symbol. *)
 
+    val interpret_list : t -> (const * interpreter) list -> unit
+      (** Add several interpreters *)
+
     val is_interpreted : t -> const -> bool
       (** Is the constant interpreted by some OCaml code? *)
 
@@ -795,6 +798,9 @@ module Make(Const : CONST) = struct
       with Not_found ->
         ConstTbl.add db.interpreters c [inter]
 
+    let interpret_list db l =
+      List.iter (fun (c, i) -> interpret db c i) l
+
     let is_interpreted db c =
       ConstTbl.mem db.interpreters c
 
@@ -919,12 +925,6 @@ module Make(Const : CONST) = struct
       Subst.reset_renaming query.renaming;
       query.renaming
 
-    (* resolution of [clause] with [not lit] *)
-    let compute_resolvent ~renaming lit s_lit clause s_clause subst =
-      { C.head = Subst.eval subst ~renaming lit s_lit;
-        C.body = Subst.eval_lits subst ~renaming clause.C.body s_clause;
-      }
-
     (* try to resolve fact with clause's first body literal *)
     let resolve ~query fact clause =
       match clause.C.body with
@@ -998,14 +998,14 @@ module Make(Const : CONST) = struct
       DB.find_clauses_head ~oc:query.oc query.db 1 goal_entry.goal 0
         (fun clause subst ->
           let renaming = _get_renaming ~query in
-          let clause' = compute_resolvent ~renaming goal_entry.goal 0 clause 1 subst in
+          let clause' = Subst.eval_clause subst ~renaming clause 1 in
           (* add a new clause to the forest of [goal] *)
           query.stack <- NewClause (goal_entry, clause', query.stack));
       (* resolve with interpreters *)
       DB.find_interpretation ~oc:query.oc query.db 1 goal_entry.goal 0
         (fun clause subst ->
           let renaming = _get_renaming ~query in
-          let clause' = compute_resolvent ~renaming goal_entry.goal 0 clause 1 subst in
+          let clause' = Subst.eval_clause subst ~renaming clause 1 in
           (* add a new clause to the forest of [goal] *)
           query.stack <- NewClause (goal_entry, clause', query.stack));
       ()
@@ -1165,4 +1165,61 @@ module Default = struct
       C.mk_clause head body
 
   let clauses_of_ast ?ctx l = List.map (clause_of_ast ?ctx) l
+
+  let default_interpreters =
+    let _less goal =
+      _debug "call less with %a" T.pp goal;
+      match goal with
+      | T.Apply (_, [| T.Apply (a, [||]); T.Apply (b, [||]) |])
+        when a < b -> [ C.mk_fact goal ]
+      | _ -> []
+    and _lesseq goal = match goal with
+      | T.Apply (_, [| T.Apply (a, [||]); T.Apply (b, [||]) |])
+        when a <= b -> [ C.mk_fact goal ]
+      | _ -> []
+    and _greater goal = match goal with
+      | T.Apply (_, [| T.Apply (a, [||]); T.Apply (b, [||]) |])
+        when a > b -> [ C.mk_fact goal ]
+      | _ -> []
+    and _greatereq goal = match goal with
+      | T.Apply (_, [| T.Apply (a, [||]); T.Apply (b, [||]) |])
+        when a >= b -> [ C.mk_fact goal ]
+      | _ -> []
+    and _eq goal = match goal with
+      | T.Apply (_, [| T.Apply (a, [||]); T.Apply (b, [||]) |])
+        when a = b -> [ C.mk_fact goal ]
+      | _ -> []
+    and _neq goal = match goal with
+      | T.Apply (_, [| T.Apply (a, [||]); T.Apply (b, [||]) |])
+        when a <> b -> [ C.mk_fact goal ]
+      | _ -> []
+    and _print goal =
+      if T.ground goal
+        then Printf.printf "> %a\n" T.pp goal;
+      []
+    (* given a list of arguments, "replace" the goal by any of its arguments.
+       this allow arguments (variables...) to get to the proposition level *)
+    and _eval goal = match goal with
+      | T.Apply ("eval", subgoals) ->
+        (* for each goal \in subgoals, add a clause  goal :- subgoal *)
+        Array.fold_left
+          (fun acc sub -> C.mk_clause goal [Lit.mk_pos sub] :: acc)
+          [] subgoals
+      | _ -> []
+    in
+    [ "lt", _less
+    ; "<", _less
+    ; "le", _lesseq
+    ; "<=", _lesseq
+    ; "gt", _greater
+    ; ">", _greater
+    ; "ge", _greatereq
+    ; ">=", _greatereq
+    ; "eq", _eq
+    ; "=", _eq
+    ; "neq", _neq
+    ; "!=", _neq
+    ; "print", _print
+    ; "eval", _eval
+    ]
 end

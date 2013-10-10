@@ -224,9 +224,9 @@ module type S = sig
       (** find facts unifying with the given term, and give them
           along with the unifier, to the callback *)
 
-    val find_clauses : ?oc:bool -> t -> scope -> T.t -> scope ->
+    val find_clauses_head : ?oc:bool -> t -> scope -> T.t -> scope ->
                       (C.t -> Subst.t -> unit) -> unit
-      (** find clauses whose first body literal unifies with the given term,
+      (** find clauses whose head unifies with the given term,
           and give them along with the unifier, to the callback *)
   end
 

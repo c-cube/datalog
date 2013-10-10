@@ -224,9 +224,9 @@ module type S = sig
       (** find facts unifying with the given term, and give them
           along with the unifier, to the callback *)
 
-    val find_clauses : ?oc:bool -> t -> scope -> T.t -> scope ->
+    val find_clauses_head : ?oc:bool -> t -> scope -> T.t -> scope ->
                       (C.t -> Subst.t -> unit) -> unit
-      (** find clauses whose first body literal unifies with the given term,
+      (** find clauses whose head unifies with the given term,
           and give them along with the unifier, to the callback *)
   end
 
@@ -624,7 +624,7 @@ module Make(Const : CONST) = struct
     | T.Var _, _ when not oc || not (_occur_check subst t1 sc1 t2 sc2) ->
       Subst.bind subst t1 sc1 t2 sc2
     | _, T.Var _ when not oc || not (_occur_check subst t2 sc2 t1 sc1) ->
-      Subst.bind subst t1 sc1 t2 sc2
+      Subst.bind subst t2 sc2 t1 sc1
     | T.Apply (c1, [| |]), T.Apply (c2, [| |]) when Const.equal c1 c2 -> subst
     | T.Apply (c1, l1), T.Apply (c2, l2)
       when Const.equal c1 c2 && Array.length l1 = Array.length l2 ->
@@ -653,6 +653,8 @@ module Make(Const : CONST) = struct
     let t2, sc2 = Subst.deref subst t2 sc2 in
     match t1, t2 with
     | T.Var i, T.Var j when i = j && sc1 = sc2 -> subst
+    | T.Var i, T.Var j when sc1 = sc2 -> raise UnifFail  (* would be matching *)
+    | T.Var i, T.Var j -> Subst.bind subst t1 sc1 t2 sc2  (* can bind *)
     | T.Apply (c1, [| |]), T.Apply (c2, [| |]) when Const.equal c1 c2 -> subst
     | T.Apply (c1, l1), T.Apply (c2, l2)
       when Const.equal c1 c2 && Array.length l1 = Array.length l2 ->
@@ -790,9 +792,9 @@ module Make(Const : CONST) = struct
       end;
       match db.parent with
       | None -> ()
-      | Some db' -> find_facts db' s_db t s_t k
+      | Some db' -> find_facts ~oc db' s_db t s_t k
     
-    let rec find_clauses ?(oc=false) db s_db t s_t k =
+    let rec find_clauses_head ?(oc=false) db s_db t s_t k =
       assert (not (T.is_var t));
       let c = T.head_symbol t in
       begin try
@@ -809,7 +811,7 @@ module Make(Const : CONST) = struct
       end;
       match db.parent with
       | None -> ()
-      | Some db' -> find_clauses db' s_db t s_t k
+      | Some db' -> find_clauses_head ~oc db' s_db t s_t k
   end
 
   (** {2 Query} *)
@@ -827,6 +829,7 @@ module Make(Const : CONST) = struct
     and action =
       | Done
       | Enter of goal_entry * action
+      | NewClause of goal_entry * C.t * action
       | Exit of goal_entry * action
 
     and goal_entry = {
@@ -858,13 +861,13 @@ module Make(Const : CONST) = struct
       Subst.reset_renaming query.renaming;
       query.renaming
 
-    (* resolution of [clause] with [lit] *)
+    (* resolution of [clause] with [not lit] *)
     let compute_resolvent ~renaming lit s_lit clause s_clause subst =
       { C.head = Subst.eval subst ~renaming lit s_lit;
         C.body = Subst.eval_lits subst ~renaming clause.C.body s_clause;
       }
 
-    (* try to resolve fact with clause *)
+    (* try to resolve fact with clause's first body literal *)
     let resolve ~query fact clause =
       match clause.C.body with
       | (Lit.LitPos lit) :: body' ->
@@ -894,12 +897,19 @@ module Make(Const : CONST) = struct
       | Exit (goal_entry, stack') ->
         query.stack <- stack';
         (* close goal entry *)
-        slg_complete ~query goal_entry;
+        if not goal_entry.complete
+          then slg_complete ~query goal_entry;
+        slg_main ~query
+      | NewClause (goal_entry, clause, stack') ->
+        query.stack <- stack';
+        (* process new clause in the forest of [goal_entry] *)
+        slg_newclause ~query goal_entry clause;
         slg_main ~query
 
     (* solve the [goal] by all possible means. Returns the goal_entry
        for this goal. *)
     and slg_solve ~query goal =
+      _debug "slg_solve with %a" T.pp goal;
       try
         TVariantTbl.find query.forest goal
       with Not_found ->
@@ -913,12 +923,13 @@ module Make(Const : CONST) = struct
         } in
         TVariantTbl.add query.forest goal goal_entry;
         (* push the goal on stack so that it is solved *)
-        query.stack <- Exit (goal_entry, Enter (goal_entry, query.stack));
+        query.stack <- Enter (goal_entry, Exit (goal_entry, query.stack));
         goal_entry
 
     (* [goal_entry] is a fresh goal, resolve it with facts and clauses to
        obtain its answers *)
     and slg_subgoal ~query goal_entry =
+      _debug "slg_subgoal with %a" T.pp goal_entry.goal;
       DB.find_facts query.db 1 goal_entry.goal 0
         (fun fact subst ->
           let renaming = _get_renaming ~query in
@@ -926,16 +937,17 @@ module Make(Const : CONST) = struct
           (* process the new answer to the goal *)
           slg_answer ~query goal_entry answer);
       (* resolve with rules *)
-      DB.find_clauses query.db 1 goal_entry.goal 0
+      DB.find_clauses_head query.db 1 goal_entry.goal 0
         (fun clause subst ->
           let renaming = _get_renaming ~query in
           let clause' = compute_resolvent ~renaming goal_entry.goal 0 clause 1 subst in
           (* add a new clause to the forest of [goal] *)
-          slg_newclause ~query goal_entry clause');
+          query.stack <- NewClause (goal_entry, clause', query.stack));
       ()
 
     (* called when a new clause appears in the forest of [goal] *)
     and slg_newclause ~query goal_entry clause =
+      _debug "slg_newclause with %a and clause %a" T.pp goal_entry.goal C.pp clause;
       match clause.C.body with
       | [] ->
         (* new fact (or clause with only delayed lits) *)
@@ -955,7 +967,8 @@ module Make(Const : CONST) = struct
     and slg_answer ~query goal_entry ans =
       _debug "slg_answer: %a" T.pp ans;
       assert (T.ground ans);
-      if not (T.Tbl.mem goal_entry.answers ans) then begin
+      if not goal_entry.complete
+      && not (T.Tbl.mem goal_entry.answers ans) then begin
         (* new answer! *)
         T.Tbl.add goal_entry.answers ans ();
         (* it's a fact, negative dependencies must fail *)
@@ -966,22 +979,31 @@ module Make(Const : CONST) = struct
             match resolve ~query ans clause' with
             | None -> ()
             | Some clause'' ->
-              (* resolution succeeded, call slg_newclause recursively *)
-              slg_newclause ~query goal' clause'')
+              (* resolution succeeded, add clause to the forest of [goal'] *)
+              query.stack <- NewClause (goal', clause'', query.stack))
           goal_entry.poss;
-        (* special case: ground goal. Can only have one answer, so
-          now it's complete. *)
-        if T.ground goal_entry.goal then
-          slg_complete ~query goal_entry;
       end
 
     (* positive subgoal. *)
     and slg_positive ~query goal_entry clause subgoal =
+      _debug "slg_positive %a with clause %a, subgoal %a"
+        T.pp goal_entry.goal C.pp clause T.pp subgoal;
       let subgoal_entry = slg_solve ~query subgoal in
-      subgoal_entry.poss <- (goal_entry, clause) :: subgoal_entry.poss
+      (* register for future answers *)
+      subgoal_entry.poss <- (goal_entry, clause) :: subgoal_entry.poss;
+      (* use current answers *)
+      T.Tbl.iter
+        (fun ans () -> match resolve ~query ans clause with
+          | None -> ()
+          | Some clause' ->
+            query.stack <- NewClause(goal_entry, clause', query.stack))
+        subgoal_entry.answers;
+      ()
 
     (* negative subgoal *)
     and slg_negative ~query goal_entry clause neg_subgoal =
+      _debug "slg_negative %a with clause %a, neg_subgoal %a"
+        T.pp goal_entry.goal C.pp clause T.pp neg_subgoal;
       let subgoal_entry = slg_solve ~query neg_subgoal in
       if T.Tbl.length subgoal_entry.answers = 0
         then if subgoal_entry.complete
@@ -996,14 +1018,16 @@ module Make(Const : CONST) = struct
 
     (* goal is completely evaluated, no more answers will arrive. *)
     and slg_complete ~query goal_entry =
+      _debug "slg_complete %a" T.pp goal_entry.goal;
       assert (not goal_entry.complete);
       goal_entry.complete <- true;
       if T.Tbl.length goal_entry.answers = 0
-        then
+        then begin
           (* all negative goals succeed *)
           List.iter
             (fun (goal, clause) -> slg_newclause ~query goal clause)
-            goal_entry.negs;
+            goal_entry.negs
+        end;
       (* reclaim memory *)
       goal_entry.negs <- [];
       goal_entry.poss <- [];
@@ -1024,10 +1048,9 @@ module Make(Const : CONST) = struct
       let goal_node = slg_solve ~query lit in
       slg_main ~query;
       (* get fact answers into [query.top_answers] *)
-      T.Tbl.iter
-        (fun ans () -> 
-          query.top_answers <- ans :: query.top_answers)
-        goal_node.answers;
+      _iter_answers
+        (fun ans -> query.top_answers <- ans :: query.top_answers)
+        goal_node;
       query
 
     let answers query = query.top_answers

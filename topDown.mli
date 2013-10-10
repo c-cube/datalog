@@ -196,14 +196,19 @@ module type S = sig
       Facts and clauses can only be added.
 
       Non-stratified programs will be rejected with NonStratifiedProgram.
-      
-      TODO: interpreted symbols (with OCaml handlers)
   *)
 
   exception NonStratifiedProgram
 
   module DB : sig
     type t
+      (** A database is a repository for Datalog clauses. *)
+
+    type interpreter = T.t -> C.t list
+      (** Interpreted predicate. It takes terms which have a given
+          symbol as head, and return a list of (safe) clauses that
+          have the same symbol as head, and should unify with the
+          query term. *)
 
     val create : ?parent:t -> unit -> t
 
@@ -215,6 +220,15 @@ module type S = sig
     val add_clause : t -> C.t -> unit
     val add_clauses : t -> C.t list -> unit
 
+    val interpret : t -> const -> interpreter -> unit
+      (** Add an interpreter for the given constant. Goals that start with
+          this constant will be given to all registered interpreters, all
+          of which can add new clauses. The returned clauses must
+          have the constant as head symbol. *)
+
+    val is_interpreted : t -> const -> bool
+      (** Is the constant interpreted by some OCaml code? *)
+
     val num_facts : t -> int
     val num_clauses : t -> int
     val size : t -> int
@@ -225,9 +239,15 @@ module type S = sig
           along with the unifier, to the callback *)
 
     val find_clauses_head : ?oc:bool -> t -> scope -> T.t -> scope ->
-                      (C.t -> Subst.t -> unit) -> unit
+                            (C.t -> Subst.t -> unit) -> unit
       (** find clauses whose head unifies with the given term,
           and give them along with the unifier, to the callback *)
+
+    val find_interpretation : ?oc:bool -> t -> scope -> T.t -> scope ->
+                              (C.t -> Subst.t -> unit) -> unit
+      (** Given an interpreted goal, try all interpreters on it,
+          and match the query against their heads. Returns clauses
+          whose head unifies with the goal, along with the substitution. *)
   end
 
   (** {2 Query} *)

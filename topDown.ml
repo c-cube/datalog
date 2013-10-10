@@ -196,14 +196,19 @@ module type S = sig
       Facts and clauses can only be added.
 
       Non-stratified programs will be rejected with NonStratifiedProgram.
-      
-      TODO: interpreted symbols (with OCaml handlers)
   *)
 
   exception NonStratifiedProgram
 
   module DB : sig
     type t
+      (** A database is a repository for Datalog clauses. *)
+
+    type interpreter = T.t -> C.t list
+      (** Interpreted predicate. It takes terms which have a given
+          symbol as head, and return a list of (safe) clauses that
+          have the same symbol as head, and should unify with the
+          query term. *)
 
     val create : ?parent:t -> unit -> t
 
@@ -215,6 +220,15 @@ module type S = sig
     val add_clause : t -> C.t -> unit
     val add_clauses : t -> C.t list -> unit
 
+    val interpret : t -> const -> interpreter -> unit
+      (** Add an interpreter for the given constant. Goals that start with
+          this constant will be given to all registered interpreters, all
+          of which can add new clauses. The returned clauses must
+          have the constant as head symbol. *)
+
+    val is_interpreted : t -> const -> bool
+      (** Is the constant interpreted by some OCaml code? *)
+
     val num_facts : t -> int
     val num_clauses : t -> int
     val size : t -> int
@@ -225,9 +239,15 @@ module type S = sig
           along with the unifier, to the callback *)
 
     val find_clauses_head : ?oc:bool -> t -> scope -> T.t -> scope ->
-                      (C.t -> Subst.t -> unit) -> unit
+                            (C.t -> Subst.t -> unit) -> unit
       (** find clauses whose head unifies with the given term,
           and give them along with the unifier, to the callback *)
+
+    val find_interpretation : ?oc:bool -> t -> scope -> T.t -> scope ->
+                              (C.t -> Subst.t -> unit) -> unit
+      (** Given an interpreted goal, try all interpreters on it,
+          and match the query against their heads. Returns clauses
+          whose head unifies with the goal, along with the substitution. *)
   end
 
   (** {2 Query} *)
@@ -703,15 +723,18 @@ module Make(Const : CONST) = struct
 
   (** {2 DB} *)
   
-  (* TODO interpreted symbols (for given arity) *)
   (* TODO aggregates? *)
 
   exception NonStratifiedProgram
 
   module DB = struct
+    type interpreter = T.t -> C.t list
+      (** Interpreted predicate *)
+
     type t = {
       rules : unit CVariantTbl.t ConstTbl.t;  (* maps constants to non-fact clauses *)
       facts : unit TVariantTbl.t ConstTbl.t;  (* maps constants to facts *)
+      interpreters : interpreter list ConstTbl.t;  (* constants -> interpreters *)
       parent : t option;                      (* for further query *)
     }
 
@@ -721,6 +744,7 @@ module Make(Const : CONST) = struct
       let db = {
         rules = ConstTbl.create 23;
         facts = ConstTbl.create 23;
+        interpreters = ConstTbl.create 7;
         parent;
       } in
       db
@@ -734,7 +758,8 @@ module Make(Const : CONST) = struct
       in
       ConstTbl.iter (fun c set -> ConstTbl.add rules c (CVariantTbl.copy set)) db.rules;
       ConstTbl.iter (fun c set -> ConstTbl.add facts c (TVariantTbl.copy set)) db.facts;
-      { rules; facts; parent; }
+      let interpreters = ConstTbl.copy db.interpreters in
+      { rules; facts; parent; interpreters; }
 
     let add_fact db t =
       let sym = T.head_symbol t in
@@ -762,6 +787,16 @@ module Make(Const : CONST) = struct
           ConstTbl.add db.rules sym set
 
     let add_clauses db l = List.iter (add_clause db) l
+
+    let interpret db c inter =
+      try
+        let l = ConstTbl.find db.interpreters c in
+        ConstTbl.replace db.interpreters c (inter :: l)
+      with Not_found ->
+        ConstTbl.add db.interpreters c [inter]
+
+    let is_interpreted db c =
+      ConstTbl.mem db.interpreters c
 
     let num_facts db =
       ConstTbl.fold
@@ -812,6 +847,29 @@ module Make(Const : CONST) = struct
       match db.parent with
       | None -> ()
       | Some db' -> find_clauses_head ~oc db' s_db t s_t k
+
+    let rec find_interpretation ?(oc=false) db s_db t s_t k =
+      assert (not (T.is_var t));
+      let c = T.head_symbol t in
+      begin try
+        let interpreters = ConstTbl.find db.interpreters c in
+        List.iter
+          (fun inter ->
+            (* call interpreter to get clauses of its extension *)
+            let clauses = inter t in
+            List.iter
+              (fun clause ->
+                try
+                  let subst = unify ~oc t s_t clause.C.head s_db in
+                  k clause subst   (* clause unifies! *)
+                with UnifFail -> ())
+              clauses)
+          interpreters
+      with Not_found -> ()
+      end;
+      match db.parent with
+      | None -> ()
+      | Some db' -> find_interpretation ~oc db' s_db t s_t k
   end
 
   (** {2 Query} *)
@@ -930,14 +988,21 @@ module Make(Const : CONST) = struct
        obtain its answers *)
     and slg_subgoal ~query goal_entry =
       _debug "slg_subgoal with %a" T.pp goal_entry.goal;
-      DB.find_facts query.db 1 goal_entry.goal 0
+      DB.find_facts ~oc:query.oc query.db 1 goal_entry.goal 0
         (fun fact subst ->
           let renaming = _get_renaming ~query in
           let answer = Subst.eval subst ~renaming goal_entry.goal 0 in
           (* process the new answer to the goal *)
           slg_answer ~query goal_entry answer);
       (* resolve with rules *)
-      DB.find_clauses_head query.db 1 goal_entry.goal 0
+      DB.find_clauses_head ~oc:query.oc query.db 1 goal_entry.goal 0
+        (fun clause subst ->
+          let renaming = _get_renaming ~query in
+          let clause' = compute_resolvent ~renaming goal_entry.goal 0 clause 1 subst in
+          (* add a new clause to the forest of [goal] *)
+          query.stack <- NewClause (goal_entry, clause', query.stack));
+      (* resolve with interpreters *)
+      DB.find_interpretation ~oc:query.oc query.db 1 goal_entry.goal 0
         (fun clause subst ->
           let renaming = _get_renaming ~query in
           let clause' = compute_resolvent ~renaming goal_entry.goal 0 clause 1 subst in

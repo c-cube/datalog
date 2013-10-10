@@ -35,6 +35,7 @@ let number = ( '0' | ( non_zero_numeric numeric *) )
 let lower_alpha = ['a' - 'z']
 let upper_alpha = ['A' - 'Z']
 let alpha_numeric = ( lower_alpha | upper_alpha | numeric | '_' )
+let operator = ['_' '+' '<' '>' '=' '*' '-' '%' '^' '@' '|' ':' '!' '/']+
 
 let upper_word = upper_alpha alpha_numeric*
 let lower_word = lower_alpha alpha_numeric*
@@ -65,6 +66,7 @@ rule token =
       | upper_word                   { UPPER_WORD(Lexing.lexeme lexbuf) }
       | single_quoted                { SINGLE_QUOTED(Lexing.lexeme lexbuf) }
       | number                       { INT(Lexing.lexeme lexbuf) }
+      | operator                     { OPERATOR(Lexing.lexeme lexbuf) }
       | _                            { fail ()}
 
 {

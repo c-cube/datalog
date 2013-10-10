@@ -37,6 +37,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 %token <string> LOWER_WORD
 %token <string> UPPER_WORD
 %token <string> INT
+%token <string> OPERATOR  /* infix operator */
 
 %start parse_term
 %type <TopDownAst.term> parse_term
@@ -83,8 +84,12 @@ literals:
   | literal COMMA literals { $1 :: $3 }
 
 literal:
-  | term { TopDownAst.LitPos $1 }
-  | NOT term { TopDownAst.LitNeg $2 }
+  | atom { TopDownAst.LitPos $1 }
+  | NOT atom { TopDownAst.LitNeg $2 }
+
+atom:
+  | term { $1 }
+  | term OPERATOR term { TopDownAst.Apply($2, [$1; $3]) }
 
 term:
   | LOWER_WORD { TopDownAst.Apply ($1, []) }

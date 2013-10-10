@@ -46,22 +46,24 @@ let parse_files_into db files =
         ())
     files
 
-let eval_query files goal =
+let eval_query ~oc files goal =
   let db = D.DB.create () in
   parse_files_into db files;
-  let query = D.Query.ask db goal in
+  let query = D.Query.ask ~oc db goal in
   List.iter
-    (fun ans -> Printf.printf "  %a\n" D.T.pp ans)
+    (fun ans -> Printf.printf "  %a.\n" D.T.pp ans)
     (D.Query.answers query)
 
 (** Options *)
 
 let files = ref []
 let add_file f = files := f :: !files
+let oc = ref false
 
 let options =
   [ "-debug", Arg.Unit (fun () -> D.set_debug true), "enable debug"
   ; "-load", Arg.String add_file, "load given file"
+  ; "-oc", Arg.Set oc, "enable occur-check in unification"
   ]
 
 let help = "topDownCli [options] goal: evaluates goal"
@@ -73,4 +75,4 @@ let _ =
     then failwith "require a goal";
   let goal = TopDownParser.parse_term TopDownLexer.token (Lexing.from_string !goal) in
   let goal = D.term_of_ast ~ctx:(D.create_ctx ()) goal in
-  eval_query !files goal
+  eval_query ~oc:!oc !files goal

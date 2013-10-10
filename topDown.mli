@@ -255,18 +255,27 @@ module type S = sig
 
   (** {2 Query} *)
 
-  module Query : sig
-    type t
+  val ask : ?oc:bool -> ?with_rules:C.t list -> ?with_facts:T.t list ->
+            DB.t -> T.t -> T.t list
+    (** Returns the answers to a query in a given DB. Additional facts and rules can be
+        added in a local scope.
+        @param oc enable occur-check in unification (default [false]) *)
 
-    val ask : ?oc:bool -> ?with_rules:C.t list -> ?with_facts:T.t list ->
-              DB.t -> T.t -> t
-      (** Create a query in a given DB. Additional facts and rules can be
-          added in a local scope.
-          @param oc enable occur-check in unification (default [false]) *)
+  val ask_lits : ?oc:bool -> ?with_rules:C.t list -> ?with_facts:T.t list ->
+                 DB.t -> T.t list -> Lit.t list -> T.t list list
+    (** Extension of {! ask}, where the query ranges over the list of
+        variables (the term list), all of which must be bound in
+        the list of literals that form a constraint.
 
-    val answers : t -> T.t list
-      (** All answers so far *)
-  end
+        [ask_lits db vars lits] queries over variables [vars] with
+        the constraints given by [lits]. 
+
+        Conceptually, the query adds a clause (v1, ..., vn) :- lits, which
+        should respect the same safety constraint as other clauses.
+
+        @return a list of answers, each of which is a list of terms that
+          map to the given list of variables.
+        *)
 end
 
 module type CONST = sig
@@ -275,6 +284,10 @@ module type CONST = sig
   val equal : t -> t -> bool
   val hash : t -> int
   val to_string : t -> string
+
+  val query : t
+    (** Special symbol, that will never occur in any user-defined
+        clause or term. For strings, this may be the empty string "". *)
 end
 
 (** {2 Generic implementation} *)

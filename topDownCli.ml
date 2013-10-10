@@ -50,10 +50,10 @@ let eval_query ~builtin ~oc files goal =
   let db = D.DB.create () in
   if builtin then D.DB.interpret_list db D.default_interpreters;
   parse_files_into db files;
-  let query = D.Query.ask ~oc db goal in
+  let answers = D.ask ~oc db goal in
   List.iter
     (fun ans -> Printf.printf "  %a.\n" D.T.pp ans)
-    (D.Query.answers query)
+    answers
 
 (** Options *)
 

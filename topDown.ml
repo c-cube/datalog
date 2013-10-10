@@ -255,18 +255,27 @@ module type S = sig
 
   (** {2 Query} *)
 
-  module Query : sig
-    type t
+  val ask : ?oc:bool -> ?with_rules:C.t list -> ?with_facts:T.t list ->
+            DB.t -> T.t -> T.t list
+    (** Returns the answers to a query in a given DB. Additional facts and rules can be
+        added in a local scope.
+        @param oc enable occur-check in unification (default [false]) *)
 
-    val ask : ?oc:bool -> ?with_rules:C.t list -> ?with_facts:T.t list ->
-              DB.t -> T.t -> t
-      (** Create a query in a given DB. Additional facts and rules can be
-          added in a local scope.
-          @param oc enable occur-check in unification (default [false]) *)
+  val ask_lits : ?oc:bool -> ?with_rules:C.t list -> ?with_facts:T.t list ->
+                 DB.t -> T.t list -> Lit.t list -> T.t list list
+    (** Extension of {! ask}, where the query ranges over the list of
+        variables (the term list), all of which must be bound in
+        the list of literals that form a constraint.
 
-    val answers : t -> T.t list
-      (** All answers so far *)
-  end
+        [ask_lits db vars lits] queries over variables [vars] with
+        the constraints given by [lits]. 
+
+        Conceptually, the query adds a clause (v1, ..., vn) :- lits, which
+        should respect the same safety constraint as other clauses.
+
+        @return a list of answers, each of which is a list of terms that
+          map to the given list of variables.
+        *)
 end
 
 module type CONST = sig
@@ -275,6 +284,10 @@ module type CONST = sig
   val equal : t -> t -> bool
   val hash : t -> int
   val to_string : t -> string
+
+  val query : t
+    (** Special symbol, that will never occur in any user-defined
+        clause or term. For strings, this may be the empty string "". *)
 end
 
 (** {2 Generic implementation} *)
@@ -880,10 +893,6 @@ module Make(Const : CONST) = struct
 
   (** {2 Query} *)
 
-  (* TODO querying with body of clause (several literals), not only one
-      term. Do it by adding a special clause (with "" as head predicate
-      or something) to the local DB, and querying its head. *)
-
   module Query = struct
     type t = {
       db : DB.t;
@@ -891,7 +900,6 @@ module Make(Const : CONST) = struct
       forest : goal_entry TVariantTbl.t;      (* forest of goals *)
       renaming : Subst.renaming;              (* renaming *)
       mutable stack : action;                 (* stack of actions to do *)
-      mutable top_answers : T.t list;         (* already known answers *)
     } (** A global state for querying *)
 
     and action =
@@ -920,7 +928,6 @@ module Make(Const : CONST) = struct
         forest = TVariantTbl.create 127;
         stack = Done;
         renaming = Subst.create_renaming ();
-        top_answers = [];
       } in
       query
 
@@ -1101,29 +1108,39 @@ module Make(Const : CONST) = struct
       goal_entry.negs <- [];
       goal_entry.poss <- [];
       ()
-
-    let ask ?(oc=false) ?(with_rules=[]) ?(with_facts=[]) db lit =
-      (* create a DB on top of the given one? *)
-      let db = match with_rules, with_facts with
-      | [], [] -> db
-      | _ ->
-        let db' = DB.create ~parent:db () in
-        DB.add_facts db' with_facts;
-        DB.add_clauses db' with_rules;
-        db'
-      in
-      let query = create ~oc ~db in
-      (* recursive search for answers *)
-      let goal_node = slg_solve ~query lit in
-      slg_main ~query;
-      (* get fact answers into [query.top_answers] *)
-      _iter_answers
-        (fun ans -> query.top_answers <- ans :: query.top_answers)
-        goal_node;
-      query
-
-    let answers query = query.top_answers
   end
+
+  let ask ?(oc=false) ?(with_rules=[]) ?(with_facts=[]) db lit =
+    (* create a DB on top of the given one? *)
+    let db = match with_rules, with_facts with
+    | [], [] -> db
+    | _ ->
+      let db' = DB.create ~parent:db () in
+      DB.add_facts db' with_facts;
+      DB.add_clauses db' with_rules;
+      db'
+    in
+    let query = Query.create ~oc ~db in
+    (* recursive search for answers *)
+    let goal_node = Query.slg_solve ~query lit in
+    Query.slg_main ~query;
+    (* get fact answers *)
+    let l = ref [] in
+    Query._iter_answers (fun ans -> l := ans :: !l) goal_node;
+    !l
+
+  let ask_lits ?(oc=false) ?(with_rules=[]) ?(with_facts=[]) db vars lits =
+    (* special clause that defines the query *)
+    let head = T.mk_apply Const.query (Array.of_list vars) in
+    let clause = C.mk_clause head lits in
+    let with_rules = clause :: with_rules in
+    let l = ask ~oc ~with_rules ~with_facts db head in
+    List.map
+      (fun t -> match t with
+        | T.Apply (_, args) -> Array.to_list args
+        | T.Var _ -> assert false)
+      l
+
 end
 
 (** {2 Default Implementation with Strings} *)
@@ -1134,6 +1151,7 @@ module Default = struct
     let equal a b = a = b
     let hash a = Hashtbl.hash a
     let to_string a = a
+    let query = ""
   end)
  
   include TD

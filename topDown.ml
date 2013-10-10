@@ -728,6 +728,8 @@ module Make(Const : CONST) = struct
   
   (* TODO aggregates? *)
 
+  (* TODO: dependency graph to check whether program is stratified *)
+
   exception NonStratifiedProgram
 
   module DB = struct
@@ -740,8 +742,6 @@ module Make(Const : CONST) = struct
       interpreters : interpreter list ConstTbl.t;  (* constants -> interpreters *)
       parent : t option;                      (* for further query *)
     }
-
-    (* TODO: dependency graph to check whether program is stratified *)
 
     let create ?parent () =
       let db = {
@@ -879,6 +879,10 @@ module Make(Const : CONST) = struct
   end
 
   (** {2 Query} *)
+
+  (* TODO querying with body of clause (several literals), not only one
+      term. Do it by adding a special clause (with "" as head predicate
+      or something) to the local DB, and querying its head. *)
 
   module Query = struct
     type t = {
@@ -1194,9 +1198,12 @@ module Default = struct
         when a <> b -> [ C.mk_fact goal ]
       | _ -> []
     and _print goal =
-      if T.ground goal
-        then Printf.printf "> %a\n" T.pp goal;
-      []
+      begin match goal with
+      | T.Apply (_, [| a |]) when T.ground a ->
+        Printf.printf "> %a\n" T.pp a;
+      | _ -> ()
+      end;
+      [ C.mk_fact goal ]
     (* given a list of arguments, "replace" the goal by any of its arguments.
        this allow arguments (variables...) to get to the proposition level *)
     and _eval goal = match goal with

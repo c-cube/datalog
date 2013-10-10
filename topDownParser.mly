@@ -95,6 +95,7 @@ term:
 subterm:
   | term { $1 }
   | UPPER_WORD { TopDownAst.Var $1 }
+  | INT { TopDownAst.Apply($1, []) }
 
 args:
   | subterm { [$1] }

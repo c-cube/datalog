@@ -361,7 +361,7 @@ module Make(Const : CONST) = struct
 
     let rec ground t = match t with
     | Var _ -> false
-    | Apply (_, [| |]) -> false
+    | Apply (_, [| |]) -> true
     | Apply (_, args) ->
       _ground_arr args 0
     and _ground_arr a i =
@@ -953,6 +953,7 @@ module Make(Const : CONST) = struct
       insert it into the list of answers of [goal], and update
       positive and negative dependencies *)
     and slg_answer ~query goal_entry ans =
+      _debug "slg_answer: %a" T.pp ans;
       assert (T.ground ans);
       if not (T.Tbl.mem goal_entry.answers ans) then begin
         (* new answer! *)

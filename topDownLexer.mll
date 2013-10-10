@@ -24,17 +24,9 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 *)
 
 {
-open TopDownParser 
-
-let print_location lexbuf =
-  let open Lexing in
-  let pos = lexbuf.lex_curr_p in
-  Format.sprintf "at line %d, column %d" pos.pos_lnum pos.pos_cnum
-
-let lexing_error (error: string) lexbuf =
-  let open Lexing in
-  Format.eprintf "%s %s, token '%s'@." error (print_location lexbuf) (lexeme lexbuf);
-  raise Parsing.Parse_error
+  open TopDownParser 
+  
+  let fail () = raise Parsing.Parse_error
 }
 
 let numeric = ['0' - '9']
@@ -56,9 +48,10 @@ rule token =
       | [' ' '\t' '\r']              { token lexbuf } (* skip blanks *)
       | ['\n']                       { Lexing.new_line lexbuf;
                                        token lexbuf } (* skip new lines *)
-      | one_line_comment             { token lexbuf } (* skip comment *)
-      | multi_line_comment           { token lexbuf } (* skip comment *)
-      | multi_line_comment_unclosed  { lexing_error "Unclosed Comment" lexbuf }
+      | one_line_comment             { Lexing.new_line lexbuf;
+                                       token lexbuf } (* skip comment *)
+      | multi_line_comment           { token lexbuf } (* skip comment TODO new_line *)
+      | multi_line_comment_unclosed  { fail () }
           (* end of input - for channels, strings, ... *)
       | eof                          { EOI }
       | "~"                          { NOT }
@@ -72,9 +65,7 @@ rule token =
       | upper_word                   { UPPER_WORD(Lexing.lexeme lexbuf) }
       | single_quoted                { SINGLE_QUOTED(Lexing.lexeme lexbuf) }
       | number                       { INT(Lexing.lexeme lexbuf) }
-      | _                            { lexing_error "Invalid Input" lexbuf }
+      | _                            { fail ()}
 
 {
-  let print_location = print_location
-
 }

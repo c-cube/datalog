@@ -34,10 +34,16 @@ let parse_files_into db files =
   List.iter
     (fun file ->
       let ic = open_in file in
-      let ast = TopDownParser.parse_file TopDownLexer.token (Lexing.from_channel ic) in
-      close_in ic;
-      let clauses = D.clauses_of_ast ast in
-      D.DB.add_clauses db clauses)
+      let lexbuf = Lexing.from_channel ic in
+      try
+        let ast = TopDownParser.parse_file TopDownLexer.token lexbuf in
+        close_in ic;
+        let clauses = D.clauses_of_ast ast in
+        D.DB.add_clauses db clauses
+      with Parsing.Parse_error ->
+        close_in ic;
+        TopDownAst.print_error "parse error" lexbuf;
+        ())
     files
 
 let eval_query files goal =
@@ -54,7 +60,7 @@ let files = ref []
 let add_file f = files := f :: !files
 
 let options =
-  [ "-debug", Arg.Bool D.set_debug, "enable debug"
+  [ "-debug", Arg.Unit (fun () -> D.set_debug true), "enable debug"
   ; "-load", Arg.String add_file, "load given file"
   ]
 

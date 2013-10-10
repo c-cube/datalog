@@ -37,3 +37,16 @@ type literal =
 type clause = term * literal list
 
 type file = clause list
+
+exception ParseError of string
+
+let loc_to_str pos =
+  Printf.sprintf "line %d, column %d"
+    pos.Lexing.pos_lnum
+    (pos.Lexing.pos_cnum - pos.Lexing.pos_bol)
+
+let print_error ?(out=stderr) msg lexbuf =
+  let start = Lexing.lexeme_start_p lexbuf in
+  let stop = Lexing.lexeme_end_p lexbuf in
+  Printf.fprintf out "parse error between %s and %s: %s\n"
+    (loc_to_str start) (loc_to_str stop) msg

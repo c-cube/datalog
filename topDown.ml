@@ -743,6 +743,12 @@ module Make(Const : CONST) = struct
 
   (* TODO: dependency graph to check whether program is stratified *)
 
+  (* TODO: reification of DB, with open(db) predicate that evaluates the rest
+          of the clause in the scope of the given DB (parent: current context)*)
+
+  (* TODO: on-disk DB, for instance append-only set of Bencode records?
+          see the dict format google uses for bigtable *)
+
   exception NonStratifiedProgram
 
   module DB = struct

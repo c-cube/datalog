@@ -296,8 +296,15 @@ module Make(Const : CONST) : S with type const = Const.t
 
 (** {2 Default Implementation with Strings} *)
 
+type const =
+  | Int of int
+  | String of string
+
 module Default : sig
-  include S with type const = string
+
+  module Const : CONST with type t = const
+
+  include S with type const = const
 
   type name_ctx = (string, T.t) Hashtbl.t
 

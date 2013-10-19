@@ -29,6 +29,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 type term =
   | Var of string
   | Apply of string * term list
+  | Int of int
 
 type literal =
   | LitPos of term

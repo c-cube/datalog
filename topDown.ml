@@ -1151,14 +1151,22 @@ end
 
 (** {2 Default Implementation with Strings} *)
 
+type const =
+  | Int of int
+  | String of string
+
 module Default = struct
-  module TD = Make(struct
-    type t = string
+  module Const = struct
+    type t = const
     let equal a b = a = b
     let hash a = Hashtbl.hash a
-    let to_string a = a
-    let query = ""
-  end)
+    let to_string a = match a with
+      | String s -> s
+      | Int i -> string_of_int i
+    let query = String ""
+  end
+
+  module TD = Make(Const)
  
   include TD
 
@@ -1171,7 +1179,9 @@ module Default = struct
   let rec term_of_ast ~ctx t = match t with
   | A.Apply (s, args) ->
     let args = List.map (term_of_ast ~ctx) args in
-    T.mk_apply_l s args
+    T.mk_apply_l (String s) args
+  | A.Int i ->
+    T.mk_const (Int i)
   | A.Var s ->
     begin try
       Hashtbl.find ctx s
@@ -1231,26 +1241,26 @@ module Default = struct
     (* given a list of arguments, "replace" the goal by any of its arguments.
        this allow arguments (variables...) to get to the proposition level *)
     and _eval goal = match goal with
-      | T.Apply ("eval", subgoals) ->
+      | T.Apply (String "eval", subgoals) ->
         (* for each goal \in subgoals, add a clause  goal :- subgoal *)
         Array.fold_left
           (fun acc sub -> C.mk_clause goal [Lit.mk_pos sub] :: acc)
           [] subgoals
       | _ -> []
     in
-    [ "lt", _less
-    ; "<", _less
-    ; "le", _lesseq
-    ; "<=", _lesseq
-    ; "gt", _greater
-    ; ">", _greater
-    ; "ge", _greatereq
-    ; ">=", _greatereq
-    ; "eq", _eq
-    ; "=", _eq
-    ; "neq", _neq
-    ; "!=", _neq
-    ; "print", _print
-    ; "eval", _eval
+    [ String "lt", _less
+    ; String "<", _less
+    ; String "le", _lesseq
+    ; String "<=", _lesseq
+    ; String "gt", _greater
+    ; String ">", _greater
+    ; String "ge", _greatereq
+    ; String ">=", _greatereq
+    ; String "eq", _eq
+    ; String "=", _eq
+    ; String "neq", _neq
+    ; String "!=", _neq
+    ; String "print", _print
+    ; String "eval", _eval
     ]
 end

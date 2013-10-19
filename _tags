@@ -1,2 +1,44 @@
+# OASIS_START
+# DO NOT EDIT (digest: 727e0b43e5d8c6a2effb3ab294ecb18a)
+# Ignore VCS directories, you can use the same kind of rule outside 
+# OASIS_START/STOP if you want to exclude directories that contains 
+# useless stuff for the build process
+<**/.svn>: -traverse
+<**/.svn>: not_hygienic
+".bzr": -traverse
+".bzr": not_hygienic
+".hg": -traverse
+".hg": not_hygienic
+".git": -traverse
+".git": not_hygienic
+"_darcs": -traverse
+"_darcs": not_hygienic
+# Library datalog
+"datalog.cmxs": use_datalog
+"bottomUp.cmx": for-pack(Datalog)
+"topDown.cmx": for-pack(Datalog)
+"default.cmx": for-pack(Datalog)
+"bottomUpAst.cmx": for-pack(Datalog)
+"bottomUpParser.cmx": for-pack(Datalog)
+"bottomUpLexer.cmx": for-pack(Datalog)
+"topDownParser.cmx": for-pack(Datalog)
+"topDownLexer.cmx": for-pack(Datalog)
+"topDownAst.cmx": for-pack(Datalog)
+"version.cmx": for-pack(Datalog)
+# Executable datalog_cli
+"datalog_cli.native": use_datalog
+"datalog_cli.native": pkg_unix
+"datalog_cli.native": pkg_num
+"datalog_cli.native": pkg_str
+# Executable topDownCli
+"topDownCli.native": use_datalog
+"topDownCli.native": pkg_unix
+"topDownCli.native": pkg_num
+"topDownCli.native": pkg_str
+<*.ml{,i}>: use_datalog
+<*.ml{,i}>: pkg_unix
+<*.ml{,i}>: pkg_num
+<*.ml{,i}>: pkg_str
+# OASIS_STOP
 <**/*.cmx>: inline(10)
 

@@ -39,19 +39,19 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 %token <string> INT
 
 %start parse_literal
-%type <DatalogAst.literal> parse_literal
+%type <BottomUpAst.literal> parse_literal
 
 %start parse_literals
-%type <DatalogAst.literal list> parse_literals
+%type <BottomUpAst.literal list> parse_literals
 
 %start parse_clause
-%type <DatalogAst.clause> parse_clause
+%type <BottomUpAst.clause> parse_clause
 
 %start parse_file
-%type <DatalogAst.file> parse_file
+%type <BottomUpAst.file> parse_file
 
 %start parse_query
-%type <DatalogAst.query> parse_query
+%type <BottomUpAst.query> parse_query
 
 %%
 
@@ -75,23 +75,23 @@ clauses:
   | clause clauses { $1 :: $2 }
 
 clause:
-  | literal DOT { DatalogAst.Clause ($1, []) }
-  | literal IF literals DOT { DatalogAst.Clause ($1, $3) }
+  | literal DOT { BottomUpAst.Clause ($1, []) }
+  | literal IF literals DOT { BottomUpAst.Clause ($1, $3) }
 
 literals:
   | literal { [$1] }
   | literal COMMA literals { $1 :: $3 }
 
 literal:
-  | LOWER_WORD { DatalogAst.Atom ($1, []) }
+  | LOWER_WORD { BottomUpAst.Atom ($1, []) }
   | LOWER_WORD LEFT_PARENTHESIS args RIGHT_PARENTHESIS
-    { DatalogAst.Atom ($1, $3) }
+    { BottomUpAst.Atom ($1, $3) }
 
 query:
   | LEFT_PARENTHESIS args RIGHT_PARENTHESIS IF signed_literals
     {
       let pos_literals, neg_literal = $5 in
-      DatalogAst.Query ($2, pos_literals, neg_literal)
+      BottomUpAst.Query ($2, pos_literals, neg_literal)
     }
 
 signed_literals:
@@ -107,7 +107,7 @@ args:
   | term COMMA args  { $1 :: $3 }
 
 term:
-  | INT { DatalogAst.Const $1 }
-  | LOWER_WORD { DatalogAst.Const $1 }
-  | UPPER_WORD { DatalogAst.Var $1 }
-  | SINGLE_QUOTED { DatalogAst.Quoted $1 }
+  | INT { BottomUpAst.Const $1 }
+  | LOWER_WORD { BottomUpAst.Const $1 }
+  | UPPER_WORD { BottomUpAst.Var $1 }
+  | SINGLE_QUOTED { BottomUpAst.Quoted $1 }

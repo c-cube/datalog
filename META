@@ -1,6 +1,12 @@
-name="datalog"
-version="0.4.1"
-description="Simple Datalog fixpoint computation library"
-requires=""
+# OASIS_START
+# DO NOT EDIT (digest: 73f514313ec20c594d2d4fbcfc0e2cdf)
+version = "0.4.2"
+description = "An in-memory datalog implementation for OCaml"
+requires = "unix num str"
 archive(byte) = "datalog.cma"
+archive(byte, plugin) = "datalog.cma"
 archive(native) = "datalog.cmxa"
+archive(native, plugin) = "datalog.cmxs"
+exists_if = "datalog.cma"
+# OASIS_STOP
+

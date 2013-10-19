@@ -5,3 +5,6 @@ datalog/const.ml
 *.docdir
 .session
 TAGS
+version.ml
+setup.log
+setup.data

@@ -1,0 +1,57 @@
+OASISFormat: 0.3
+Name:        datalog
+Version:     0.4.2
+Homepage:    https://github.com/c-cube/datalog
+Authors:     Simon Cruanes
+License:     BSD3
+LicenseFile: LICENSE
+Plugins:     META (0.3), DevFiles (0.3)
+OCamlVersion: >= 4.00.1
+BuildTools:  ocamlbuild
+FilesAB: version.ml.ab
+
+Synopsis: An in-memory datalog implementation for OCaml
+
+Description: 
+    An in-memory datalog implementation for OCaml. It focuses on big sets of rules
+    with small relations, with frequent updates of the relations. Therefore, it
+    tries to achieve good behavior in presence of incremental modifications of the
+    relations.
+
+Library "datalog"
+  Path:             .
+  Pack:             true
+  Modules:          BottomUp, TopDown, Default, BottomUpAst, BottomUpParser,
+                    BottomUpLexer, TopDownParser, TopDownLexer, TopDownAst,
+                    Version
+  BuildDepends:     unix,num,str
+
+Document datalog
+  Title:                documentation for Datalog
+  Type:                 ocamlbuild (0.3)
+  BuildTools+:          ocamldoc
+  Install:              true
+  XOCamlbuildPath:      .
+  XOCamlbuildLibraries: datalog
+
+# CLI client using BottomUp
+Executable datalog_cli
+  Path: .
+  Install: true
+  CompiledObject: native
+  MainIs: datalog_cli.ml
+  BuildDepends: datalog
+
+# CLI client using TopDown
+Executable topDownCli
+  Path: .
+  Install: false
+  CompiledObject: native
+  MainIs: topDownCli.ml
+  BuildDepends: datalog
+
+SourceRepository head
+  Type: git
+  Location: https://github.com/c-cube/datalog
+  Browser: https://github.com/c-cube/datalog/tree/master/src
+

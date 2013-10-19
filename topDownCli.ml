@@ -27,6 +27,9 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 (** {1 Prolog-like command line tool} *)
 
 module D = Datalog.TopDown.Default
+module DParser = Datalog.TopDownParser
+module DLexer = Datalog.TopDownLexer
+module DAst = Datalog.TopDownAst
 
 (** Evaluate query *)
 
@@ -36,13 +39,13 @@ let parse_files_into db files =
       let ic = open_in file in
       let lexbuf = Lexing.from_channel ic in
       try
-        let ast = TopDownParser.parse_file TopDownLexer.token lexbuf in
+        let ast = DParser.parse_file DLexer.token lexbuf in
         close_in ic;
         let clauses = D.clauses_of_ast ast in
         D.DB.add_clauses db clauses
       with Parsing.Parse_error ->
         close_in ic;
-        TopDownAst.print_error "parse error" lexbuf;
+        DAst.print_error "parse error" lexbuf;
         ())
     files
 
@@ -76,6 +79,6 @@ let _ =
   Arg.parse options (fun s -> goal := s) help;
   if !goal = ""
     then failwith "require a goal";
-  let goal = TopDownParser.parse_term TopDownLexer.token (Lexing.from_string !goal) in
+  let goal = DParser.parse_term DLexer.token (Lexing.from_string !goal) in
   let goal = D.term_of_ast ~ctx:(D.create_ctx ()) goal in
   eval_query ~builtin:!builtin ~oc:!oc !files goal

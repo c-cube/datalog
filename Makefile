@@ -1,45 +1,46 @@
-# where to install the command line?
-BINDIR ?= /usr/bin/
+# OASIS_START
+# DO NOT EDIT (digest: bc1e05bfc8b39b664f29dae8dbd3ebbb)
 
-# name of the library
-NAME = datalog
+SETUP = ocaml setup.ml
 
-CLI = datalog_cli.native topDownCli.native
-LIB = datalog.cmxa datalog.cma
-DOC = datalog.docdir/index.html
-TARGETS = $(DOC) $(LIB) $(CLI)
+build: setup.data
+	$(SETUP) -build $(BUILDFLAGS)
 
-INSTALL_LIB = datalog.cmxa datalog.cma datalog.a datalog.cmi datalog.mli
+doc: setup.data build
+	$(SETUP) -doc $(DOCFLAGS)
 
-# compilation options
-OPTIONS ?= -classic-display
+test: setup.data build
+	$(SETUP) -test $(TESTFLAGS)
 
-%.ml: %.mlp
-	sed -e "s/DATALOG_VERSION/$(VERSION)/g" \
-		 $< > $@
+all: 
+	$(SETUP) -all $(ALLFLAGS)
 
-all: prod
+install: setup.data
+	$(SETUP) -install $(INSTALLFLAGS)
 
-prod:
-	ocamlbuild $(OPTIONS) -tag noassert $(TARGETS)
+uninstall: setup.data
+	$(SETUP) -uninstall $(UNINSTALLFLAGS)
 
-debug:
-	ocamlbuild $(OPTIONS) -tag debug $(TARGETS)
+reinstall: setup.data
+	$(SETUP) -reinstall $(REINSTALLFLAGS)
 
-profile:
-	ocamlbuild $(OPTIONS) -tag profile $(TARGETS)
+clean: 
+	$(SETUP) -clean $(CLEANFLAGS)
 
-clean:
-	ocamlbuild -clean
+distclean: 
+	$(SETUP) -distclean $(DISTCLEANFLAGS)
+
+setup.data:
+	$(SETUP) -configure $(CONFIGUREFLAGS)
+
+.PHONY: build doc test all install uninstall reinstall clean distclean configure
+
+# OASIS_STOP
 
 push_doc: prod
 	scp -r datalog.docdir/* cedeela.fr:~/simon/root/software/datalog/
 
-install: prod
-	ocamlfind install $(NAME) META $(addprefix _build/,$(INSTALL_LIB))
-	cp _build/$(CLI) $(BINDIR)/datalog_cli
-
 tags:
 	otags *.ml *.mli
 
-.PHONY: all clean install tags push_doc
+.PHONY: tags push_doc

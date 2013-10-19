@@ -27,8 +27,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
     their fixpoint *)
 
 module DLogic = Datalog.Default
-module DParser = Datalog.Parser
-module DLexer = Datalog.Lexer
+module DParser = Datalog.BottomUpParser
+module DLexer = Datalog.BottomUpLexer
 
 let progress = ref false
 let print_input = ref false
@@ -195,8 +195,8 @@ let add_explain p =
 let add_query q_str =
   try
     let lexbuf = Lexing.from_string q_str in
-    let ast = Datalog.Parser.parse_query Datalog.Lexer.token lexbuf in
-    let q = Datalog.Default.query_of_ast ast in
+    let ast = DParser.parse_query DLexer.token lexbuf in
+    let q = DLogic.query_of_ast ast in
     queries := q :: !queries
   with Parsing.Parse_error ->
     failwith ("could not parse query string " ^ q_str)
@@ -222,7 +222,7 @@ let parse_args () =
 let () =
   Format.printf "%% start datalog@.";
   parse_args ();
-  (if !print_version then Printf.printf "%% version : %s\n" Datalog.version);
+  (if !print_version then Printf.printf "%% version : %s\n" Datalog.Version.version);
   let clauses = parse_files () in
   let clauses = List.map DLogic.clause_of_ast clauses in
   process_clauses clauses

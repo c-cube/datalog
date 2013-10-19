@@ -190,6 +190,33 @@ module type S = sig
   module TVariantTbl : Hashtbl.S with type key = T.t
   module CVariantTbl : Hashtbl.S with type key = C.t
 
+  (** {2 Index} *)
+
+  module Index(Data : Hashtbl.HashedType) : sig
+    type t
+      (** A set of term->data bindings, for efficient retrieval by unification *)
+
+    val empty : unit -> t
+      (** new, empty index *)
+
+    val copy : t -> t
+      (** Recursive copy of the index *)
+
+    val add : t -> T.t -> Data.t -> t
+      (** Add the term->data binding. This modifies the index! *)
+
+    val remove : t -> T.t -> Data.t -> t
+      (** Remove the term->data binding. This modifies the index! *)
+
+    val unify : ?oc:bool -> t -> scope -> T.t -> scope ->
+                (Data.t -> Subst.t -> unit) -> unit
+      (** Retrieve data associated with terms that unify with the given
+          query term *)
+
+    val size : t -> int
+      (** Number of bindings *)
+  end
+
   (** {2 DB} *)
 
   (** A DB stores facts and clauses, that constitute a logic program.

@@ -190,6 +190,33 @@ module type S = sig
   module TVariantTbl : Hashtbl.S with type key = T.t
   module CVariantTbl : Hashtbl.S with type key = C.t
 
+  (** {2 Index} *)
+
+  module Index(Data : Hashtbl.HashedType) : sig
+    type t
+      (** A set of term->data bindings, for efficient retrieval by unification *)
+
+    val empty : unit -> t
+      (** new, empty index *)
+
+    val copy : t -> t
+      (** Recursive copy of the index *)
+
+    val add : t -> T.t -> Data.t -> t
+      (** Add the term->data binding. This modifies the index! *)
+
+    val remove : t -> T.t -> Data.t -> t
+      (** Remove the term->data binding. This modifies the index! *)
+
+    val unify : ?oc:bool -> t -> scope -> T.t -> scope ->
+                (Data.t -> Subst.t -> unit) -> unit
+      (** Retrieve data associated with terms that unify with the given
+          query term *)
+
+    val size : t -> int
+      (** Number of bindings *)
+  end
+
   (** {2 DB} *)
 
   (** A DB stores facts and clauses, that constitute a logic program.
@@ -737,6 +764,202 @@ module Make(Const : CONST) = struct
     let hash = C.hash_novar
   end)
 
+  (** {2 Indexing} *)
+
+  (** Functor that allows fast retrieval of sets of values
+      for the given {! Data} type, by unification or matching
+      with a term.
+      This is a kind of fingerprint indexing, but only at the very
+      first level of subterms. *)
+  module Index(Data : Hashtbl.HashedType) = struct
+    (* what is the head of the term we can find at the given position? *)
+    type fingerprint =
+      | Var
+      | Const of Const.t
+
+    (* A hashset of (term * data) *)
+    module TermDataTbl = Hashtbl.Make(struct
+      type t = T.t * Data.t
+      let equal (t1,d1) (t2,d2) =
+        are_alpha_equiv t1 t2 && Data.equal d1 d2
+      let hash (t,d) =
+        combine_hash (T.hash_novar t) (Data.hash d)
+    end)
+
+    type t = {
+      mutable sub : t ConstTbl.t;
+      mutable var : t option; (* follow var *)
+      mutable data : unit TermDataTbl.t option;
+    }
+
+    let create size = {
+      sub=ConstTbl.create size;
+      var=None;
+      data=None;
+    }
+
+    let empty () = create 23
+
+    (* is the tree empty? *)
+    let is_empty tree =
+      ConstTbl.length tree.sub = 0 &&
+      (match tree.data with | None -> true | Some _ -> false) &&
+      (match tree.var with | None -> true | Some _ -> false)
+
+    (* fingerprint of a term *)
+    let term_to_fingerprint t =
+      match t with
+      | T.Var _ -> [| Var |]
+      | T.Apply (s, [||]) -> [| Const s |]
+      | T.Apply (s, arr) ->
+        let n = Array.length arr in
+        let a = Array.create (n+1) Var in
+        a.(0) <- Const s;
+        for i = 0 to n-1 do
+          a.(i+1) <- match arr.(i) with
+          | T.Var _ -> Var
+          | T.Apply (s, _) -> Const s
+        done;
+        a
+
+    (* recursive copy of an index *)
+    let rec copy t =
+      let var = match t.var with
+        | None -> None
+        | Some t' -> Some (copy t')
+      in
+      let sub = ConstTbl.create 5 in
+      ConstTbl.iter (fun s t' -> ConstTbl.add sub s (copy t')) t.sub;
+      let data = match t.data with
+        | None -> None
+        | Some set -> Some (TermDataTbl.copy set)
+      in
+      { var; sub; data; }
+
+    let add idx t data =
+      let arr = term_to_fingerprint t in
+      (* traverse the trie *)
+      let rec add tree i =
+        if i = Array.length arr
+        then
+          (* add to data *)
+          let set = match tree.data with
+            | None ->
+              let set = TermDataTbl.create 5 in
+              tree.data <- Some set;
+              set
+            | Some set -> set
+          in
+          TermDataTbl.replace set (t,data) ();
+          tree
+        else
+          match arr.(i) with
+          | Var ->
+            let tree' = match tree.var with
+            | None -> create 5
+            | Some tree' -> tree'
+            in
+            let tree' = add tree' (i+1) in
+            tree.var <- Some tree';
+            tree
+          | Const s ->
+            let tree' =
+              try ConstTbl.find tree.sub s
+              with Not_found -> create 5
+            in
+            let tree' = add tree' (i+1) in
+            ConstTbl.replace tree.sub s tree';
+            tree
+      in
+      add idx 0
+
+    let remove idx t data =
+      let arr = term_to_fingerprint t in
+      (* traverse the trie *)
+      let rec remove tree i =
+        if i = Array.length arr
+        then match tree.data with
+          | None -> tree (* not present *)
+          | Some set ->
+            TermDataTbl.remove set (t, data);
+            if TermDataTbl.length set = 0
+              then tree.data <- None; (* remove data set *)
+            tree
+        else match arr.(i) with
+        | Var ->
+          begin match tree.var with
+          | None -> tree
+          | Some tree' ->
+            let tree' = remove tree' (i+1) in
+            (if is_empty tree'
+              then tree.var <- None  (* remove subtree *)
+              else tree.var <- Some tree');
+            tree
+          end
+        | Const s ->
+          begin try
+            let tree' = ConstTbl.find tree.sub s in
+            let tree' = remove tree' (i+1) in
+            (if is_empty tree'
+              then ConstTbl.remove tree.sub s
+              else ConstTbl.replace tree.sub s tree');
+            tree
+          with Not_found -> tree
+          end
+      in
+      remove idx 0
+
+    (* unify [t] with terms indexed in [tree]. Successful unifiers
+        are passed to [k] along with the data *)
+    let unify ?(oc=false) tree s_tree t s_t k =
+      let arr = term_to_fingerprint t in
+      (* iterate on tree *)
+      let rec iter tree i =
+        if i = Array.length arr
+          then match tree with
+            | {data=Some set} ->
+              (* unify against the indexed terms now *)
+              TermDataTbl.iter
+                (fun (t',data) () ->
+                  try
+                    let subst = unify ~oc t' s_tree t s_t in
+                    k data subst
+                  with UnifFail -> ())
+                set
+            | _ -> ()
+          else begin
+            (* recurse into subterms which have a variable *)
+            begin match tree.var with
+            | None -> ()
+            | Some tree' -> iter tree' (i+1)
+            end;
+            match arr.(i) with
+            | Var ->
+              (* iterate on all subtrees *)
+              ConstTbl.iter
+                (fun _ tree' -> iter tree' (i+1))
+                tree.sub
+            | Const s ->
+              (* iterate on the subtree with same symbol, if present *)
+              try
+                let tree' = ConstTbl.find tree.sub s in
+                iter tree' (i+1)
+              with Not_found -> ()
+            end
+      in
+      iter tree 0
+
+    let rec size t =
+      let s = match t.var with | None -> 0 | Some t' -> size t' in
+      let s = match t.data with
+        | None -> s
+        | Some set -> TermDataTbl.length set + s
+      in
+      ConstTbl.fold
+        (fun _ t' s -> size t' + s)
+        t.sub s
+  end
+
   (** {2 DB} *)
   
   (* TODO aggregates? *)
@@ -755,58 +978,53 @@ module Make(Const : CONST) = struct
     type interpreter = T.t -> C.t list
       (** Interpreted predicate *)
 
+    module TermIndex = Index(struct
+      type t = T.t
+      let equal = are_alpha_equiv
+      let hash = T.hash_novar
+    end)
+
+    module ClauseIndex = Index(struct
+      type t = C.t
+      let equal = clause_are_alpha_equiv
+      let hash = C.hash_novar
+    end)
+
     type t = {
-      rules : unit CVariantTbl.t ConstTbl.t;  (* maps constants to non-fact clauses *)
-      facts : unit TVariantTbl.t ConstTbl.t;  (* maps constants to facts *)
+      mutable rules : ClauseIndex.t;  (* clauses with non null body *)
+      mutable facts : TermIndex.t;  (* set of facts *)
       interpreters : interpreter list ConstTbl.t;  (* constants -> interpreters *)
-      parent : t option;                      (* for further query *)
+      parent : t option;  (* for further query *)
     }
 
     let create ?parent () =
       let db = {
-        rules = ConstTbl.create 23;
-        facts = ConstTbl.create 23;
+        rules = ClauseIndex.empty ();
+        facts = TermIndex.empty ();
         interpreters = ConstTbl.create 7;
         parent;
       } in
       db
 
     let rec copy db =
-      let rules = ConstTbl.create 23 in
-      let facts = ConstTbl.create 23 in
+      let rules = ClauseIndex.copy db.rules in
+      let facts = TermIndex.copy db.facts in
+      let interpreters = ConstTbl.copy db.interpreters in
       let parent = match db.parent with
         | None -> None
-        | Some db' -> Some db'
+        | Some db' -> Some (copy db')
       in
-      ConstTbl.iter (fun c set -> ConstTbl.add rules c (CVariantTbl.copy set)) db.rules;
-      ConstTbl.iter (fun c set -> ConstTbl.add facts c (TVariantTbl.copy set)) db.facts;
-      let interpreters = ConstTbl.copy db.interpreters in
       { rules; facts; parent; interpreters; }
 
     let add_fact db t =
-      let sym = T.head_symbol t in
-      try
-        let set = ConstTbl.find db.facts sym in
-        TVariantTbl.replace set t ()
-      with Not_found ->
-        let set = TVariantTbl.create 5 in
-        TVariantTbl.add set t ();
-        ConstTbl.add db.facts sym set
+      db.facts <- TermIndex.add db.facts t t
 
     let add_facts db l = List.iter (add_fact db) l
 
     let add_clause db c =
       match c.C.body with
       | [] -> add_fact db c.C.head
-      | _::_ ->
-        let sym = C.head_symbol c in
-        try
-          let set = ConstTbl.find db.rules sym in
-          CVariantTbl.replace set c ()
-        with Not_found ->
-          let set= CVariantTbl.create 5 in
-          CVariantTbl.add set c ();
-          ConstTbl.add db.rules sym set
+      | _::_ -> db.rules <- ClauseIndex.add db.rules c.C.head c
 
     let add_clauses db l = List.iter (add_clause db) l
 
@@ -823,52 +1041,20 @@ module Make(Const : CONST) = struct
     let is_interpreted db c =
       ConstTbl.mem db.interpreters c
 
-    let num_facts db =
-      ConstTbl.fold
-        (fun _ set acc -> acc + TVariantTbl.length set)
-        db.facts 0
+    let num_facts db = TermIndex.size db.facts
 
-    let num_clauses db =
-      ConstTbl.fold
-        (fun _ set acc -> acc + CVariantTbl.length set)
-        db.rules 0
+    let num_clauses db = ClauseIndex.size db.rules
 
     let size db = num_facts db + num_clauses db
     
     let rec find_facts ?(oc=false) db s_db t s_t k =
-      assert (not (T.is_var t));
-      let c = T.head_symbol t in
-      (* forst, match with facts (can give answers directly). *)
-      begin try
-        let facts = ConstTbl.find db.facts c in
-        TVariantTbl.iter
-          (fun fact () ->
-            try
-              let subst = unify ~oc t s_t  fact s_db in
-              k fact subst
-            with UnifFail -> ())
-          facts;
-      with Not_found -> ()
-      end;
+      TermIndex.unify ~oc db.facts s_db t s_t k;
       match db.parent with
       | None -> ()
       | Some db' -> find_facts ~oc db' s_db t s_t k
     
     let rec find_clauses_head ?(oc=false) db s_db t s_t k =
-      assert (not (T.is_var t));
-      let c = T.head_symbol t in
-      begin try
-        let rules = ConstTbl.find db.rules c in
-        (* resolve with clauses *)
-        CVariantTbl.iter
-          (fun clause () ->
-            try
-              let subst = unify ~oc t s_t clause.C.head s_db in
-              k clause subst
-            with UnifFail -> ())
-          rules;
-      with Not_found -> ()
-      end;
+      ClauseIndex.unify ~oc db.rules s_db t s_t k;
       match db.parent with
       | None -> ()
       | Some db' -> find_clauses_head ~oc db' s_db t s_t k

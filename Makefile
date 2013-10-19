@@ -43,4 +43,23 @@ push_doc: prod
 tags:
 	otags *.ml *.mli
 
-.PHONY: tags push_doc
+MLIFILES=$(wildcard *.mli)
+
+man:
+	mkdir -p man/man3/
+	ocamlfind ocamldoc -I _build/ -man -d man/man3 $(MLIFILES)
+
+install_file: doc man
+	@rm datalog.install || true
+	@echo 'doc: [' >> datalog.install
+	@for m in $(wildcard datalog.docdir/*.html) ; do \
+		echo "  \"?$${m}\"" >> datalog.install; \
+	done
+	@echo ']' >> datalog.install
+	@echo 'man: [' >> datalog.install
+	@for m in $(wildcard man/man3/[A-Z]*.3o) ; do \
+		echo "  \"?$${m}\"" >> datalog.install; \
+	done
+	@echo ']' >> datalog.install
+
+.PHONY: tags push_doc man install_file

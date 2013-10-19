@@ -8,3 +8,5 @@ TAGS
 version.ml
 setup.log
 setup.data
+datalog.install
+man/

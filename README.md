@@ -51,7 +51,7 @@ then be unified with the goal.
 
 ## Documentation
 
-You can consult the [API documentation](http://cedeela.fr/~simon/software/datalog/Datalog.html).
+You can consult the [API documentation](http://cedeela.fr/~simon/software/datalog/).
 
 ## License
 

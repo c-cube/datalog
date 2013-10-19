@@ -1,13 +1,13 @@
 # OASIS_START
-# DO NOT EDIT (digest: 1a6399b8e07da40127c3c9ec2b94907b)
-BottomUp
-TopDown
-Default
-BottomUpAst
-BottomUpParser
-BottomUpLexer
-TopDownParser
-TopDownLexer
-TopDownAst
-Version
+# DO NOT EDIT (digest: a3def7e847591230d395d830d320e766)
+src/BottomUp
+src/TopDown
+src/Default
+src/BottomUpAst
+src/BottomUpParser
+src/BottomUpLexer
+src/TopDownParser
+src/TopDownLexer
+src/TopDownAst
+src/Version
 # OASIS_STOP

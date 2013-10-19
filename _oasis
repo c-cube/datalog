@@ -8,7 +8,7 @@ LicenseFile: LICENSE
 Plugins:     META (0.3), DevFiles (0.3)
 OCamlVersion: >= 4.00.1
 BuildTools:  ocamlbuild
-FilesAB: version.ml.ab
+FilesAB: src/version.ml.ab
 
 Synopsis: An in-memory datalog implementation for OCaml
 
@@ -19,7 +19,7 @@ Description:
     relations.
 
 Library "datalog"
-  Path:             .
+  Path:             src/
   Pack:             true
   Modules:          BottomUp, TopDown, Default, BottomUpAst, BottomUpParser,
                     BottomUpLexer, TopDownParser, TopDownLexer, TopDownAst,
@@ -36,7 +36,7 @@ Document datalog
 
 # CLI client using BottomUp
 Executable datalog_cli
-  Path: .
+  Path: src/
   Install: true
   CompiledObject: native
   MainIs: datalog_cli.ml
@@ -44,7 +44,7 @@ Executable datalog_cli
 
 # CLI client using TopDown
 Executable topDownCli
-  Path: .
+  Path: src/
   Install: false
   CompiledObject: native
   MainIs: topDownCli.ml

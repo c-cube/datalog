@@ -1,9 +1,17 @@
-## Datalog
+# Datalog
 
-An in-memory datalog implementation for OCaml. It focuses on big sets of rules
-with small relations, with frequent updates of the relations. Therefore, it
-tries to achieve good behavior in presence of incremental modifications of the
-relations.
+An in-memory datalog implementation for OCaml.
+
+It features two main algorithm:
+
+- bottom-up focuses on big sets of rules with small relations, with frequent
+  updates of the relations. Therefore, it tries to achieve good behavior in
+  presence of incremental modifications of the relations.
+- top-down resembles prolog (and allows nested subterms). It handles
+  stratified negation and only explores the part of the search space that
+  is relevant to a given query.
+
+### Bottom-Up
 
 This version, `backward`, features a backward-chaining operation. It resembles
 top-down algorithms because goals (possibly non-ground literals) can be
@@ -21,11 +29,25 @@ really true. Another example: if symbols are strings, then the goal
 definitions of `lt`, `le` (lower or equal) and `equal`; see the last example.
 Thus, goals are a way to call semantic attachments in a goal-oriented way.
 
-A relational query mode is available (its signature is in `Datalog.S.Query`,
-see [its documentation](http://cedeela.fr/~simon/software/datalog/Datalog.S.Query.html).
+A relational query mode is available (its signature is in
+`Datalog.BottomUp.S.Query`, see
+[its documentation](http://cedeela.fr/~simon/software/datalog/Datalog.BottomUp.S.Query.html).
 It allows to make one-shot queries on a `db` (the result won't update
 if facts or clauses are added later), with a simple relational model
 with negation.
+
+### Top-Down
+
+There is also a top-down, prolog-like algorithm that should be very efficient
+for querying only a subpart of the intensional database (the set of all
+facts that can be deduced from rules). The main module is `Datalog.TopDown`,
+and it has its own parser and lexer. An executable (not installed but compiled)
+is `topDownCli.native`. A very important distinction is that terms
+can be nested (hence the distinct AST and parsers).
+
+The format of semantic attachments for symbols is simpler: a handler, when
+queried with a given goal, can return a set of clauses whose heads will
+then be unified with the goal.
 
 ## Documentation
 
@@ -57,11 +79,13 @@ installed it on your system; just type in
     $ datalog_cli [problem_file]
 
 - The library, that should be in `_build/datalog.a`. It is also registered to
-  OCamlfind (in the `datalog` subdirectory). It exports a `Datalog`module, the
-  interface of which is described in `datalog.mli`. A functor is provided
-  in `Datalog.Logic.Make` to use your own datatype for symbols (constants);
+  OCamlfind (in the `datalog` subdirectory). It exports a `Datalog` packed
+  module. See the `.mli` files for documentation, or the man pages.
+  For both `Datalog.TopDown` and `Datalog.BottomUp`, functors are
+  provided to use your own datatype for symbols (constants);
   however, a default implementation with strings as symbols is available as
-  `Datalog.Logic.Default` (which is used by the parser `Datalog.Parser`).
+  `Datalog.Default` (which is used by the parser `Datalog.BottomUpParser`)
+  for bottom-up and in `Datalog.TopDown.Default` for top-down.
 
 A few example files, suffixed with `.pl`, can be found in `tests/`. For instance, you
 can try:

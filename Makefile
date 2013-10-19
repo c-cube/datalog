@@ -37,7 +37,7 @@ setup.data:
 
 # OASIS_STOP
 
-push_doc: prod
+push_doc: doc
 	scp -r datalog.docdir/* cedeela.fr:~/simon/root/software/datalog/
 
 tags:

@@ -82,6 +82,8 @@ module type S = sig
     val pp : out_channel -> t -> unit
     val fmt : Format.formatter -> t -> unit
 
+    val pp_tuple : out_channel -> t list -> unit
+
     module Tbl : Hashtbl.S with type key = t
   end
 
@@ -483,6 +485,18 @@ module Make(Const : CONST) = struct
     let pp oc t = output_string oc (to_string t)
 
     let fmt fmt t = Format.pp_print_string fmt (to_string t)
+
+    let pp_tuple oc l = match l with
+      | [] -> output_string oc "()"
+      | [t] -> Printf.fprintf oc "(%a)" pp t
+      | l ->
+        output_string oc "(";
+        List.iteri
+          (fun i t ->
+            if i > 0 then output_string oc ", ";
+            pp oc t)
+          l;
+        output_string oc ")"
 
     module Tbl = Hashtbl.Make(struct
       type t = term

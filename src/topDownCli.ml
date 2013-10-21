@@ -56,10 +56,11 @@ let parse_files_into db files =
         ())
     files
 
-let eval_query files goal =
+let eval_query files tuple goals =
   let db = D.DB.create () in
   if !builtin then D.DB.interpret_list db D.default_interpreters;
   if !unix then Datalog.TopDownUnix.Default.setup_handlers db;
+  (* print doc and exit, if asked *)
   if !doc then begin
     let l = List.sort compare (D.DB.help db) in
     print_endline "interpreted predicates:";
@@ -67,9 +68,9 @@ let eval_query files goal =
     exit 0
     end;
   parse_files_into db files;
-  let answers = D.ask ~oc:!oc db goal in
+  let answers = D.ask_lits ~oc:!oc db tuple goals in
   List.iter
-    (fun ans -> Printf.printf "  %a.\n" D.T.pp ans)
+    (fun ans -> Printf.printf "  %a.\n" D.T.pp_tuple ans)
     answers
 
 (** Options *)
@@ -82,7 +83,8 @@ let options =
   ; "-load", Arg.String add_file, "load given file"
   ; "-oc", Arg.Set oc, "enable occur-check in unification"
   ; "-builtin", Arg.Set builtin, "enable some builtin predicates"
-  ; "-unix", Arg.Unit (fun () -> unix := true; builtin:= true), "enable unix predicates (and builtin)"
+  ; "-unix", Arg.Unit (fun () -> unix := true; builtin:= true),
+      "enable unix predicates (and builtin)"
   ; "-doc", Arg.Set doc, "print interpreted predicates documentation and exit"
   ]
 
@@ -93,6 +95,9 @@ let _ =
   Arg.parse options (fun s -> goal := s) help;
   if !goal = ""
     then failwith "require a goal";
-  let goal = DParser.parse_term DLexer.token (Lexing.from_string !goal) in
-  let goal = D.term_of_ast ~ctx:(D.create_ctx ()) goal in
-  eval_query !files goal
+  (* parse goal literals *)
+  let tuple, goals = DParser.parse_query DLexer.token (Lexing.from_string !goal) in
+  let ctx = D.create_ctx () in
+  let tuple = List.map (D.term_of_ast ~ctx) tuple in
+  let goals = List.map (D.lit_of_ast ~ctx) goals in
+  eval_query !files tuple goals 

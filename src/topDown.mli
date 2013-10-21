@@ -82,6 +82,8 @@ module type S = sig
     val pp : out_channel -> t -> unit
     val fmt : Format.formatter -> t -> unit
 
+    val pp_tuple : out_channel -> t list -> unit
+
     module Tbl : Hashtbl.S with type key = t
   end
 

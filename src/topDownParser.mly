@@ -55,6 +55,9 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 %start parse_literals
 %type <TopDownAst.literal list> parse_literals
 
+%start parse_query
+%type <TopDownAst.term list * TopDownAst.literal list> parse_query
+
 %start parse_clause
 %type <TopDownAst.clause> parse_clause
 
@@ -74,6 +77,9 @@ parse_literal:
 
 parse_literals:
   | literals EOI { $1 }
+
+parse_query:
+  | tuple IF literals { $1, $3 }
 
 parse_clause:
   | clause EOI { $1 }
@@ -114,3 +120,5 @@ args:
   | subterm { [$1] }
   | subterm COMMA args  { $1 :: $3 }
 
+tuple:
+  | LEFT_PARENTHESIS args RIGHT_PARENTHESIS { $2 }

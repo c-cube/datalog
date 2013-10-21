@@ -40,6 +40,7 @@ let operator = ['_' '+' '<' '>' '=' '*' '-' '%' '^' '@' '|' ':' '!' '/']+
 let upper_word = upper_alpha alpha_numeric*
 let lower_word = lower_alpha alpha_numeric*
 let single_quoted = "'" ([^ '''] | "\\'")+ "'"
+let double_quoted = "\"" ([^ '''] | "\\'")+ "\""
 let one_line_comment = '%' [^ '\n' '\r']* ('\n' | "\r\n")
 let multi_line_comment = "/*" ( [^ '*'] | ('*' [^ '/']) )* "*/"
 let multi_line_comment_unclosed = "/*" ( [^ '*'] | ('*' [^ '/']) )* eof
@@ -65,6 +66,7 @@ rule token =
       | lower_word                   { LOWER_WORD(Lexing.lexeme lexbuf) }
       | upper_word                   { UPPER_WORD(Lexing.lexeme lexbuf) }
       | single_quoted                { SINGLE_QUOTED(Lexing.lexeme lexbuf) }
+      | double_quoted                { DOUBLE_QUOTED(Lexing.lexeme lexbuf) }
       | number                       { INT(Lexing.lexeme lexbuf) }
       | operator                     { OPERATOR(Lexing.lexeme lexbuf) }
       | _                            { fail ()}

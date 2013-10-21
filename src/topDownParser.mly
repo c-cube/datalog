@@ -24,6 +24,12 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
 %{
+  let remove_quotes s =
+    let n = String.length s in
+    if (s.[0] = '\'' && s.[n-1] = '\'') ||
+       (s.[0] = '"' && s.[n-1] = '"')
+      then String.sub s 1 (n-2)
+      else s
 %}
 
 %token LEFT_PARENTHESIS
@@ -34,6 +40,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 %token COMMA
 %token EOI
 %token <string> SINGLE_QUOTED
+%token <string> DOUBLE_QUOTED
 %token <string> LOWER_WORD
 %token <string> UPPER_WORD
 %token <string> INT
@@ -93,7 +100,8 @@ atom:
 
 term:
   | LOWER_WORD { TopDownAst.Apply ($1, []) }
-  | SINGLE_QUOTED { TopDownAst.Apply ($1, []) }
+  | SINGLE_QUOTED { TopDownAst.Apply (remove_quotes $1, []) }
+  | DOUBLE_QUOTED { TopDownAst.Apply (remove_quotes $1, []) }
   | LOWER_WORD LEFT_PARENTHESIS args RIGHT_PARENTHESIS
     { TopDownAst.Apply ($1, $3) }
 

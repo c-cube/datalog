@@ -31,6 +31,13 @@ module DParser = Datalog.TopDownParser
 module DLexer = Datalog.TopDownLexer
 module DAst = Datalog.TopDownAst
 
+(** Options *)
+
+let oc = ref false
+let builtin = ref false
+let unix = ref false
+let doc = ref false
+
 (** Evaluate query *)
 
 let parse_files_into db files =
@@ -49,12 +56,18 @@ let parse_files_into db files =
         ())
     files
 
-let eval_query ~unix ~builtin ~oc files goal =
+let eval_query files goal =
   let db = D.DB.create () in
-  if builtin then D.DB.interpret_list db D.default_interpreters;
-  if unix then Datalog.TopDownUnix.Default.setup_handlers db;
+  if !builtin then D.DB.interpret_list db D.default_interpreters;
+  if !unix then Datalog.TopDownUnix.Default.setup_handlers db;
+  if !doc then begin
+    let l = List.sort compare (D.DB.help db) in
+    print_endline "interpreted predicates:";
+    List.iter (fun s -> print_endline ("  " ^ s)) l;
+    exit 0
+    end;
   parse_files_into db files;
-  let answers = D.ask ~oc db goal in
+  let answers = D.ask ~oc:!oc db goal in
   List.iter
     (fun ans -> Printf.printf "  %a.\n" D.T.pp ans)
     answers
@@ -63,9 +76,6 @@ let eval_query ~unix ~builtin ~oc files goal =
 
 let files = ref []
 let add_file f = files := f :: !files
-let oc = ref false
-let builtin = ref false
-let unix = ref false
 
 let options =
   [ "-debug", Arg.Unit (fun () -> D.set_debug true), "enable debug"
@@ -73,6 +83,7 @@ let options =
   ; "-oc", Arg.Set oc, "enable occur-check in unification"
   ; "-builtin", Arg.Set builtin, "enable some builtin predicates"
   ; "-unix", Arg.Unit (fun () -> unix := true; builtin:= true), "enable unix predicates (and builtin)"
+  ; "-doc", Arg.Set doc, "print interpreted predicates documentation and exit"
   ]
 
 let help = "topDownCli [options] goal: evaluates goal"
@@ -84,4 +95,4 @@ let _ =
     then failwith "require a goal";
   let goal = DParser.parse_term DLexer.token (Lexing.from_string !goal) in
   let goal = D.term_of_ast ~ctx:(D.create_ctx ()) goal in
-  eval_query ~unix:!unix ~builtin:!builtin ~oc:!oc !files goal
+  eval_query !files goal

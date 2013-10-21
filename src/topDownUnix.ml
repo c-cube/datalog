@@ -74,7 +74,7 @@ module Make(TD : TopDown.S) = struct
     | _ -> []
       
   let handlers =
-    [ str2c "ls", _ls
+    [ str2c "ls", "ls(path, file): lists files in path", _ls
     ]
 
   let setup_handlers db = TD.DB.interpret_list db handlers

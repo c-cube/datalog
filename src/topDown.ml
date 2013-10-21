@@ -264,17 +264,20 @@ module type S = sig
     val add_clause : t -> C.t -> unit
     val add_clauses : t -> C.t list -> unit
 
-    val interpret : t -> const -> interpreter -> unit
+    val interpret : ?help:string -> t -> const -> interpreter -> unit
       (** Add an interpreter for the given constant. Goals that start with
           this constant will be given to all registered interpreters, all
           of which can add new clauses. The returned clauses must
           have the constant as head symbol. *)
 
-    val interpret_list : t -> (const * interpreter) list -> unit
-      (** Add several interpreters *)
+    val interpret_list : t -> (const * string * interpreter) list -> unit
+      (** Add several interpreters, with their documentation *)
 
     val is_interpreted : t -> const -> bool
       (** Is the constant interpreted by some OCaml code? *)
+
+    val help : t -> string list
+      (** Help messages for interpreted predicates *)
 
     val num_facts : t -> int
     val num_clauses : t -> int
@@ -1001,6 +1004,7 @@ module Make(Const : CONST) = struct
       mutable rules : ClauseIndex.t;  (* clauses with non null body *)
       mutable facts : TermIndex.t;  (* set of facts *)
       interpreters : interpreter list ConstTbl.t;  (* constants -> interpreters *)
+      mutable help : string list;
       parent : t option;  (* for further query *)
     }
 
@@ -1009,6 +1013,7 @@ module Make(Const : CONST) = struct
         rules = ClauseIndex.empty ();
         facts = TermIndex.empty ();
         interpreters = ConstTbl.create 7;
+        help = [];
         parent;
       } in
       db
@@ -1021,7 +1026,7 @@ module Make(Const : CONST) = struct
         | None -> None
         | Some db' -> Some (copy db')
       in
-      { rules; facts; parent; interpreters; }
+      { db with rules; facts; parent; interpreters; }
 
     let add_fact db t =
       db.facts <- TermIndex.add db.facts t t
@@ -1035,7 +1040,12 @@ module Make(Const : CONST) = struct
 
     let add_clauses db l = List.iter (add_clause db) l
 
-    let interpret db c inter =
+    let interpret ?help db c inter =
+      let help = match help with
+      | None -> Printf.sprintf "<symbol %s>" (Const.to_string c)
+      | Some h -> h
+      in
+      db.help <- help :: db.help;
       try
         let l = ConstTbl.find db.interpreters c in
         ConstTbl.replace db.interpreters c (inter :: l)
@@ -1043,10 +1053,18 @@ module Make(Const : CONST) = struct
         ConstTbl.add db.interpreters c [inter]
 
     let interpret_list db l =
-      List.iter (fun (c, i) -> interpret db c i) l
+      List.iter (fun (c, help, i) -> interpret ~help db c i) l
 
     let is_interpreted db c =
       ConstTbl.mem db.interpreters c
+
+    let help db =
+      let rec help acc db =
+        let acc = List.rev_append db.help acc in
+        match db.parent with
+        | None -> acc
+        | Some db' -> help acc db'
+      in help [] db
 
     let num_facts db = TermIndex.size db.facts
 
@@ -1440,20 +1458,20 @@ module Default = struct
           [] subgoals
       | _ -> []
     in
-    [ String "lt", _less
-    ; String "<", _less
-    ; String "le", _lesseq
-    ; String "<=", _lesseq
-    ; String "gt", _greater
-    ; String ">", _greater
-    ; String "ge", _greatereq
-    ; String ">=", _greatereq
-    ; String "eq", _eq
-    ; String "=", _eq
-    ; String "neq", _neq
-    ; String "!=", _neq
-    ; String "print", _print
-    ; String "eval", _eval
+    [ String "lt", "lt(a,b): true if a < b", _less
+    ; String "<", "a < b", _less
+    ; String "le", "leq(a,b): true if a <= b", _lesseq
+    ; String "<=", "a <= b", _lesseq
+    ; String "gt", "gt(a,b): true if a > b", _greater
+    ; String ">", "a > b", _greater
+    ; String "ge", "geq(a, b): true if a >= b", _greatereq
+    ; String ">=", "a >= b", _greatereq
+    ; String "eq", "eq(a,b): true if a = b", _eq
+    ; String "=", "=", _eq
+    ; String "neq", "neq(a, b): true if a != b", _neq
+    ; String "!=", "!=", _neq
+    ; String "print", "print(a): print a term on stdout", _print
+    ; String "eval", "eval(*goals): add eval(goals) :- g for each g in goals", _eval
     ]
 
   let setup_handlers db =

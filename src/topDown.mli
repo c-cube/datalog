@@ -264,17 +264,20 @@ module type S = sig
     val add_clause : t -> C.t -> unit
     val add_clauses : t -> C.t list -> unit
 
-    val interpret : t -> const -> interpreter -> unit
+    val interpret : ?help:string -> t -> const -> interpreter -> unit
       (** Add an interpreter for the given constant. Goals that start with
           this constant will be given to all registered interpreters, all
           of which can add new clauses. The returned clauses must
           have the constant as head symbol. *)
 
-    val interpret_list : t -> (const * interpreter) list -> unit
-      (** Add several interpreters *)
+    val interpret_list : t -> (const * string * interpreter) list -> unit
+      (** Add several interpreters, with their documentation *)
 
     val is_interpreted : t -> const -> bool
       (** Is the constant interpreted by some OCaml code? *)
+
+    val help : t -> string list
+      (** Help messages for interpreted predicates *)
 
     val num_facts : t -> int
     val num_clauses : t -> int
@@ -344,7 +347,7 @@ module Default : sig
   val clause_of_ast : ?ctx:name_ctx -> TopDownAst.clause -> C.t
   val clauses_of_ast : ?ctx:name_ctx -> TopDownAst.clause list -> C.t list
 
-  val default_interpreters : (const * DB.interpreter) list
+  val default_interpreters : (const * string * DB.interpreter) list
     (** List of default interpreters for some symbols, mostly
         infix predicates *)
 

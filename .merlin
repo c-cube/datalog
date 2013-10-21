@@ -1,4 +1,2 @@
-S datalog
-S .
-B _build
-B _build/datalog/
+S src
+B _build/src

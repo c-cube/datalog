@@ -32,8 +32,25 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
     semantics"
 *)
 
+(** {2 Signature for symbols} *)
+
+module type CONST = sig
+  type t
+
+  val equal : t -> t -> bool
+  val hash : t -> int
+  val to_string : t -> string
+  val of_string : string -> t
+
+  val query : t
+    (** Special symbol, that will never occur in any user-defined
+        clause or term. For strings, this may be the empty string "". *)
+end
+
 module type S = sig
-  type const
+  module Const : CONST
+
+  type const = Const.t
   
   val set_debug : bool -> unit
 
@@ -305,18 +322,6 @@ module type S = sig
         *)
 end
 
-module type CONST = sig
-  type t
-
-  val equal : t -> t -> bool
-  val hash : t -> int
-  val to_string : t -> string
-
-  val query : t
-    (** Special symbol, that will never occur in any user-defined
-        clause or term. For strings, this may be the empty string "". *)
-end
-
 (** {2 Generic implementation} *)
 
 let combine_hash hash i =
@@ -355,6 +360,8 @@ let _array_fold2 f acc a1 a2 =
   !acc
 
 module Make(Const : CONST) = struct
+  module Const = Const
+
   type const = Const.t
 
   let _debug_enabled = ref false
@@ -1342,17 +1349,16 @@ type const =
   | String of string
 
 module Default = struct
-  module Const = struct
+  module TD = Make(struct
     type t = const
     let equal a b = a = b
     let hash a = Hashtbl.hash a
     let to_string a = match a with
       | String s -> s
       | Int i -> string_of_int i
+    let of_string s = String s
     let query = String ""
-  end
-
-  module TD = Make(Const)
+  end)
  
   include TD
 
@@ -1449,4 +1455,7 @@ module Default = struct
     ; String "print", _print
     ; String "eval", _eval
     ]
+
+  let setup_handlers db =
+    DB.interpret_list db default_interpreters
 end

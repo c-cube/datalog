@@ -23,7 +23,7 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 *)
 
-(** {6 Top-Down Computation} *)
+(** {1 Top-Down Computation} *)
 
 (** This module implements top-down computation of Datalog queries
     with non-stratified negation.
@@ -32,8 +32,25 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
     semantics"
 *)
 
+(** {2 Signature for symbols} *)
+
+module type CONST = sig
+  type t
+
+  val equal : t -> t -> bool
+  val hash : t -> int
+  val to_string : t -> string
+  val of_string : string -> t
+
+  val query : t
+    (** Special symbol, that will never occur in any user-defined
+        clause or term. For strings, this may be the empty string "". *)
+end
+
 module type S = sig
-  type const
+  module Const : CONST
+
+  type const = Const.t
   
   val set_debug : bool -> unit
 
@@ -305,21 +322,9 @@ module type S = sig
         *)
 end
 
-module type CONST = sig
-  type t
-
-  val equal : t -> t -> bool
-  val hash : t -> int
-  val to_string : t -> string
-
-  val query : t
-    (** Special symbol, that will never occur in any user-defined
-        clause or term. For strings, this may be the empty string "". *)
-end
-
 (** {2 Generic implementation} *)
 
-module Make(Const : CONST) : S with type const = Const.t
+module Make(Const : CONST) : S with module Const = Const
 
 (** {2 Default Implementation with Strings} *)
 
@@ -328,10 +333,7 @@ type const =
   | String of string
 
 module Default : sig
-
-  module Const : CONST with type t = const
-
-  include S with type const = const
+  include S with type Const.t = const
 
   type name_ctx = (string, T.t) Hashtbl.t
 
@@ -345,4 +347,7 @@ module Default : sig
   val default_interpreters : (const * DB.interpreter) list
     (** List of default interpreters for some symbols, mostly
         infix predicates *)
+
+  val setup_handlers : DB.t -> unit
+    (** Load the default interpreters into the DB *)
 end

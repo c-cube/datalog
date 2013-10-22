@@ -102,7 +102,7 @@ literal:
 
 atom:
   | term { $1 }
-  | term OPERATOR term { TopDownAst.Apply($2, [$1; $3]) }
+  | subterm OPERATOR subterm { TopDownAst.Apply($2, [$1; $3]) }
 
 term:
   | LOWER_WORD { TopDownAst.Apply ($1, []) }

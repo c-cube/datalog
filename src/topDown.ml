@@ -90,13 +90,25 @@ module type S = sig
   (** {2 Literals} *)
 
   module Lit : sig
+    type aggregate = {
+      left : T.t;
+      constructor : const;
+      var : T.t;
+      guard : T.t;
+    } (* aggregate: ag_left = ag_constructor set
+        where set is the set of bindings to ag_var
+        that satisfy ag_guard *)
+
     type t =
     | LitPos of T.t
     | LitNeg of T.t
+    | LitAggr of aggregate
 
     val mk_pos : T.t -> t
     val mk_neg : T.t -> t
     val mk : bool -> T.t -> t
+
+    val mk_aggr : left:T.t -> constructor:const -> var:T.t -> guard:T.t -> t
 
     val eq : t -> t -> bool
     val hash : t -> int
@@ -506,39 +518,85 @@ module Make(Const : CONST) = struct
   end
 
   module Lit = struct
+    type aggregate = {
+      left : T.t;
+      constructor : const;
+      var : T.t;
+      guard : T.t;
+    } (* aggregate: ag_left = ag_constructor set
+        where set is the set of bindings to ag_var
+        that satisfy ag_guard *)
+
     type t =
     | LitPos of T.t
     | LitNeg of T.t
+    | LitAggr of aggregate
 
     let mk_pos t = LitPos t
     let mk_neg t = LitNeg t
     let mk sign t =
       if sign then LitPos t else LitNeg t
 
+    let mk_aggr ~left ~constructor ~var ~guard =
+      LitAggr {
+        left;
+        constructor;
+        var;
+        guard;
+      }
+
     let eq lit1 lit2 = match lit1, lit2 with
     | LitPos t1, LitPos t2
     | LitNeg t1, LitNeg t2 -> T.eq t1 t2
+    | LitAggr a1, LitAggr a2 ->
+      T.eq a1.left a2.left &&
+      T.eq a1.var a2.var &&
+      T.eq a1.guard a2.guard &&
+      Const.equal a1.constructor a2.constructor
     | _ -> false
 
     let hash lit = match lit with
     | LitPos t -> T.hash t
     | LitNeg t -> T.hash t + 65599 * 13
+    | LitAggr a ->
+      combine_hash
+        (combine_hash (T.hash a.left) (T.hash a.var))
+        (combine_hash (Const.hash a.constructor) (T.hash a.guard))
 
     let hash_novar lit = match lit with
     | LitPos t -> T.hash_novar t
     | LitNeg t -> T.hash_novar t + 65599 * 13
+    | LitAggr a ->
+      combine_hash
+        (combine_hash (T.hash_novar a.left) (T.hash_novar a.var))
+        (combine_hash (Const.hash a.constructor) (T.hash_novar a.guard))
 
     let to_term = function
     | LitPos t
     | LitNeg t -> t
+    | LitAggr a ->
+      let head = Const.of_string "aggr" in
+      T.mk_apply head [| a.left; T.mk_const a.constructor; a.var; a.guard |]
 
     let fmap f lit = match lit with
     | LitPos t -> LitPos (f t)
     | LitNeg t -> LitNeg (f t)
+    | LitAggr a -> LitAggr {
+      a with
+      left = f a.left;
+      var = f a.var;
+      guard = f a.guard;
+    }
 
     let to_string lit = match lit with
     | LitPos t -> T.to_string t
     | LitNeg t -> Printf.sprintf "~%s" (T.to_string t)
+    | LitAggr a ->
+      Printf.sprintf "%s := %s %s : %s"
+        (T.to_string a.left)
+        (Const.to_string a.constructor)
+        (T.to_string a.var)
+        (T.to_string a.guard)
 
     let pp oc lit = output_string oc (to_string lit)
 
@@ -678,12 +736,20 @@ module Make(Const : CONST) = struct
       match lit with
       | Lit.LitPos t -> Lit.LitPos (eval subst ~renaming t scope)
       | Lit.LitNeg t -> Lit.LitNeg (eval subst ~renaming t scope)
+      | Lit.LitAggr a ->
+        Lit.LitAggr {
+          a with
+          Lit.left = eval subst ~renaming a.Lit.left scope;
+          Lit.var = eval subst ~renaming a.Lit.var scope;
+          Lit.guard = eval subst ~renaming a.Lit.guard scope;
+        }
 
     let eval_lits subst ~renaming lits scope =
       List.map
-        (function
+        (fun lit -> match lit with
         | Lit.LitPos t -> Lit.LitPos (eval subst ~renaming t scope)
-        | Lit.LitNeg t -> Lit.LitNeg (eval subst ~renaming t scope))
+        | Lit.LitNeg t -> Lit.LitNeg (eval subst ~renaming t scope)
+        | Lit.LitAggr _ -> eval_lit subst ~renaming lit scope)
         lits
 
     let eval_clause subst ~renaming c scope =
@@ -985,8 +1051,6 @@ module Make(Const : CONST) = struct
   end
 
   (** {2 DB} *)
-  
-  (* TODO aggregates? *)
 
   (* TODO: dependency graph to check whether program is stratified *)
 
@@ -1137,6 +1201,7 @@ module Make(Const : CONST) = struct
       | Done
       | Enter of goal_entry * action
       | NewClause of goal_entry * C.t * action
+      | Aggregate of goal_entry * C.t * T.t * action
       | Exit of goal_entry * action
 
     and goal_entry = {
@@ -1185,6 +1250,10 @@ module Make(Const : CONST) = struct
     let _iter_answers k node =
       T.Tbl.iter (fun t () -> k t) node.answers
 
+    let _get_aggr c = match c.C.body with
+      | Lit.LitAggr a :: _ -> a
+      | _ -> assert false
+
     (* main loop for the DFS traversal of SLG resolution *)
     let rec slg_main ~query =
       match query.stack with
@@ -1204,6 +1273,12 @@ module Make(Const : CONST) = struct
         query.stack <- stack';
         (* process new clause in the forest of [goal_entry] *)
         slg_newclause ~query goal_entry clause;
+        slg_main ~query
+      | Aggregate (goal_entry, clause, subgoal, stack') ->
+        query.stack <- stack';
+        (* compute the answer of the aggregate *)
+        let subgoal_entry = TVariantTbl.find query.forest subgoal in
+        slg_complete_aggregate ~query goal_entry clause subgoal_entry.answers;
         slg_main ~query
 
     (* solve the [goal] by all possible means. Returns the goal_entry
@@ -1266,6 +1341,9 @@ module Make(Const : CONST) = struct
         (* negative subgoal: if neg_subgoal is solved, continue with clause' *)
         let clause' = {clause with C.body=body'; } in
         slg_negative ~query goal_entry clause' neg_subgoal
+      | (Lit.LitAggr a)::_ ->
+        (* aggregate: subgoal is a.guard *)
+        slg_aggregate ~query goal_entry clause a.Lit.guard
       | _ -> failwith "slg_newclause with non-ground negative goal"
 
     (* add an answer [ans] to the given [goal]. If [ans] is new,
@@ -1322,6 +1400,45 @@ module Make(Const : CONST) = struct
             subgoal_entry.negs <- (goal_entry, clause) :: subgoal_entry.negs
         else
           () (* failure, there are already positive answers; do nothing *)
+
+    (* subgoal is the guard of the agregate in [clause] *)
+    and slg_aggregate ~query goal_entry clause subgoal =
+      _debug "slg_aggregate %a with clause %a, subgoal %a"
+        T.pp goal_entry.goal C.pp clause T.pp subgoal;
+      (* before querying subgoal, prepare to gather its results *)
+      query.stack <- Aggregate(goal_entry, clause, subgoal, query.stack);
+      (* start subquery, and wait for it to complete *)
+      let _ = slg_solve ~query subgoal in
+      ()
+
+    (* called exactly once, when the subgoal has completed *)
+    and slg_complete_aggregate ~query goal_entry clause answers =
+      _debug "slg_complete_aggregate %a with %a (%d ans)"
+        T.pp goal_entry.goal C.pp clause (T.Tbl.length answers);
+      let a = _get_aggr clause in
+      (* gather all answers *)
+      let renaming = _get_renaming ~query in
+      let l = T.Tbl.fold
+        (fun t () acc ->
+          try
+            (* unify a.guard with the answer, and extract the binding of a.var *)
+            let subst = unify a.Lit.guard 0 t 1 in
+            let t' = Subst.eval subst ~renaming a.Lit.var 0 in
+            t' :: acc
+          with UnifFail -> failwith "could not unify with var?!")
+        answers []
+      in
+      let right = T.mk_apply_l a.Lit.constructor l in
+      (* now unify left with right *)
+      try
+        let subst = unify ~oc:query.oc a.Lit.left 0 right 1 in
+        let renaming = _get_renaming ~query in
+        let answer = Subst.eval subst ~renaming a.Lit.left 0 in
+        (* add answer *)
+        slg_answer ~query goal_entry answer
+      with UnifFail ->
+        (* answer aggregate does not match left *)
+        ()
 
     (* goal is completely evaluated, no more answers will arrive. *)
     and slg_complete ~query goal_entry =
@@ -1400,25 +1517,32 @@ module Default = struct
 
   let create_ctx () = Hashtbl.create 5
 
+  let _mk_var ~ctx name =
+    try
+      Hashtbl.find ctx name
+    with Not_found ->
+      let n = Hashtbl.length ctx in
+      let v = T.mk_var n in
+      Hashtbl.add ctx name v;
+      v
+
   let rec term_of_ast ~ctx t = match t with
   | A.Apply (s, args) ->
     let args = List.map (term_of_ast ~ctx) args in
     T.mk_apply_l (String s) args
   | A.Int i ->
     T.mk_const (Int i)
-  | A.Var s ->
-    begin try
-      Hashtbl.find ctx s
-    with Not_found ->
-      let n = Hashtbl.length ctx in
-      let v = T.mk_var n in
-      Hashtbl.add ctx s v;
-      v
-    end
+  | A.Var s -> _mk_var ~ctx s
   and lit_of_ast ~ctx lit =
     match lit with
     | A.LitPos t -> Lit.mk_pos (term_of_ast ~ctx t)
     | A.LitNeg t -> Lit.mk_neg (term_of_ast ~ctx t)
+    | A.LitAggr a ->
+      Lit.mk_aggr
+        ~constructor:(Const.of_string a.A.ag_constructor)
+        ~left:(term_of_ast ~ctx a.A.ag_left)
+        ~guard:(term_of_ast ~ctx a.A.ag_guard)
+        ~var:(_mk_var ~ctx a.A.ag_var)
 
   let clause_of_ast ?(ctx=Hashtbl.create 3) c = match c with
     | (head, body) ->

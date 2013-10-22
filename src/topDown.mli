@@ -90,13 +90,25 @@ module type S = sig
   (** {2 Literals} *)
 
   module Lit : sig
+    type aggregate = {
+      left : T.t;
+      constructor : const;
+      var : T.t;
+      guard : T.t;
+    } (* aggregate: ag_left = ag_constructor set
+        where set is the set of bindings to ag_var
+        that satisfy ag_guard *)
+
     type t =
     | LitPos of T.t
     | LitNeg of T.t
+    | LitAggr of aggregate
 
     val mk_pos : T.t -> t
     val mk_neg : T.t -> t
     val mk : bool -> T.t -> t
+
+    val mk_aggr : left:T.t -> constructor:const -> var:T.t -> guard:T.t -> t
 
     val eq : t -> t -> bool
     val hash : t -> int

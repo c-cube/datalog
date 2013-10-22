@@ -35,9 +35,11 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 %token LEFT_PARENTHESIS
 %token RIGHT_PARENTHESIS
 %token DOT
+%token COLON
 %token IF
 %token NOT
 %token COMMA
+%token AGGR_EQUAL
 %token EOI
 %token <string> SINGLE_QUOTED
 %token <string> DOUBLE_QUOTED
@@ -99,6 +101,11 @@ literals:
 literal:
   | atom { TopDownAst.LitPos $1 }
   | NOT atom { TopDownAst.LitNeg $2 }
+  | subterm AGGR_EQUAL LOWER_WORD UPPER_WORD COLON term
+    { TopDownAst.(LitAggr
+      { ag_left=$1; ag_constructor= $3; ag_var= $4; ag_guard= $6}
+      )
+    }
 
 atom:
   | term { $1 }

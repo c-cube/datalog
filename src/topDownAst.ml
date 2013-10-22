@@ -31,9 +31,19 @@ type term =
   | Apply of string * term list
   | Int of int
 
+type aggregate = {
+  ag_left : term;
+  ag_constructor : string;
+  ag_var : string;
+  ag_guard : term;
+} (* aggregate: ag_left = ag_constructor set
+    where set is the set of bindings to ag_var
+    that satisfy ag_guard *)
+
 type literal =
   | LitPos of term
   | LitNeg of term
+  | LitAggr of aggregate
 
 type clause = term * literal list
 

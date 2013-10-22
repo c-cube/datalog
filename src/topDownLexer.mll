@@ -60,6 +60,8 @@ rule token =
       | '('                          { LEFT_PARENTHESIS }
       | ')'                          { RIGHT_PARENTHESIS }
       | '.'                          { DOT }
+      | ":"                          { COLON }
+      | ":="                         { AGGR_EQUAL }
       | ":-"                         { IF }
       | "<-"                         { IF }
       | ","                          { COMMA }

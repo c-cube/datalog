@@ -1052,6 +1052,10 @@ module Make(Const : CONST) = struct
 
   (** {2 DB} *)
 
+  (* TODO: aggregate {b functions} that collapse all their arguments
+            into a constant (e.g., sum, average, max, min).
+            Plug this into [slg_complete_aggregate]. *)
+
   (* TODO: dependency graph to check whether program is stratified *)
 
   (* TODO: reification of DB, with open(db) predicate that evaluates the rest

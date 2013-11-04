@@ -215,13 +215,51 @@ module type S = sig
   val clause_are_alpha_equiv : C.t -> C.t -> bool
     (** Alpha equivalence of clauses. *)
 
+  (** {2 Special built-in functions}
+  The built-in functions are symbols that have a special {b meaning}. The
+  meaning is given by a set of OCaml functions that can evaluate applications
+  of the function symbol to arguments.
+
+  For instance, [sum] is a special built-in function that tries to add its
+  arguments if those are constants.
+
+  {b Note} that a constant will never be interpreted.
+  *)
+
+  module BuiltinFun : sig
+    type t = T.t -> T.t option
+
+    type map
+      (** Map symbols to builtin functions. Every symbol can only have at
+          most one built-in function. *)
+
+    val create : unit -> map
+
+    val add : map -> Const.t -> t -> unit
+      (** Interpret the given constant by the given function. The function
+          can assume that any term is it given as a parameter has the
+          constant as head. *)
+
+    val add_list : map -> (Const.t * t) list -> unit
+
+    val interpreted : map -> Const.t -> bool
+      (** Is the constant interpreted by a built-in function? *)
+
+    val eval : map -> T.t -> T.t
+      (** Evaluate the term at root *)
+  end
+
   (** The following hashtables use alpha-equivalence checking instead of
       regular, syntactic equality *)
 
   module TVariantTbl : Hashtbl.S with type key = T.t
   module CVariantTbl : Hashtbl.S with type key = C.t
 
-  (** {2 Index} *)
+  (** {2 Index}
+  An index is a specialized data structured that is used to efficiently
+  store and retrieve data by a key, where the key is a term. Retrieval
+  involves finding all data associated with terms that match,
+  or unify with, a given term. *)
 
   module Index(Data : Hashtbl.HashedType) : sig
     type t
@@ -333,6 +371,14 @@ module type S = sig
     val is_interpreted : t -> const -> bool
       (** Is the constant interpreted by some OCaml code? *)
 
+    val add_builtin : t -> Const.t -> BuiltinFun.t -> unit
+      (** Add a builtin fun *)
+
+    val builtin_funs : t -> BuiltinFun.map
+
+    val eval : t -> T.t -> T.t
+      (** Evaluate the given term at root *)
+
     val help : t -> string list
       (** Help messages for interpreted predicates *)
 
@@ -366,7 +412,7 @@ module type S = sig
         @param oc enable occur-check in unification (default [false]) *)
 
   val ask_lits : ?oc:bool -> ?with_rules:C.t list -> ?with_facts:T.t list ->
-                 DB.t -> T.t list -> Lit.t list -> T.t list list
+                 DB.t -> T.t list -> Lit.t list -> T.t list
     (** Extension of {! ask}, where the query ranges over the list of
         variables (the term list), all of which must be bound in
         the list of literals that form a constraint.
@@ -408,6 +454,9 @@ module Default : sig
     (** List of default interpreters for some symbols, mostly
         infix predicates *)
 
-  val setup_handlers : DB.t -> unit
-    (** Load the default interpreters into the DB *)
+  val builtin : (const * BuiltinFun.t) list
+    (** Default builtin functions *)
+
+  val setup_default : DB.t -> unit
+    (** Load the default interpreters and builtin functions into the DB *)
 end

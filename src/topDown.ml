@@ -215,13 +215,51 @@ module type S = sig
   val clause_are_alpha_equiv : C.t -> C.t -> bool
     (** Alpha equivalence of clauses. *)
 
+  (** {2 Special built-in functions}
+  The built-in functions are symbols that have a special {b meaning}. The
+  meaning is given by a set of OCaml functions that can evaluate applications
+  of the function symbol to arguments.
+
+  For instance, [sum] is a special built-in function that tries to add its
+  arguments if those are constants.
+
+  {b Note} that a constant will never be interpreted.
+  *)
+
+  module BuiltinFun : sig
+    type t = T.t -> T.t option
+
+    type map
+      (** Map symbols to builtin functions. Every symbol can only have at
+          most one built-in function. *)
+
+    val create : unit -> map
+
+    val add : map -> Const.t -> t -> unit
+      (** Interpret the given constant by the given function. The function
+          can assume that any term is it given as a parameter has the
+          constant as head. *)
+
+    val add_list : map -> (Const.t * t) list -> unit
+
+    val interpreted : map -> Const.t -> bool
+      (** Is the constant interpreted by a built-in function? *)
+
+    val eval : map -> T.t -> T.t
+      (** Evaluate the term at root *)
+  end
+
   (** The following hashtables use alpha-equivalence checking instead of
       regular, syntactic equality *)
 
   module TVariantTbl : Hashtbl.S with type key = T.t
   module CVariantTbl : Hashtbl.S with type key = C.t
 
-  (** {2 Index} *)
+  (** {2 Index}
+  An index is a specialized data structured that is used to efficiently
+  store and retrieve data by a key, where the key is a term. Retrieval
+  involves finding all data associated with terms that match,
+  or unify with, a given term. *)
 
   module Index(Data : Hashtbl.HashedType) : sig
     type t
@@ -333,6 +371,14 @@ module type S = sig
     val is_interpreted : t -> const -> bool
       (** Is the constant interpreted by some OCaml code? *)
 
+    val add_builtin : t -> Const.t -> BuiltinFun.t -> unit
+      (** Add a builtin fun *)
+
+    val builtin_funs : t -> BuiltinFun.map
+
+    val eval : t -> T.t -> T.t
+      (** Evaluate the given term at root *)
+
     val help : t -> string list
       (** Help messages for interpreted predicates *)
 
@@ -366,7 +412,7 @@ module type S = sig
         @param oc enable occur-check in unification (default [false]) *)
 
   val ask_lits : ?oc:bool -> ?with_rules:C.t list -> ?with_facts:T.t list ->
-                 DB.t -> T.t list -> Lit.t list -> T.t list list
+                 DB.t -> T.t list -> Lit.t list -> T.t list
     (** Extension of {! ask}, where the query ranges over the list of
         variables (the term list), all of which must be bound in
         the list of literals that form a constraint.
@@ -888,6 +934,37 @@ module Make(Const : CONST) = struct
     with UnifFail ->
       false
 
+  module BuiltinFun = struct
+    type t = T.t -> T.t option
+
+    type map = t ConstTbl.t
+    
+    let create () = ConstTbl.create 17
+
+    let add map c f =
+      ConstTbl.replace map c f
+
+    let add_list map l =
+      List.iter (fun (c,f) -> add map c f) l
+
+    let interpreted map c = ConstTbl.mem map c
+
+    let rec eval map t = match t with
+      | T.Var _ -> t
+      | T.Apply (_, [| |]) -> t   (* non interpreted *)
+      | T.Apply (c, _) ->
+        let t' =
+          try
+            let f = ConstTbl.find map c in
+            begin match f t with
+              | None -> t
+              | Some t' -> t'
+            end
+          with Not_found -> t
+        in
+        if t == t' then t else eval map t'
+  end
+
   (* hashtable on terms that use alpha-equiv-checking as equality *)
   module TVariantTbl = Hashtbl.Make(struct
     type t = T.t
@@ -1226,6 +1303,7 @@ module Make(Const : CONST) = struct
       mutable rules : ClauseIndex.t;  (* clauses with non null body *)
       mutable facts : TermIndex.t;  (* set of facts *)
       interpreters : interpreter list ConstTbl.t;  (* constants -> interpreters *)
+      builtin : BuiltinFun.map;
       mutable help : string list;
       parent : t option;  (* for further query *)
     }
@@ -1235,6 +1313,7 @@ module Make(Const : CONST) = struct
         rules = ClauseIndex.empty ();
         facts = TermIndex.empty ();
         interpreters = ConstTbl.create 7;
+        builtin = BuiltinFun.create ();
         help = [];
         parent;
       } in
@@ -1261,6 +1340,19 @@ module Make(Const : CONST) = struct
       | _::_ -> db.rules <- ClauseIndex.add db.rules c.C.head c
 
     let add_clauses db l = List.iter (add_clause db) l
+
+    let builtin_funs db = db.builtin
+
+    let add_builtin db c f = BuiltinFun.add db.builtin c f
+
+    let rec eval db t =
+      let t' = BuiltinFun.eval db.builtin t in
+      if t == t'
+        (* try with parent DB, may have more success *)
+        then match db.parent with
+          | None -> t'
+          | Some db' -> eval db' t'
+        else eval db t'
 
     let interpret ?help db c inter =
       let help = match help with
@@ -1578,6 +1670,8 @@ module Make(Const : CONST) = struct
         let subst = unify ~oc:query.oc a.Lit.left 0 right 1 in
         let renaming = _get_renaming ~query in
         let answer = Subst.eval subst ~renaming a.Lit.left 0 in
+        (* eval *)
+        let answer = DB.eval query.db answer in
         (* add answer *)
         slg_answer ~query goal_entry answer
       with UnifFail ->
@@ -1627,12 +1721,7 @@ module Make(Const : CONST) = struct
     let clause = C.mk_clause head lits in
     let with_rules = clause :: with_rules in
     let l = ask ~oc ~with_rules ~with_facts db head in
-    List.map
-      (fun t -> match t with
-        | T.Apply (_, args) -> Array.to_list args
-        | T.Var _ -> assert false)
-      l
-
+    l
 end
 
 (** {2 Default Implementation with Strings} *)
@@ -1756,6 +1845,26 @@ module Default = struct
     ; String "eval", "eval(*goals): add eval(goals) :- g for each g in goals", _eval
     ]
 
-  let setup_handlers db =
-    DB.interpret_list db default_interpreters
+  let _sum t = match t with
+    | T.Apply (_, arr) ->
+      begin try
+        let x = Array.fold_left
+          (fun x t' -> match t' with
+            | T.Apply (Int i, [| |]) -> i+x
+            | _ -> raise Exit)
+          0 arr
+        in
+        Some (T.mk_const (Int x))
+      with Exit -> None
+      end
+    | _ -> None
+
+  let builtin =
+    [ String "sum", _sum
+    ]
+
+  let setup_default db =
+    DB.interpret_list db default_interpreters;
+    BuiltinFun.add_list (DB.builtin_funs db) builtin;
+    ()
 end

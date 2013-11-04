@@ -58,7 +58,7 @@ let parse_files_into db files =
 
 let eval_query files tuple goals =
   let db = D.DB.create () in
-  if !builtin then D.DB.interpret_list db D.default_interpreters;
+  if !builtin then D.setup_default db;
   if !unix then Datalog.TopDownUnix.Default.setup_handlers db;
   (* print doc and exit, if asked *)
   if !doc then begin
@@ -70,7 +70,7 @@ let eval_query files tuple goals =
   parse_files_into db files;
   let answers = D.ask_lits ~oc:!oc db tuple goals in
   List.iter
-    (fun ans -> Printf.printf "  %a.\n" D.T.pp_tuple ans)
+    (fun ans -> Printf.printf "  %a.\n" D.T.pp ans)
     answers
 
 (** Options *)

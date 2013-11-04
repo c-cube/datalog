@@ -239,13 +239,56 @@ module type S = sig
     val remove : t -> T.t -> Data.t -> t
       (** Remove the term->data binding. This modifies the index! *)
 
+    val generalizations : ?oc:bool -> t -> scope -> T.t -> scope ->
+                          (Data.t -> Subst.t -> unit) -> unit
+      (** Retrieve data associated with terms that are a generalization
+          of the given query term *)
+
     val unify : ?oc:bool -> t -> scope -> T.t -> scope ->
                 (Data.t -> Subst.t -> unit) -> unit
       (** Retrieve data associated with terms that unify with the given
           query term *)
 
+    val iter : t -> (T.t -> Data.t -> unit) -> unit
+      (** Iterate on bindings *)
+
     val size : t -> int
       (** Number of bindings *)
+  end
+
+  (** {2 Rewriting}
+  Rewriting consists in having a set of {b rules}, oriented from left to right,
+  that we will write [l -> r] (say "l rewrites to r"). Any term t that l matches
+  is {b rewritten} into r by replacing it by sigma(r), where sigma(l) = t.
+  *)
+
+  module Rewriting : sig
+    type rule = T.t * T.t
+
+    type t
+      (** A rewriting system. It is basically a mutable set of rewrite rules. *)
+
+    val create : unit -> t
+      (** New rewriting system *)
+
+    val copy : t -> t
+      (** Copy the rewriting system *)
+
+    val add : t -> rule -> unit
+      (** Add a rule to the system *)
+
+    val add_list : t -> rule list -> unit
+
+    val to_list : t -> rule list
+      (** List of rules *)
+
+    val rewrite_root : t -> T.t -> T.t
+      (** rewrite the term, but only its root. Subterms are not rewritten
+          at all. *)
+
+    val rewrite : t -> T.t -> T.t
+      (** Normalize the term recursively. The returned type cannot be rewritten
+          any further, assuming the rewriting system is {b terminating} *)
   end
 
   (** {2 DB} *)
@@ -705,6 +748,9 @@ module Make(Const : CONST) = struct
     let create_renaming () =
       Hashtbl.create 7
 
+    (* special renaming *)
+    let __dummy_renaming = create_renaming ()
+
     let reset_renaming r = Hashtbl.clear r
 
     let rename ~renaming v scope = match v with
@@ -723,6 +769,7 @@ module Make(Const : CONST) = struct
     let rec eval subst ~renaming t scope =
       let t, scope = deref subst t scope in
       match t with
+      | T.Var _ when renaming == __dummy_renaming -> t (* keep *)
       | T.Var _ -> rename ~renaming t scope  (* free var *)
       | T.Apply (c, [| |]) -> t
       | T.Apply (c, args) ->
@@ -1039,6 +1086,49 @@ module Make(Const : CONST) = struct
       in
       iter tree 0
 
+    (* same as {!unify} but for matching *)
+    let generalizations ?(oc=false) tree s_tree t s_t k =
+      let arr = term_to_fingerprint t in
+      (* iterate on tree *)
+      let rec iter tree i =
+        if i = Array.length arr
+          then match tree with
+            | {data=Some set} ->
+              (* unify against the indexed terms now *)
+              TermDataTbl.iter
+                (fun (t',data) () ->
+                  try
+                    let subst = match_ ~oc t' s_tree t s_t in
+                    k data subst
+                  with UnifFail -> ())
+                set
+            | _ -> ()
+          else begin
+            (* recurse into subterms which have a variable *)
+            begin match tree.var with
+            | None -> ()
+            | Some tree' -> iter tree' (i+1)
+            end;
+            match arr.(i) with
+            | Var -> ()  (* only variable does it *)
+            | Const s ->
+              (* iterate on the subtree with same symbol, if present *)
+              try
+                let tree' = ConstTbl.find tree.sub s in
+                iter tree' (i+1)
+              with Not_found -> ()
+            end
+      in
+      iter tree 0
+
+    let rec iter t f =
+      (match t.var with | None -> () | Some t' -> iter t' f);
+      (match t.data with | None -> () | Some set ->
+        TermDataTbl.iter (fun (t,data) () -> f t data) set);
+      ConstTbl.iter
+        (fun _ t' -> iter t' f)
+        t.sub
+
     let rec size t =
       let s = match t.var with | None -> 0 | Some t' -> size t' in
       let s = match t.data with
@@ -1048,6 +1138,62 @@ module Make(Const : CONST) = struct
       ConstTbl.fold
         (fun _ t' s -> size t' + s)
         t.sub s
+  end
+
+  (** {Rewriting} *)
+
+  module TermIndex = Index(struct
+    type t = T.t
+    let equal = are_alpha_equiv
+    let hash = T.hash_novar
+  end)
+
+  module Rewriting = struct
+    type rule = T.t * T.t
+
+    type t = {
+      mutable idx : TermIndex.t;
+    }
+
+    let create () = {
+      idx = TermIndex.empty ();
+    }
+
+    let copy trs = { idx = TermIndex.copy trs.idx; }
+
+    let add trs (l,r) =
+      trs.idx <- TermIndex.add trs.idx l r
+
+    let add_list trs l = List.iter (add trs) l
+
+    let to_list trs =
+      let acc = ref [] in
+      TermIndex.iter trs.idx
+        (fun l r -> acc := (l,r) :: !acc);
+      !acc
+
+    exception RewriteInto of T.t * Subst.t * scope
+
+    let rec rewrite_root trs t =
+      match t with
+      | T.Var _ -> t
+      | T.Apply (s, arr) ->
+        try
+          TermIndex.generalizations trs.idx 1 t 0
+            (fun r subst -> raise (RewriteInto (r, subst, 1)));
+          t  (* didn't fire *)
+        with RewriteInto (r, subst, scope) ->
+          let t' = Subst.eval subst ~renaming:Subst.__dummy_renaming r scope in
+          (* rewrite again *)
+          rewrite_root trs t'
+
+    (* TODO: more efficient rewriting *)
+    let rec rewrite trs t = match t with
+      | T.Var _ -> t
+      | T.Apply (s, [| |]) -> rewrite_root trs t
+      | T.Apply (s, arr) ->
+        let arr' = Array.map (rewrite trs) arr in
+        rewrite_root trs (T.mk_apply s arr')
   end
 
   (** {2 DB} *)
@@ -1069,12 +1215,6 @@ module Make(Const : CONST) = struct
   module DB = struct
     type interpreter = T.t -> C.t list
       (** Interpreted predicate *)
-
-    module TermIndex = Index(struct
-      type t = T.t
-      let equal = are_alpha_equiv
-      let hash = T.hash_novar
-    end)
 
     module ClauseIndex = Index(struct
       type t = C.t

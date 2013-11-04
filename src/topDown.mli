@@ -239,13 +239,56 @@ module type S = sig
     val remove : t -> T.t -> Data.t -> t
       (** Remove the term->data binding. This modifies the index! *)
 
+    val generalizations : ?oc:bool -> t -> scope -> T.t -> scope ->
+                          (Data.t -> Subst.t -> unit) -> unit
+      (** Retrieve data associated with terms that are a generalization
+          of the given query term *)
+
     val unify : ?oc:bool -> t -> scope -> T.t -> scope ->
                 (Data.t -> Subst.t -> unit) -> unit
       (** Retrieve data associated with terms that unify with the given
           query term *)
 
+    val iter : t -> (T.t -> Data.t -> unit) -> unit
+      (** Iterate on bindings *)
+
     val size : t -> int
       (** Number of bindings *)
+  end
+
+  (** {2 Rewriting}
+  Rewriting consists in having a set of {b rules}, oriented from left to right,
+  that we will write [l -> r] (say "l rewrites to r"). Any term t that l matches
+  is {b rewritten} into r by replacing it by sigma(r), where sigma(l) = t.
+  *)
+
+  module Rewriting : sig
+    type rule = T.t * T.t
+
+    type t
+      (** A rewriting system. It is basically a mutable set of rewrite rules. *)
+
+    val create : unit -> t
+      (** New rewriting system *)
+
+    val copy : t -> t
+      (** Copy the rewriting system *)
+
+    val add : t -> rule -> unit
+      (** Add a rule to the system *)
+
+    val add_list : t -> rule list -> unit
+
+    val to_list : t -> rule list
+      (** List of rules *)
+
+    val rewrite_root : t -> T.t -> T.t
+      (** rewrite the term, but only its root. Subterms are not rewritten
+          at all. *)
+
+    val rewrite : t -> T.t -> T.t
+      (** Normalize the term recursively. The returned type cannot be rewritten
+          any further, assuming the rewriting system is {b terminating} *)
   end
 
   (** {2 DB} *)

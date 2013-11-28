@@ -1241,7 +1241,11 @@ module Make(Const : CONST) = struct
     let add trs (l,r) =
       trs.idx <- TermIndex.add trs.idx l r
 
-    let add_list trs l = List.iter (add trs) l
+    let rec add_list trs l = match l with
+      | [] -> ()
+      | ((x,y) as hd)::l' ->
+        add trs hd;
+        add_list trs l'
 
     let to_list trs =
       let acc = ref [] in
@@ -1332,14 +1336,14 @@ module Make(Const : CONST) = struct
     let add_fact db t =
       db.facts <- TermIndex.add db.facts t t
 
-    let add_facts db l = List.iter (add_fact db) l
+    let rec add_facts db l = List.iter (fun f -> add_fact db f) l
 
     let add_clause db c =
       match c.C.body with
       | [] -> add_fact db c.C.head
       | _::_ -> db.rules <- ClauseIndex.add db.rules c.C.head c
 
-    let add_clauses db l = List.iter (add_clause db) l
+    let add_clauses db l = List.iter (fun c -> add_clause db c) l
 
     let builtin_funs db = db.builtin
 

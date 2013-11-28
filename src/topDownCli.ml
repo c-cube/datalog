@@ -37,6 +37,7 @@ let oc = ref false
 let builtin = ref false
 let unix = ref false
 let doc = ref false
+let print = ref true
 
 (** Evaluate query *)
 
@@ -69,7 +70,8 @@ let eval_query files tuple goals =
     end;
   parse_files_into db files;
   let answers = D.ask_lits ~oc:!oc db tuple goals in
-  List.iter
+  if !print
+  then List.iter
     (fun ans -> Printf.printf "  %a.\n" D.T.pp ans)
     answers
 
@@ -83,6 +85,7 @@ let options =
   ; "-load", Arg.String add_file, "load given file"
   ; "-oc", Arg.Set oc, "enable occur-check in unification"
   ; "-builtin", Arg.Set builtin, "enable some builtin predicates"
+  ; "-quiet", Arg.Clear print, "do not print answer tuples"
   ; "-unix", Arg.Unit (fun () -> unix := true; builtin:= true),
       "enable unix predicates (and builtin)"
   ; "-doc", Arg.Set doc, "print interpreted predicates documentation and exit"

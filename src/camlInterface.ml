@@ -174,6 +174,8 @@ end)
 (** {2 Typed relations} *)
 
 module T = TopDown.T
+module C = TopDown.C
+module DB = TopDown.DB
 
 module Rel1 = struct
   type 'a t = string * 'a Univ.key
@@ -190,6 +192,41 @@ module Rel1 = struct
   let make (n,k) x =
     let a1 = T.mk_const (Univ (Univ.pack ~key:k x)) in
     T.mk_apply (String n) [| a1 |]
+
+  let apply (n,_) t = T.mk_apply (String n) [| t |]
+
+  (* find instances of the relation *)
+  let find db ((n,k) as rel) =
+    let query = T.mk_apply (String n) [| T.mk_var 0 |] in
+    let l = TopDown.ask db query in
+    List.fold_left
+      (fun acc t -> match get rel t with
+        | None -> acc
+        | Some x -> x :: acc)
+      [] l
+
+  (* r1(X) => r2(X), so r1 subset of r2 *)
+  let subset db (n1,_) (n2,_) =
+    let x = T.mk_var 0 in
+    let c = C.mk_clause
+      (T.mk_apply (String n2) [|x|])
+      [ TopDown.Lit.mk_pos (T.mk_apply (String n1) [|x|]) ]
+    in
+    DB.add_clause db c
+
+  let from_fun db ((n,k) as rel) f =
+    DB.interpret db (String n)
+      (fun t -> match get rel t with
+        | None -> []
+        | Some x ->
+          if f x
+            then [C.mk_fact t]  (* the fact is true, says [f] *)
+            else [])
+
+  let add_list db rel l =
+    List.iter
+      (fun t -> DB.add_fact db (make rel t))
+      l
 end
 
 module Rel2 = struct
@@ -214,6 +251,61 @@ module Rel2 = struct
     let a1 = T.mk_const (Univ (Univ.pack ~key:k1 x1)) in
     let a2 = T.mk_const (Univ (Univ.pack ~key:k2 x2)) in
     T.mk_apply (String n) [| a1; a2 |]
+
+  let apply (n,_,_) t1 t2 = T.mk_apply (String n) [| t1; t2 |]
+
+  (* find instances of the relation *)
+  let find db ((n,_,_) as rel) =
+    let query = T.mk_apply (String n) [| T.mk_var 0; T.mk_var 1 |] in
+    let l = TopDown.ask db query in
+    List.fold_left
+      (fun acc t -> match get rel t with
+        | None -> acc
+        | Some (x,y) -> (x,y) :: acc)
+      [] l
+
+  (* r1 => r2, so r1 subset of r2 *)
+  let subset db (n1,_,_) (n2,_,_) =
+    let x, y = T.mk_var 0, T.mk_var 1 in
+    let c = C.mk_clause
+      (T.mk_apply (String n2) [|x;y|])
+      [ TopDown.Lit.mk_pos (T.mk_apply (String n1) [|x;y|]) ]
+    in
+    DB.add_clause db c
+
+  (* r(X,Y) :- r(X,Z), r(Z,Y) *)
+  let transitive db (n,_,_) =
+    let x, y, z = T.mk_var 0, T.mk_var 1, T.mk_var 2 in
+    let c = C.mk_clause
+      (T.mk_apply (String n) [|x; y|])
+      [ TopDown.Lit.mk_pos (T.mk_apply (String n) [|x; z|])
+      ; TopDown.Lit.mk_pos (T.mk_apply (String n) [|z; y|])
+      ]
+    in
+    DB.add_clause db c
+
+  (* r(X,Y) => r(Y,X) *)
+  let symmetry db (n,_,_) =
+    let x, y = T.mk_var 0, T.mk_var 1 in
+    let c = C.mk_clause
+      (T.mk_apply (String n) [|x;y|])
+      [ TopDown.Lit.mk_pos (T.mk_apply (String n) [|y;x|]) ]
+    in
+    DB.add_clause db c
+
+  let from_fun db ((n,_,_) as rel) f =
+    DB.interpret db (String n)
+      (fun t -> match get rel t with
+        | None -> []
+        | Some (x,y) ->
+          if f x y
+            then [C.mk_fact t]  (* the fact is true, says [f] *)
+            else [])
+
+  let add_list db rel l =
+    List.iter
+      (fun (x,y) -> DB.add_fact db (make rel x y))
+      l
 end
 
 module Rel3 = struct
@@ -241,6 +333,41 @@ module Rel3 = struct
     let a2 = T.mk_const (Univ (Univ.pack ~key:k2 x2)) in
     let a3 = T.mk_const (Univ (Univ.pack ~key:k3 x3)) in
     T.mk_apply (String n) [| a1; a2; a3 |]
+
+  let apply (n,_,_,_) t1 t2 t3 = T.mk_apply (String n) [| t1; t2; t3 |]
+
+  (* find instances of the relation *)
+  let find db ((n,_,_,_) as rel) =
+    let query = T.mk_apply (String n) [| T.mk_var 0; T.mk_var 1; T.mk_var 2 |] in
+    let l = TopDown.ask db query in
+    List.fold_left
+      (fun acc t -> match get rel t with
+        | None -> acc
+        | Some (x,y,z) -> (x,y,z) :: acc)
+      [] l
+
+  (* r1 => r2, so r1 subset of r2 *)
+  let subset db (n1,_,_,_) (n2,_,_,_) =
+    let x, y, z = T.mk_var 0, T.mk_var 1, T.mk_var 2 in
+    let c = C.mk_clause
+      (T.mk_apply (String n2) [|x;y;z|])
+      [ TopDown.Lit.mk_pos (T.mk_apply (String n1) [|x;y;z|]) ]
+    in
+    DB.add_clause db c
+
+  let from_fun db ((n,_,_,_) as rel) f =
+    DB.interpret db (String n)
+      (fun t -> match get rel t with
+        | None -> []
+        | Some (x,y,z) ->
+          if f x y z
+            then [C.mk_fact t]  (* the fact is true, says [f] *)
+            else [])
+
+  let add_list db rel l =
+    List.iter
+      (fun (x,y,z) -> DB.add_fact db (make rel x y z))
+      l
 end
 
 module RelList = struct

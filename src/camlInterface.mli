@@ -139,6 +139,14 @@ module Rel2 : sig
   val transitive : Logic.DB.t -> ('a, 'a) t -> unit
     (** Axioms for transitivity are added to the DB *)
 
+  val tc_of : Logic.DB.t -> tc:('a,'a) t -> ('a,'a) t -> unit
+    (** [tc_of db ~tc r] adds to [db] axioms that make the relation [tc]
+        the transitive closure of the relation [r]. *)
+
+  val reflexive : Logic.DB.t -> ('a, 'a) t -> unit
+    (** [reflexive db r] makes [r] reflexive in [db], ie for all [X],
+        [r(X,X)] holds in [db]. *)
+
   val symmetry : Logic.DB.t -> ('a, 'a) t -> unit
     (** Axiom for symmetry (ie "r(X,Y) <=> r(Y,X)") added to the DB *)
 

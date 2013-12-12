@@ -289,6 +289,28 @@ module Rel2 = struct
     in
     DB.add_clause db c
 
+  (* tc(X,Y) <=> r*(X,Y) *)
+  let tc_of db ~tc:((name_tc,_,_) as tc) ((name_r,_,_) as r) =
+    let x, y, z = T.mk_var 0, T.mk_var 1, T.mk_var 2 in
+    let c = C.mk_clause
+      (T.mk_apply name_tc [|x; y|])
+      [ Logic.Lit.mk_pos (T.mk_apply name_r [|x; z|])
+      ; Logic.Lit.mk_pos (T.mk_apply name_tc [|z; y|])
+      ]
+    in
+    DB.add_clause db c;
+    subset db r tc;
+    ()
+
+  (* r(X,Y) :- X=Y *)
+  let reflexive db (n,_,_) =
+    let x, y = T.mk_var 0, T.mk_var 1 in
+    let c = C.mk_clause
+      (T.mk_apply n [|x;y|])
+      [ Logic.Lit.mk_pos (T.mk_apply (of_string "=") [|x;y|]) ]
+    in
+    DB.add_clause db c
+
   (* r(X,Y) => r(Y,X) *)
   let symmetry db (n,_,_) =
     let x, y = T.mk_var 0, T.mk_var 1 in

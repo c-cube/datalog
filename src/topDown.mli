@@ -463,6 +463,9 @@ module type PARSE = sig
     (** Parse a clause from a string, or fail. Useful shortcut to define
         properties of relations without building terms by hand.
         @raise Failure if the string is not a valid clause *)
+
+  val term_of_string : string -> term
+    (** @raise Failure if the string is not a valid term *)
 end
 
 module MakeParse(C : PARSABLE_CONST)(TD : S with type Const.t = C.t) :

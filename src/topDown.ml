@@ -1756,6 +1756,7 @@ module type PARSE = sig
   val parse_string : string -> [`Ok of clause list | `Error of string]
 
   val clause_of_string : string -> clause
+  val term_of_string : string -> term
 end
 
 module MakeParse(C : PARSABLE_CONST)(TD : S with type Const.t = C.t) = struct
@@ -1834,6 +1835,14 @@ module MakeParse(C : PARSABLE_CONST)(TD : S with type Const.t = C.t) = struct
       let ast = TopDownParser.parse_clause TopDownLexer.token lexbuf in
       clause_of_ast ast
     with Parsing.Parse_error -> failwith "clause_of_string: parse error"
+
+  let term_of_string s =
+    try
+      let lexbuf = Lexing.from_string s in
+      let ast = TopDownParser.parse_term TopDownLexer.token lexbuf in
+      let ctx = create_ctx () in
+      term_of_ast ~ctx ast
+    with Parsing.Parse_error -> failwith "term_of_string: parse error"
 end
 
 (** {2 Default Implementation with Strings} *)

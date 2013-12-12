@@ -1,6 +1,6 @@
 # OASIS_START
-# DO NOT EDIT (digest: 13f20b7693e186029d33491352c303db)
-version = "0.5"
+# DO NOT EDIT (digest: e21235d151ba533cb463d8725a2884e5)
+version = "0.5.1"
 description = "An in-memory datalog implementation for OCaml"
 requires = "unix num str"
 archive(byte) = "datalog.cma"

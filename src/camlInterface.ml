@@ -29,19 +29,14 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 (** {2 Constants with universal types} *)
 
 module Univ = struct
-  type packed_value =
-  | Store : 'a key * 'a -> packed_value
+  type t =
+  | Store : 'a key * 'a * (unit -> unit) -> t
 
   and 'a key = {
     mutable content : 'a option;
     eq : 'a -> 'a -> bool;
     hash : 'a -> int;
     print : 'a -> string;
-  }
-
-  type t = {
-    get : unit -> unit;
-    value : packed_value;
   }
 
   let _print_default _ = "<opaque>"
@@ -51,36 +46,52 @@ module Univ = struct
 
   let pack ~key x =
     let get () = key.content <- Some x in
-    { get; value=Store (key, x); }
+    Store (key, x, get)
 
-  let unpack ~key u =
-    key.content <- None;
-    u.get ();
-    key.content
+  let unpack ~key u = match u with
+    | Store (_, _, get) ->
+      key.content <- None;
+      get ();
+      key.content
 
   let compatible ~key u =
     match unpack ~key u with | Some _ -> true | None -> false
 
   let eq u1 u2 =
-    match u1.value with
-    | Store (key1, x1) ->
+    match u1 with
+    | Store (key1, x1, _) ->
       match unpack ~key:key1 u2 with
       | None -> false
       | Some x2 -> key1.eq x1 x2
 
-  let hash u = match u.value with
-    | Store (key, x) -> key.hash x
+  let hash u = match u with
+    | Store (key, x, _) -> key.hash x
 
-  let print u = match u.value with
-    | Store (key, x) -> key.print x
+  let print u = match u with
+    | Store (key, x, _) -> key.print x
 
   let _id x = x
   let _const x _ = x
 
-  let string = new_key ~print:_id ()
-  let int = new_key ~hash:_id ~print:string_of_int ()
-  let bool = new_key ~print:string_of_bool ()
-  let float = new_key ~print:string_of_float ()
+  let string = new_key
+    ~eq:(fun s1 s2 -> s1=s2)
+    ~hash:(fun s -> Hashtbl.hash s)
+    ~print:_id ()
+
+  let int = new_key
+    ~hash:(fun i -> i land max_int)
+    ~eq:(fun i j -> i=j)
+    ~print:string_of_int ()
+
+  let bool = new_key
+    ~eq:(fun i j -> i=j)
+    ~hash:(function true -> 1 | false -> 2)
+    ~print:string_of_bool ()
+
+  let float = new_key
+    ~eq:(fun i j -> i=j)
+    ~print:string_of_float ()
+
   let unit = new_key ~print:(_const "()") ()
 
   let pair a b =
@@ -132,73 +143,60 @@ module Univ = struct
         h := 65993 * !h + k.hash a.(i)
       done;
       !h
-    in 
+    in
     new_key
       ~eq:_eq ~hash:_hash ~print:_print_arr ()
 end
 
 (** Datalog constant *)
-type const =
-  | String of string
-  | Int of int
-  | Univ of Univ.t
-
-let _equal c1 c2 = match c1, c2 with
-  | String s1, String s2 -> s1 = s2
-  | Int i1, Int i2 -> i1 = i2
-  | Univ u1, Univ u2 -> Univ.eq u1 u2
-  | _ -> false
-
-let _hash = function
-  | String s -> Hashtbl.hash s
-  | Int i -> max_int land i
-  | Univ u -> Univ.hash u
-
-let _to_string = function
-  | String s -> s
-  | Int i -> string_of_int i
-  | Univ u -> Univ.print u
+type const = Univ.t
 
 let _key_query = Univ.new_key ~print:(fun () -> "query") ()
   (* special query symbol: unit, with a specific, hidden embedding *)
 
-module TopDown = TopDown.Make(struct
+let of_string s = Univ.pack ~key:Univ.string s
+let of_int i = Univ.pack ~key:Univ.int i
+
+module Logic = TopDown.Make(struct
   type t = const
-  let equal = _equal
-  let hash = _hash
-  let to_string = _to_string
-  let of_string s = String s
-  let query = Univ (Univ.pack ~key:_key_query ())
+  let equal = Univ.eq
+  let hash = Univ.hash
+  let to_string = Univ.print
+  let of_string = of_string
+  let query = Univ.pack ~key:_key_query ()
 end)
 
 (** {2 Typed relations} *)
 
-module T = TopDown.T
-module C = TopDown.C
-module DB = TopDown.DB
+module T = Logic.T
+module C = Logic.C
+module DB = Logic.DB
 
 module Rel1 = struct
-  type 'a t = string * 'a Univ.key
+  type 'a t = Univ.t * 'a Univ.key
 
-  let name (n, _) = n
+  let name (n, _) =
+    match Univ.unpack ~key:Univ.string n with
+    | None -> assert false
+    | Some s -> s
 
-  let create ?(k=Univ.new_key ()) name = (name, k)
+  let create ?(k=Univ.new_key ()) name = (of_string name, k)
 
   let get (name,k1) t = match t with
-    | T.Apply (String name', [| T.Apply(Univ u1, [| |]) |]) when name = name' ->
+    | T.Apply (name', [| T.Apply(u1, [| |]) |]) when Univ.eq name name' ->
       Univ.unpack ~key:k1 u1
     | _ -> None
 
   let make (n,k) x =
-    let a1 = T.mk_const (Univ (Univ.pack ~key:k x)) in
-    T.mk_apply (String n) [| a1 |]
+    let a1 = T.mk_const (Univ.pack ~key:k x) in
+    T.mk_apply n [| a1 |]
 
-  let apply (n,_) t = T.mk_apply (String n) [| t |]
+  let apply (n,_) t = T.mk_apply n [| t |]
 
   (* find instances of the relation *)
   let find db ((n,k) as rel) =
-    let query = T.mk_apply (String n) [| T.mk_var 0 |] in
-    let l = TopDown.ask db query in
+    let query = T.mk_apply n [| T.mk_var 0 |] in
+    let l = Logic.ask db query in
     List.fold_left
       (fun acc t -> match get rel t with
         | None -> acc
@@ -209,13 +207,13 @@ module Rel1 = struct
   let subset db (n1,_) (n2,_) =
     let x = T.mk_var 0 in
     let c = C.mk_clause
-      (T.mk_apply (String n2) [|x|])
-      [ TopDown.Lit.mk_pos (T.mk_apply (String n1) [|x|]) ]
+      (T.mk_apply n2 [|x|])
+      [ Logic.Lit.mk_pos (T.mk_apply n1 [|x|]) ]
     in
     DB.add_clause db c
 
   let from_fun db ((n,k) as rel) f =
-    DB.interpret db (String n)
+    DB.interpret db n
       (fun t -> match get rel t with
         | None -> []
         | Some x ->
@@ -230,17 +228,21 @@ module Rel1 = struct
 end
 
 module Rel2 = struct
-  type ('a,'b) t = string * 'a Univ.key * 'b Univ.key
+  type ('a,'b) t = Univ.t * 'a Univ.key * 'b Univ.key
 
-  let name (n, _, _) = n
+  let name (n, _, _) =
+    match Univ.unpack ~key:Univ.string n with
+    | None -> assert false
+    | Some s -> s
 
-  let create ?(k1=Univ.new_key ()) ?(k2=Univ.new_key ()) name = (name, k1, k2)
+  let create ?(k1=Univ.new_key ()) ?(k2=Univ.new_key ()) name =
+    (of_string name, k1, k2)
 
   let get (name,k1,k2) t = match t with
-    | T.Apply (String name',
-      [| T.Apply(Univ u1, [| |])
-      ;  T.Apply(Univ u2, [| |])
-      |]) when name = name' ->
+    | T.Apply (name',
+      [| T.Apply(u1, [| |])
+      ;  T.Apply(u2, [| |])
+      |]) when Univ.eq name name' ->
       begin match Univ.unpack ~key:k1 u1, Univ.unpack ~key:k2 u2 with
       | Some x1, Some x2 -> Some (x1,x2)
       | _ -> None
@@ -248,16 +250,16 @@ module Rel2 = struct
     | _ -> None
 
   let make (n,k1,k2) x1 x2 =
-    let a1 = T.mk_const (Univ (Univ.pack ~key:k1 x1)) in
-    let a2 = T.mk_const (Univ (Univ.pack ~key:k2 x2)) in
-    T.mk_apply (String n) [| a1; a2 |]
+    let a1 = T.mk_const (Univ.pack ~key:k1 x1) in
+    let a2 = T.mk_const (Univ.pack ~key:k2 x2) in
+    T.mk_apply n [| a1; a2 |]
 
-  let apply (n,_,_) t1 t2 = T.mk_apply (String n) [| t1; t2 |]
+  let apply (n,_,_) t1 t2 = T.mk_apply n [| t1; t2 |]
 
   (* find instances of the relation *)
   let find db ((n,_,_) as rel) =
-    let query = T.mk_apply (String n) [| T.mk_var 0; T.mk_var 1 |] in
-    let l = TopDown.ask db query in
+    let query = T.mk_apply n [| T.mk_var 0; T.mk_var 1 |] in
+    let l = Logic.ask db query in
     List.fold_left
       (fun acc t -> match get rel t with
         | None -> acc
@@ -268,8 +270,8 @@ module Rel2 = struct
   let subset db (n1,_,_) (n2,_,_) =
     let x, y = T.mk_var 0, T.mk_var 1 in
     let c = C.mk_clause
-      (T.mk_apply (String n2) [|x;y|])
-      [ TopDown.Lit.mk_pos (T.mk_apply (String n1) [|x;y|]) ]
+      (T.mk_apply n2 [|x;y|])
+      [ Logic.Lit.mk_pos (T.mk_apply n1 [|x;y|]) ]
     in
     DB.add_clause db c
 
@@ -277,9 +279,9 @@ module Rel2 = struct
   let transitive db (n,_,_) =
     let x, y, z = T.mk_var 0, T.mk_var 1, T.mk_var 2 in
     let c = C.mk_clause
-      (T.mk_apply (String n) [|x; y|])
-      [ TopDown.Lit.mk_pos (T.mk_apply (String n) [|x; z|])
-      ; TopDown.Lit.mk_pos (T.mk_apply (String n) [|z; y|])
+      (T.mk_apply n [|x; y|])
+      [ Logic.Lit.mk_pos (T.mk_apply n [|x; z|])
+      ; Logic.Lit.mk_pos (T.mk_apply n [|z; y|])
       ]
     in
     DB.add_clause db c
@@ -288,13 +290,13 @@ module Rel2 = struct
   let symmetry db (n,_,_) =
     let x, y = T.mk_var 0, T.mk_var 1 in
     let c = C.mk_clause
-      (T.mk_apply (String n) [|x;y|])
-      [ TopDown.Lit.mk_pos (T.mk_apply (String n) [|y;x|]) ]
+      (T.mk_apply n [|x;y|])
+      [ Logic.Lit.mk_pos (T.mk_apply n [|y;x|]) ]
     in
     DB.add_clause db c
 
   let from_fun db ((n,_,_) as rel) f =
-    DB.interpret db (String n)
+    DB.interpret db n
       (fun t -> match get rel t with
         | None -> []
         | Some (x,y) ->
@@ -309,19 +311,22 @@ module Rel2 = struct
 end
 
 module Rel3 = struct
-  type ('a,'b,'c) t = string * 'a Univ.key * 'b Univ.key * 'c Univ.key
+  type ('a,'b,'c) t = Univ.t * 'a Univ.key * 'b Univ.key * 'c Univ.key
 
-  let name (n, _, _, _) = n
+  let name (n, _, _, _) =
+    match Univ.unpack ~key:Univ.string n with
+    | None -> assert false
+    | Some s -> s
 
   let create ?(k1=Univ.new_key ()) ?(k2=Univ.new_key ())
-    ?(k3=Univ.new_key ()) name = (name, k1, k2, k3)
+    ?(k3=Univ.new_key ()) name = (of_string name, k1, k2, k3)
 
   let get (name,k1,k2,k3) t = match t with
-    | T.Apply (String name',
-      [| T.Apply(Univ u1, [| |])
-      ;  T.Apply(Univ u2, [| |])
-      ;  T.Apply(Univ u3, [| |])
-      |]) when name = name' ->
+    | T.Apply (name',
+      [| T.Apply(u1, [| |])
+      ;  T.Apply(u2, [| |])
+      ;  T.Apply(u3, [| |])
+      |]) when Univ.eq name name' ->
       begin match Univ.unpack ~key:k1 u1, Univ.unpack ~key:k2 u2, Univ.unpack ~key:k3 u3 with
       | Some x1, Some x2, Some x3 -> Some (x1,x2,x3)
       | _ -> None
@@ -329,17 +334,17 @@ module Rel3 = struct
     | _ -> None
 
   let make (n,k1,k2,k3) x1 x2 x3 =
-    let a1 = T.mk_const (Univ (Univ.pack ~key:k1 x1)) in
-    let a2 = T.mk_const (Univ (Univ.pack ~key:k2 x2)) in
-    let a3 = T.mk_const (Univ (Univ.pack ~key:k3 x3)) in
-    T.mk_apply (String n) [| a1; a2; a3 |]
+    let a1 = T.mk_const (Univ.pack ~key:k1 x1) in
+    let a2 = T.mk_const (Univ.pack ~key:k2 x2) in
+    let a3 = T.mk_const (Univ.pack ~key:k3 x3) in
+    T.mk_apply n [| a1; a2; a3 |]
 
-  let apply (n,_,_,_) t1 t2 t3 = T.mk_apply (String n) [| t1; t2; t3 |]
+  let apply (n,_,_,_) t1 t2 t3 = T.mk_apply n [| t1; t2; t3 |]
 
   (* find instances of the relation *)
   let find db ((n,_,_,_) as rel) =
-    let query = T.mk_apply (String n) [| T.mk_var 0; T.mk_var 1; T.mk_var 2 |] in
-    let l = TopDown.ask db query in
+    let query = T.mk_apply n [| T.mk_var 0; T.mk_var 1; T.mk_var 2 |] in
+    let l = Logic.ask db query in
     List.fold_left
       (fun acc t -> match get rel t with
         | None -> acc
@@ -350,13 +355,13 @@ module Rel3 = struct
   let subset db (n1,_,_,_) (n2,_,_,_) =
     let x, y, z = T.mk_var 0, T.mk_var 1, T.mk_var 2 in
     let c = C.mk_clause
-      (T.mk_apply (String n2) [|x;y;z|])
-      [ TopDown.Lit.mk_pos (T.mk_apply (String n1) [|x;y;z|]) ]
+      (T.mk_apply n2 [|x;y;z|])
+      [ Logic.Lit.mk_pos (T.mk_apply n1 [|x;y;z|]) ]
     in
     DB.add_clause db c
 
   let from_fun db ((n,_,_,_) as rel) f =
-    DB.interpret db (String n)
+    DB.interpret db n
       (fun t -> match get rel t with
         | None -> []
         | Some (x,y,z) ->
@@ -371,18 +376,21 @@ module Rel3 = struct
 end
 
 module RelList = struct
-  type 'a t = (string * 'a Univ.key)
+  type 'a t = (Univ.t * 'a Univ.key)
 
-  let name (n, _) = n
+  let name (n, _) =
+    match Univ.unpack ~key:Univ.string n with
+    | None -> assert false
+    | Some s -> s
 
-  let create ?(k=Univ.new_key ()) name = name, k
+  let create ?(k=Univ.new_key ()) name = of_string name, k
 
   let get (name, k) t = match t with
-    | T.Apply (String name', a) when name = name' ->
+    | T.Apply (name', a) when Univ.eq name name' ->
       begin try
         let l = Array.fold_left
           (fun acc t' -> match t' with
-            | T.Apply (Univ u, [| |]) ->
+            | T.Apply (u, [| |]) ->
               begin match Univ.unpack ~key:k u with
                 | None -> raise Exit
                 | Some x -> x :: acc
@@ -396,7 +404,12 @@ module RelList = struct
     | _ -> None
 
   let make (name,k) l =
-    let args = List.map (fun x -> T.mk_const (Univ(Univ.pack ~key:k x))) l in
-    T.mk_apply_l (String name) args
+    let args = List.map (fun x -> T.mk_const (Univ.pack ~key:k x)) l in
+    T.mk_apply_l name args
 end
 
+module Parse = TopDown.MakeParse(struct
+  type t = const
+  let of_string = of_string
+  let of_int = of_int
+end)(Logic)

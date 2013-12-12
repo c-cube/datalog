@@ -28,7 +28,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 (** {2 Constants with universal types}
 This module is present to allow the user to pack their own types into Datalog
-constants. 
+constants. It is {b NOT thread-safe}.
 This is largely inspired by {{: https://ocaml.janestreet.com/?q=node/18}this thread}
 *)
 
@@ -57,6 +57,15 @@ module Univ : sig
   val eq : t -> t -> bool
   val hash : t -> int
   val print : t -> string
+
+  val string : string key
+  val int : int key
+  val float : float key
+  val bool : bool key
+  val unit : unit key
+  val pair : 'a key -> 'b key -> ('a * 'b) key
+  val list : 'a key -> 'a list key
+  val array : 'a key -> 'a array key
 end
 
 (** Datalog constant *)

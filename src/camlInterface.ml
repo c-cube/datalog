@@ -73,6 +73,68 @@ module Univ = struct
 
   let print u = match u.value with
     | Store (key, x) -> key.print x
+
+  let _id x = x
+  let _const x _ = x
+
+  let string = new_key ~print:_id ()
+  let int = new_key ~hash:_id ~print:string_of_int ()
+  let bool = new_key ~print:string_of_bool ()
+  let float = new_key ~print:string_of_float ()
+  let unit = new_key ~print:(_const "()") ()
+
+  let pair a b =
+    new_key
+      ~eq:(fun (a1,b1)(a2,b2) -> a.eq a1 a2 && b.eq b1 b2)
+      ~hash:(fun (a1,b1) -> a.hash a1 * 65993 + b.hash b1)
+      ~print:(fun (a1,b1) -> Printf.sprintf "(%s,%s)" (a.print a1) (b.print b1))
+      ()
+
+  let list a =
+    let _print_list l =
+      let buf = Buffer.create 15 in
+      Buffer.add_char buf '[';
+      List.iteri
+        (fun i x ->
+          if i > 0 then Buffer.add_string buf ", ";
+          Buffer.add_string buf (a.print x))
+        l;
+      Buffer.add_char buf ']';
+      Buffer.contents buf
+    in
+    new_key
+      ~eq:(fun l1 l2 -> try List.for_all2 a.eq l1 l2 with Invalid_argument _ -> false)
+      ~hash:(fun l -> List.fold_left (fun h x -> 65993 * h + a.hash x) 13 l)
+      ~print:_print_list
+      ()
+
+  let array k =
+    let _print_arr l =
+      let buf = Buffer.create 15 in
+      Buffer.add_string buf "[|";
+      Array.iteri
+        (fun i x ->
+          if i > 0 then Buffer.add_string buf ", ";
+          Buffer.add_string buf (k.print x))
+        l;
+      Buffer.add_string buf "|]";
+      Buffer.contents buf
+    and _eq a1 a2 =
+      Array.length a1 = Array.length a2 && try
+        for i = 0 to Array.length a1 - 1 do
+          if not (k.eq a1.(i) a2.(i)) then raise Exit
+        done;
+        true
+      with Exit -> false
+    and _hash a =
+      let h = ref 13 in
+      for i = 0 to Array.length a - 1 do
+        h := 65993 * !h + k.hash a.(i)
+      done;
+      !h
+    in 
+    new_key
+      ~eq:_eq ~hash:_hash ~print:_print_arr ()
 end
 
 (** Datalog constant *)

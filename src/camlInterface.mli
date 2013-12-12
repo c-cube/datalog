@@ -185,7 +185,15 @@ end
 
 (** {2 IO} *)
 
-module Parse : TopDown.PARSE
+module Parse : sig
+  include TopDown.PARSE
    with type term = Logic.T.t
     and type lit = Logic.Lit.t
     and type clause = Logic.C.t
+
+  (** Additional functions, to load clauses directly into the DB *)
+
+  val load_chan : Logic.DB.t -> in_channel -> bool
+  val load_file : Logic.DB.t -> string -> bool
+  val load_string : Logic.DB.t -> string -> bool
+end

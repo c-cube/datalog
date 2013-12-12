@@ -408,8 +408,23 @@ module RelList = struct
     T.mk_apply_l name args
 end
 
-module Parse = TopDown.MakeParse(struct
-  type t = const
-  let of_string = of_string
-  let of_int = of_int
-end)(Logic)
+module Parse = struct
+  include TopDown.MakeParse(struct
+    type t = const
+    let of_string = of_string
+    let of_int = of_int
+  end)(Logic)
+
+  let _load db res =
+    match res with
+    | `Error _ -> false
+    | `Ok clauses ->
+      Logic.DB.add_clauses db clauses;
+      true
+
+  let load_chan db ic = _load db (parse_chan ic)
+
+  let load_file db file = _load db (parse_file file)
+
+  let load_string db s = _load db (parse_string s)
+end

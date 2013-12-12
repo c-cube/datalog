@@ -1728,6 +1728,105 @@ module Make(Const : CONST) = struct
     l
 end
 
+(** {2 Parsing} *)
+
+module type PARSABLE_CONST = sig
+  type t
+
+  val of_string : string -> t
+  val of_int : int -> t
+end
+
+module type PARSE = sig
+  type term
+  type lit
+  type clause
+
+  type name_ctx = (string, term) Hashtbl.t
+
+  val create_ctx : unit -> name_ctx
+
+  val term_of_ast : ctx:name_ctx -> TopDownAst.term -> term
+  val lit_of_ast : ctx:name_ctx -> TopDownAst.literal -> lit
+  val clause_of_ast : ?ctx:name_ctx -> TopDownAst.clause -> clause
+  val clauses_of_ast : ?ctx:name_ctx -> TopDownAst.clause list -> clause list
+
+  val parse_chan : in_channel -> [`Ok of clause list | `Error of string]
+  val parse_file : string -> [`Ok of clause list | `Error of string]
+  val parse_string : string -> [`Ok of clause list | `Error of string]
+end
+
+module MakeParse(C : PARSABLE_CONST)(TD : S with type Const.t = C.t) = struct
+  type term = TD.T.t
+  type lit = TD.Lit.t
+  type clause = TD.C.t
+
+  module A = TopDownAst
+
+  type name_ctx = (string, TD.T.t) Hashtbl.t
+
+  let create_ctx () = Hashtbl.create 5
+
+  let _mk_var ~ctx name =
+    try
+      Hashtbl.find ctx name
+    with Not_found ->
+      let n = Hashtbl.length ctx in
+      let v = TD.T.mk_var n in
+      Hashtbl.add ctx name v;
+      v
+
+  let rec term_of_ast ~ctx t = match t with
+  | A.Apply (s, args) ->
+    let args = List.map (term_of_ast ~ctx) args in
+    TD.T.mk_apply_l (C.of_string s) args
+  | A.Int i ->
+    TD.T.mk_const (C.of_int i)
+  | A.Var s -> _mk_var ~ctx s
+  and lit_of_ast ~ctx lit =
+    match lit with
+    | A.LitPos t -> TD.Lit.mk_pos (term_of_ast ~ctx t)
+    | A.LitNeg t -> TD.Lit.mk_neg (term_of_ast ~ctx t)
+    | A.LitAggr a ->
+      TD.Lit.mk_aggr
+        ~constructor:(C.of_string a.A.ag_constructor)
+        ~left:(term_of_ast ~ctx a.A.ag_left)
+        ~guard:(term_of_ast ~ctx a.A.ag_guard)
+        ~var:(_mk_var ~ctx a.A.ag_var)
+
+  let clause_of_ast ?(ctx=Hashtbl.create 3) c = match c with
+    | (head, body) ->
+      let head = term_of_ast ~ctx head in
+      let body = List.map (lit_of_ast ~ctx) body in
+      TD.C.mk_clause head body
+
+  let clauses_of_ast ?ctx l = List.map (clause_of_ast ?ctx) l
+
+  let _parse ~msg lexbuf =
+    try
+      let decls = TopDownParser.parse_file TopDownLexer.token lexbuf in
+      `Ok (clauses_of_ast decls)
+    with
+    | Parsing.Parse_error ->
+      let msg = A.error_to_string msg lexbuf in
+      `Error msg
+    | Failure msg -> `Error msg
+
+  let parse_chan ic = _parse ~msg:"error while parsing <channel>" (Lexing.from_channel ic)
+
+  let parse_file f =
+    let ic = open_in f in
+    try
+      let res = _parse ~msg:("error while parsing " ^ f) (Lexing.from_channel ic) in
+      close_in ic;
+      res
+    with e ->
+      close_in ic;
+      `Error (Printexc.to_string e)
+
+  let parse_string s = _parse ~msg:"error while parsing string" (Lexing.from_string s)
+end
+
 (** {2 Default Implementation with Strings} *)
 
 type const =
@@ -1748,46 +1847,11 @@ module Default = struct
  
   include TD
 
-  module A = TopDownAst
-
-  type name_ctx = (string, T.t) Hashtbl.t
-
-  let create_ctx () = Hashtbl.create 5
-
-  let _mk_var ~ctx name =
-    try
-      Hashtbl.find ctx name
-    with Not_found ->
-      let n = Hashtbl.length ctx in
-      let v = T.mk_var n in
-      Hashtbl.add ctx name v;
-      v
-
-  let rec term_of_ast ~ctx t = match t with
-  | A.Apply (s, args) ->
-    let args = List.map (term_of_ast ~ctx) args in
-    T.mk_apply_l (String s) args
-  | A.Int i ->
-    T.mk_const (Int i)
-  | A.Var s -> _mk_var ~ctx s
-  and lit_of_ast ~ctx lit =
-    match lit with
-    | A.LitPos t -> Lit.mk_pos (term_of_ast ~ctx t)
-    | A.LitNeg t -> Lit.mk_neg (term_of_ast ~ctx t)
-    | A.LitAggr a ->
-      Lit.mk_aggr
-        ~constructor:(Const.of_string a.A.ag_constructor)
-        ~left:(term_of_ast ~ctx a.A.ag_left)
-        ~guard:(term_of_ast ~ctx a.A.ag_guard)
-        ~var:(_mk_var ~ctx a.A.ag_var)
-
-  let clause_of_ast ?(ctx=Hashtbl.create 3) c = match c with
-    | (head, body) ->
-      let head = term_of_ast ~ctx head in
-      let body = List.map (lit_of_ast ~ctx) body in
-      C.mk_clause head body
-
-  let clauses_of_ast ?ctx l = List.map (clause_of_ast ?ctx) l
+  include MakeParse(struct
+    type t = const
+    let of_string s = String s
+    let of_int i = Int i
+  end)(TD)
 
   let default_interpreters =
     let _less goal =

@@ -432,6 +432,37 @@ end
 
 module Make(Const : CONST) : S with module Const = Const
 
+(** {2 Parsing} *)
+
+module type PARSABLE_CONST = sig
+  type t
+
+  val of_string : string -> t
+  val of_int : int -> t
+end
+
+module type PARSE = sig
+  type term
+  type lit
+  type clause
+
+  type name_ctx = (string, term) Hashtbl.t
+
+  val create_ctx : unit -> name_ctx
+
+  val term_of_ast : ctx:name_ctx -> TopDownAst.term -> term
+  val lit_of_ast : ctx:name_ctx -> TopDownAst.literal -> lit
+  val clause_of_ast : ?ctx:name_ctx -> TopDownAst.clause -> clause
+  val clauses_of_ast : ?ctx:name_ctx -> TopDownAst.clause list -> clause list
+
+  val parse_chan : in_channel -> [`Ok of clause list | `Error of string]
+  val parse_file : string -> [`Ok of clause list | `Error of string]
+  val parse_string : string -> [`Ok of clause list | `Error of string]
+end
+
+module MakeParse(C : PARSABLE_CONST)(TD : S with type Const.t = C.t) :
+  PARSE with type term = TD.T.t and type lit = TD.Lit.t and type clause = TD.C.t
+
 (** {2 Default Implementation with Strings} *)
 
 type const =
@@ -440,15 +471,6 @@ type const =
 
 module Default : sig
   include S with type Const.t = const
-
-  type name_ctx = (string, T.t) Hashtbl.t
-
-  val create_ctx : unit -> name_ctx
-
-  val term_of_ast : ctx:name_ctx -> TopDownAst.term -> T.t
-  val lit_of_ast : ctx:name_ctx -> TopDownAst.literal -> Lit.t 
-  val clause_of_ast : ?ctx:name_ctx -> TopDownAst.clause -> C.t
-  val clauses_of_ast : ?ctx:name_ctx -> TopDownAst.clause list -> C.t list
 
   val default_interpreters : (const * string * DB.interpreter) list
     (** List of default interpreters for some symbols, mostly
@@ -459,4 +481,6 @@ module Default : sig
 
   val setup_default : DB.t -> unit
     (** Load the default interpreters and builtin functions into the DB *)
+
+  include PARSE with type term = T.t and type lit = Lit.t and type clause = C.t
 end

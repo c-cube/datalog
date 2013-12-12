@@ -225,6 +225,9 @@ module Rel1 = struct
     List.iter
       (fun t -> DB.add_fact db (make rel t))
       l
+
+  let to_string t = name t ^ "/1"
+  let fmt fmt t = Format.pp_print_string fmt (to_string t)
 end
 
 module Rel2 = struct
@@ -308,6 +311,9 @@ module Rel2 = struct
     List.iter
       (fun (x,y) -> DB.add_fact db (make rel x y))
       l
+
+  let to_string t = name t ^ "/2"
+  let fmt fmt t = Format.pp_print_string fmt (to_string t)
 end
 
 module Rel3 = struct
@@ -373,6 +379,9 @@ module Rel3 = struct
     List.iter
       (fun (x,y,z) -> DB.add_fact db (make rel x y z))
       l
+
+  let to_string t = name t ^ "/3"
+  let fmt fmt t = Format.pp_print_string fmt (to_string t)
 end
 
 module RelList = struct

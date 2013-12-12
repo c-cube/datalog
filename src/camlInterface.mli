@@ -111,6 +111,9 @@ module Rel1 : sig
 
   val add_list : Logic.DB.t -> 'a t -> 'a list -> unit
     (** Add given list of axioms *)
+
+  val to_string : _ t -> string
+  val fmt : Format.formatter -> _ t -> unit
 end
 
 module Rel2 : sig
@@ -146,6 +149,9 @@ module Rel2 : sig
 
   val add_list : Logic.DB.t -> ('a,'b) t -> ('a * 'b) list -> unit
     (** Add given list of axioms *)
+
+  val to_string : (_,_) t -> string
+  val fmt : Format.formatter -> (_,_) t -> unit
 end
 
 module Rel3 : sig
@@ -169,6 +175,9 @@ module Rel3 : sig
   val from_fun : Logic.DB.t -> ('a, 'b, 'c) t -> ('a -> 'b -> 'c -> bool) -> unit
 
   val add_list : Logic.DB.t -> ('a, 'b, 'c) t -> ('a * 'b * 'c) list -> unit
+
+  val to_string : (_,_,_) t -> string
+  val fmt : Format.formatter -> (_,_,_) t -> unit
 end
 
 module RelList : sig

@@ -13,6 +13,9 @@ module CI_DB = CI.Logic.DB;;
 #install_printer CI.Rel1.fmt;;
 #install_printer CI.Rel2.fmt;;
 #install_printer CI.Rel3.fmt;;
+#install_printer CI.Logic.T.fmt;;
+#install_printer CI.Logic.Lit.fmt;;
+#install_printer CI.Logic.C.fmt;;
 let load_file = CI.Parse.load_file;;
 print_endline "CI: caml interface; CI_T: terms; CI_DB: database; load_file;";;
 (* vim:filetype=ocaml:

@@ -458,6 +458,11 @@ module type PARSE = sig
   val parse_chan : in_channel -> [`Ok of clause list | `Error of string]
   val parse_file : string -> [`Ok of clause list | `Error of string]
   val parse_string : string -> [`Ok of clause list | `Error of string]
+
+  val clause_of_string : string -> clause
+    (** Parse a clause from a string, or fail. Useful shortcut to define
+        properties of relations without building terms by hand.
+        @raise Failure if the string is not a valid clause *)
 end
 
 module MakeParse(C : PARSABLE_CONST)(TD : S with type Const.t = C.t) :

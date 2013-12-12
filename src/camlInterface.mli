@@ -206,3 +206,7 @@ module Parse : sig
   val load_file : Logic.DB.t -> string -> bool
   val load_string : Logic.DB.t -> string -> bool
 end
+
+(** {2 Interpretation} *)
+
+val add_builtin : Logic.DB.t -> unit

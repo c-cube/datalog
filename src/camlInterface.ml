@@ -437,3 +437,50 @@ module Parse = struct
 
   let load_string db s = _load db (parse_string s)
 end
+
+(** {2 Interpretation} *)
+
+let add_builtin db =
+  let builtin =
+    let _eq goal = match goal with
+      | Logic.T.Apply (_, [| Logic.T.Apply (a, [||]); Logic.T.Apply (b, [||]) |])
+        when Univ.eq a b -> [ C.mk_fact goal ]
+      | _ -> []
+    and _neq goal = match goal with
+      | Logic.T.Apply (_, [| Logic.T.Apply (a, [||]); Logic.T.Apply (b, [||]) |])
+        when not (Univ.eq a b) -> [ Logic.C.mk_fact goal ]
+      | _ -> []
+    and _print goal =
+      begin match goal with
+      | Logic.T.Apply (_, [| a |]) when Logic.T.ground a ->
+        Printf.printf "> %a\n" Logic.T.pp a;
+      | _ -> ()
+      end;
+      [ Logic.C.mk_fact goal ]
+    (* given a list of arguments, "replace" the goal by any of its arguments.
+       this allow arguments (variables...) to get to the proposition level *)
+    and _eval goal = match goal with
+      | Logic.T.Apply (_, subgoals) ->
+        (* for each goal \in subgoals, add a clause  goal :- subgoal *)
+        Array.fold_left
+          (fun acc sub -> Logic.C.mk_clause goal [Logic.Lit.mk_pos sub] :: acc)
+          [] subgoals
+      | _ -> []
+    in
+    [ of_string "=", "=; equality", _eq
+    ; of_string "!=", "!=, inequality", _neq
+    ; of_string "print", "print(a): print a term on stdout", _print
+    ; of_string "eval",
+        "eval(*goals): add eval(goals) :- g for each g in goals", _eval
+    ]
+  in
+  DB.interpret_list db builtin;
+  let _assertz db goal = match goal with
+    | Logic.T.Apply(_, [| fact |]) when Logic.T.ground fact ->
+      Logic.DB.add_fact db fact;
+      [ C.mk_fact goal ]
+    | _ -> []
+  in
+  DB.interpret ~help:"assertz(fact): add fact to the DB"
+    db (of_string "assertz") (_assertz db);
+  ()

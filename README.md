@@ -55,6 +55,33 @@ The module `CamlInterface` contains a universal embedding of OCaml's types,
 with helpers to build unary, binary, and ternary atoms that directly relate
 OCaml values.
 
+Small example:
+
+```
+module CI = Datalog.CamlInterface;;
+# let edge = CI.Rel2.create ~k1:CI.Univ.int ~k2:CI.Univ.int "edge";;
+val edge : (int, int) CI.Rel2.t = <abstr>
+# let db = CI.TopDown.DB.create();;
+val db : CI.TopDown.DB.t = <abstr>
+# CI.Rel2.symmetry db edge;;
+- : unit = ()
+# CI.Rel2.add_list db edge [1,2; 2,3; 3,4];;
+- : unit = ()
+# CI.Rel2.find db edge;;
+- : (int * int) list = [(4, 3); (3, 2); (2, 1); (3, 4); (2, 3); (1, 2)]
+```
+
+The relation `edge` is really intensional: if we add axioms to it,
+`CI.Rel2.find` will return an updated view.
+
+```
+# CI.Rel2.transitive db edge;;
+- : unit = ()
+# CI.Rel2.find db edge;;
+- : (int * int) list = [(1, 3); (2, 4); (1, 4); (4, 1); (3, 1); (4, 2);
+(4, 3); (3, 2); (2, 1); (1, 1); (3, 3); (4, 4); (2, 2); (3, 4); (2, 3); (1, 2)]
+```
+
 ## Documentation
 
 You can consult the [API documentation](http://cedeela.fr/~simon/software/datalog/).
@@ -113,7 +140,7 @@ can try:
     edge(9, 10).
     edge(10, 7).
 
-    $ datalog_cli tests/clique10.pl -pattern 'same_clique(1,X)' 
+    $ datalog_cli tests/clique10.pl -pattern 'same_clique(1,X)'
     % start datalog
     % parse file tests/clique10.pl
     % process 15 rules
@@ -170,7 +197,7 @@ Or
     % query answer:
         'jean-jacques', alphonse
         brad, john
-        
+
     % max_heap_size: 126976; minor_collections: 0; major collections: 0
 
 ## TODOs/ideas

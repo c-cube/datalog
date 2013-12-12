@@ -69,8 +69,8 @@ Small example:
   # module CI = Datalog.CamlInterface;;
   # let edge = CI.Rel2.create ~k1:CI.Univ.int ~k2:CI.Univ.int "edge";;
   val edge : (int, int) CI.Rel2.t = <abstr>
-  # let db = CI.TopDown.DB.create();;
-  val db : CI.TopDown.DB.t = <abstr>
+  # let db = CI.Logic.DB.create();;
+  val db : CI.Logic.DB.t = <abstr>
   # CI.Rel2.symmetry db edge;;
   - : unit = ()
   # CI.Rel2.add_list db edge [1,2; 2,3; 3,4];;
@@ -88,6 +88,32 @@ The relation ``edge`` is really intensional: if we add axioms to it,
   # CI.Rel2.find db edge;;
   - : (int * int) list = [(1, 3); (2, 4); (1, 4); (4, 1); (3, 1); (4, 2);
   (4, 3); (3, 2); (2, 1); (1, 1); (3, 3); (4, 4); (2, 2); (3, 4); (2, 3); (1, 2)]
+
+One can also directly load a Datalog file (atoms: ints and strings) and access
+it using (properly typed) relations:
+
+.. code-block:: ocaml
+
+   # let db = CI.Logic.create ();;
+   val db : CI.Logic.t = <abstr>
+   # CI.Parse.load_file db "tests/clique10.pl";;
+   - : bool = true
+   # let edge = CI.Rel2.create ~k1:CI.Univ.int ~k2:CI.Univ.int "edge";;
+   val edge : (int, int) CI.Rel2.t = <abstr>
+   # let reachable = CI.Rel2.create ~k1:CI.Univ.int ~k2:CI.Univ.int "reachable";;
+   val reachable : (int, int) CI.Rel2.t = <abstr>
+   # CI.Rel2.find db reachable;;
+   - : (int * int) list =
+    [(5, 0); (5, 1); (4, 0); (5, 2); (4, 1); (3, 0); (10, 7); (5, 3); (10, 8);
+     (9, 7); (4, 2); (3, 1); (2, 0); (5, 4); (10, 9); (9, 8); (8, 7); (4, 3);
+     (3, 2); (2, 1); (1, 0); (5, 5); (10, 10); (9, 9); (8, 8); (7, 7); (4, 4);
+     (3, 3); (2, 2); (1, 1); (0, 0); (0, 1); (1, 2); (2, 3); (3, 4); (4, 5);
+     (5, 6); (6, 7); (7, 8); (8, 9); (9, 10); (8, 10); (7, 9); (6, 8); (5, 7);
+     (4, 6); (3, 5); (2, 4); (1, 3); (0, 2); (7, 10); (6, 9); (5, 8); (4, 7);
+     (3, 6); (2, 5); (1, 4); (0, 3); (6, 10); (5, 9); (4, 8); (3, 7); (2, 6);
+     (1, 5); (0, 4); (5, 10); (4, 9); (3, 8); (2, 7); (1, 6); (0, 5); (4, 10);
+     (3, 9); (2, 8); (1, 7); (0, 6); (3, 10); (2, 9); (1, 8); (0, 7); (2, 10);
+     (1, 9); (0, 8); (1, 10); (0, 9); (0, 10)]
 
 Documentation
 =============

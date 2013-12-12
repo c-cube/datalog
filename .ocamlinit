@@ -8,8 +8,9 @@
 #install_printer Datalog.TopDown.Default.Lit.fmt;;
 #install_printer Datalog.TopDown.Default.C.fmt;;
 module CI = Datalog.CamlInterface;;
-module CI_T = CI.TopDown.T;;
-module CI_DB = CI.TopDown.DB;;
-print_endline "CI: caml interface; CI_T: terms; CI_DB: database";;
+module CI_T = CI.Logic.T;;
+module CI_DB = CI.Logic.DB;;
+let load_file = CI.Parse.load_file;;
+print_endline "CI: caml interface; CI_T: terms; CI_DB: database; load_file;";;
 (* vim:filetype=ocaml:
 *)

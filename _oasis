@@ -23,7 +23,7 @@ Library "datalog"
   Pack:             true
   Modules:          BottomUp, TopDown, Default, BottomUpAst, BottomUpParser,
                     BottomUpLexer, TopDownParser, TopDownLexer, TopDownAst,
-                    Version, TopDownUnix
+                    Version, TopDownUnix, CamlInterface
   BuildDepends:     unix,num,str
 
 Document datalog

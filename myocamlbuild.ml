@@ -1,5 +1,5 @@
 (* OASIS_START *)
-(* DO NOT EDIT (digest: dc4a2fdf018c247008492d1b038a2b4f) *)
+(* DO NOT EDIT (digest: 1fa90dc371b437710ee6b8344919166a) *)
 module OASISGettext = struct
 (* # 21 "src/oasis/OASISGettext.ml" *)
 
@@ -480,8 +480,8 @@ let package_default =
      MyOCamlbuildBase.lib_ocaml = [("datalog", ["src"])];
      lib_c = [];
      flags = [];
-     includes = [];
-     }
+     includes = []
+  }
   ;;
 
 let dispatch_default = MyOCamlbuildBase.dispatch_default package_default;;

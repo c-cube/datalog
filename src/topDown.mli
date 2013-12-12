@@ -51,7 +51,7 @@ module type S = sig
   module Const : CONST
 
   type const = Const.t
-  
+
   val set_debug : bool -> unit
 
   (** {2 Terms} *)

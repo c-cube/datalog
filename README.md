@@ -49,6 +49,12 @@ The format of semantic attachments for symbols is simpler: a handler, when
 queried with a given goal, can return a set of clauses whose heads will
 then be unified with the goal.
 
+### CamlInterface
+
+The module `CamlInterface` contains a universal embedding of OCaml's types,
+with helpers to build unary, binary, and ternary atoms that directly relate
+OCaml values.
+
 ## Documentation
 
 You can consult the [API documentation](http://cedeela.fr/~simon/software/datalog/).

@@ -1,5 +1,5 @@
 # OASIS_START
-# DO NOT EDIT (digest: 830f569627aba2b1e48c147f2687bc78)
+# DO NOT EDIT (digest: 15c60c74a117a2865ff8c70a1b134e2c)
 # Ignore VCS directories, you can use the same kind of rule outside 
 # OASIS_START/STOP if you want to exclude directories that contains 
 # useless stuff for the build process
@@ -26,6 +26,7 @@
 "src/topDownAst.cmx": for-pack(Datalog)
 "src/version.cmx": for-pack(Datalog)
 "src/topDownUnix.cmx": for-pack(Datalog)
+"src/camlInterface.cmx": for-pack(Datalog)
 # Executable datalog_cli
 "src/datalog_cli.native": use_datalog
 "src/datalog_cli.native": pkg_unix

@@ -1,5 +1,5 @@
 # OASIS_START
-# DO NOT EDIT (digest: 8b43aa1cc56a54b01299c89c2cacf50a)
+# DO NOT EDIT (digest: ce149e3a604506f207b8e0c6e86c01aa)
 src/BottomUp
 src/TopDown
 src/Default
@@ -11,4 +11,5 @@ src/TopDownLexer
 src/TopDownAst
 src/Version
 src/TopDownUnix
+src/CamlInterface
 # OASIS_STOP

@@ -61,3 +61,9 @@ let print_error ?(out=stderr) msg lexbuf =
   let stop = Lexing.lexeme_end_p lexbuf in
   Printf.fprintf out "parse error between %s and %s: %s\n"
     (loc_to_str start) (loc_to_str stop) msg
+
+let error_to_string msg lexbuf =
+  let start = Lexing.lexeme_start_p lexbuf in
+  let stop = Lexing.lexeme_end_p lexbuf in
+  Printf.sprintf "parse error between %s and %s: %s\n"
+    (loc_to_str start) (loc_to_str stop) msg

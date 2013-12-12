@@ -44,17 +44,12 @@ let print = ref true
 let parse_files_into db files =
   List.iter
     (fun file ->
-      let ic = open_in file in
-      let lexbuf = Lexing.from_channel ic in
-      try
-        let ast = DParser.parse_file DLexer.token lexbuf in
-        close_in ic;
-        let clauses = D.clauses_of_ast ast in
-        D.DB.add_clauses db clauses
-      with Parsing.Parse_error ->
-        close_in ic;
-        DAst.print_error "parse error" lexbuf;
-        ())
+      match D.parse_file file with
+      | `Error e ->
+        print_endline e;
+        ()
+      | `Ok clauses ->
+        D.DB.add_clauses db clauses)
     files
 
 let eval_query files tuple goals =

@@ -271,6 +271,8 @@ module type S = sig
     val copy : t -> t
       (** Recursive copy of the index *)
 
+    val clear : t -> unit
+
     val add : t -> T.t -> Data.t -> t
       (** Add the term->data binding. This modifies the index! *)
 
@@ -352,6 +354,7 @@ module type S = sig
     val create : ?parent:t -> unit -> t
 
     val copy : t -> t
+    val clear : t -> unit
 
     val add_fact : t -> T.t -> unit
     val add_facts : t -> T.t list -> unit

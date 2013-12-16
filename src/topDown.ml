@@ -51,7 +51,7 @@ module type S = sig
   module Const : CONST
 
   type const = Const.t
-  
+
   val set_debug : bool -> unit
 
   (** {2 Terms} *)
@@ -271,6 +271,8 @@ module type S = sig
     val copy : t -> t
       (** Recursive copy of the index *)
 
+    val clear : t -> unit
+
     val add : t -> T.t -> Data.t -> t
       (** Add the term->data binding. This modifies the index! *)
 
@@ -352,6 +354,7 @@ module type S = sig
     val create : ?parent:t -> unit -> t
 
     val copy : t -> t
+    val clear : t -> unit
 
     val add_fact : t -> T.t -> unit
     val add_facts : t -> T.t list -> unit
@@ -940,6 +943,7 @@ module Make(Const : CONST) = struct
     type map = t ConstTbl.t
     
     let create () = ConstTbl.create 17
+    let clear t = ConstTbl.clear t
 
     let add map c f =
       ConstTbl.replace map c f
@@ -1049,6 +1053,12 @@ module Make(Const : CONST) = struct
         | Some set -> Some (TermDataTbl.copy set)
       in
       { var; sub; data; }
+
+    let clear t =
+      ConstTbl.clear t.sub;
+      t.var <- None;
+      t.data <- None;
+      ()
 
     let add idx t data =
       let arr = term_to_fingerprint t in
@@ -1332,6 +1342,14 @@ module Make(Const : CONST) = struct
         | Some db' -> Some (copy db')
       in
       { db with rules; facts; parent; interpreters; }
+
+    let clear db =
+      ClauseIndex.clear db.rules;
+      TermIndex.clear db.facts;
+      ConstTbl.clear db.interpreters;
+      BuiltinFun.clear db.builtin;
+      db.help <- [];
+      ()
 
     let add_fact db t =
       db.facts <- TermIndex.add db.facts t t

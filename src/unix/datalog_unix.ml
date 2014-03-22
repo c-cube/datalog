@@ -26,23 +26,24 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 (** {1 Unix Interpreted Predicates} *)
 
+open Datalog
 
 module type S = sig
-  module TD : TopDown.S
+  module DB : TopDown.S
 
-  val setup_handlers : TD.DB.t -> unit
+  val setup_handlers : DB.t -> DB.t
 end
 
 (* main constructor *)
 
-module Make(TD : TopDown.S) = struct
-  module TD = TD
+module Make(DB : TopDown.S) = struct
+  module DB = DB
 
-  module T = TD.T
-  module C = TD.C
+  module T = DB.Base.T
+  module C = DB.Base.C
 
-  let c2str = TD.Const.to_string
-  let str2c = TD.Const.of_string
+  let c2str = DB.Base.Const.to_string
+  let str2c = DB.Base.Const.of_string
 
   let str_split ~by s =
     let rec next acc i j =
@@ -193,7 +194,7 @@ module Make(TD : TopDown.S) = struct
     ; str2c "time", "time(T): binds T to the current time", _time
     ]
 
-  let setup_handlers db = TD.DB.interpret_list db handlers
+  let setup_handlers db = DB.interpret_list db handlers
 end
 
 module Default = Make(TopDown.Default)

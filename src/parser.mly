@@ -49,22 +49,22 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 %token <string> OPERATOR  /* infix operator */
 
 %start parse_term
-%type <TopDownAst.term> parse_term
+%type <Ast.term> parse_term
 
 %start parse_literal
-%type <TopDownAst.literal> parse_literal
+%type <Ast.literal> parse_literal
 
 %start parse_literals
-%type <TopDownAst.literal list> parse_literals
+%type <Ast.literal list> parse_literals
 
 %start parse_query
-%type <TopDownAst.term list * TopDownAst.literal list> parse_query
+%type <Ast.term list * Ast.literal list> parse_query
 
 %start parse_clause
-%type <TopDownAst.clause> parse_clause
+%type <Ast.clause> parse_clause
 
 %start parse_file
-%type <TopDownAst.file> parse_file
+%type <Ast.file> parse_file
 
 %%
 
@@ -99,29 +99,29 @@ literals:
   | literal COMMA literals { $1 :: $3 }
 
 literal:
-  | atom { TopDownAst.LitPos $1 }
-  | NOT atom { TopDownAst.LitNeg $2 }
+  | atom { Ast.LitPos $1 }
+  | NOT atom { Ast.LitNeg $2 }
   | subterm AGGR_EQUAL LOWER_WORD UPPER_WORD COLON term
-    { TopDownAst.(LitAggr
+    { Ast.(LitAggr
       { ag_left=$1; ag_constructor= $3; ag_var= $4; ag_guard= $6}
       )
     }
 
 atom:
   | term { $1 }
-  | subterm OPERATOR subterm { TopDownAst.Apply($2, [$1; $3]) }
+  | subterm OPERATOR subterm { Ast.Apply($2, [$1; $3]) }
 
 term:
-  | LOWER_WORD { TopDownAst.Apply ($1, []) }
-  | SINGLE_QUOTED { TopDownAst.Apply (remove_quotes $1, []) }
-  | DOUBLE_QUOTED { TopDownAst.Apply (remove_quotes $1, []) }
+  | LOWER_WORD { Ast.Apply ($1, []) }
+  | SINGLE_QUOTED { Ast.Apply (remove_quotes $1, []) }
+  | DOUBLE_QUOTED { Ast.Apply (remove_quotes $1, []) }
   | LOWER_WORD LEFT_PARENTHESIS args RIGHT_PARENTHESIS
-    { TopDownAst.Apply ($1, $3) }
+    { Ast.Apply ($1, $3) }
 
 subterm:
   | term { $1 }
-  | UPPER_WORD { TopDownAst.Var $1 }
-  | INT { TopDownAst.Int( int_of_string $1) }
+  | UPPER_WORD { Ast.Var $1 }
+  | INT { Ast.Int( int_of_string $1) }
 
 args:
   | subterm { [$1] }

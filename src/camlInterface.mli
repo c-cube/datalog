@@ -75,7 +75,9 @@ type const = Univ.t
 val of_string : string -> const
 val of_int : int -> const
 
-module Logic : TopDown.S with type Const.t = const
+(** Instance of base types with constants = universal type *)
+module Logic : Base.S with type Const.t = const
+module DB : TopDown.S with module Base = Logic
 
 (** {2 Typed relations} *)
 
@@ -98,18 +100,18 @@ module Rel1 : sig
   val apply : 'a t -> Logic.T.t -> Logic.T.t
     (** apply the relation symbol to some term *)
 
-  val find : Logic.DB.t -> 'a t -> 'a list
+  val find : DB.t -> 'a t -> 'a list
     (** Iterate on all instances of the relation present in the DB *)
 
-  val subset : Logic.DB.t -> 'a t -> 'a t -> unit
+  val subset : DB.t -> 'a t -> 'a t -> DB.t
     (** [subset db r1 r2] adds to [db] the axiom that [r2(X) :- r1(X)];
         in other words, [r1] is a subset of [r2] as a relation *)
 
-  val from_fun : Logic.DB.t -> 'a t -> ('a -> bool) -> unit
+  val from_fun : DB.t -> 'a t -> ('a -> bool) -> DB.t
     (** The given function decides of the given relation (if it returns true
         for a constant, then the relation holds for this constant) *)
 
-  val add_list : Logic.DB.t -> 'a t -> 'a list -> unit
+  val add_list : DB.t -> 'a t -> 'a list -> DB.t
     (** Add given list of axioms *)
 
   val to_string : _ t -> string
@@ -130,32 +132,32 @@ module Rel2 : sig
 
   val apply : (_,_) t -> Logic.T.t -> Logic.T.t -> Logic.T.t
 
-  val find : Logic.DB.t -> ('a,'b) t -> ('a *'b) list
+  val find : DB.t -> ('a,'b) t -> ('a *'b) list
 
-  val subset : Logic.DB.t -> ('a,'b) t -> ('a,'b) t -> unit
+  val subset : DB.t -> ('a,'b) t -> ('a,'b) t -> DB.t
     (** [subset db r1 r2] adds to [db] the axiom that [r2(X,Y) :- r1(X,Y)];
         in other words, [r1] is a subset of [r2] as a relation *)
 
-  val transitive : Logic.DB.t -> ('a, 'a) t -> unit
+  val transitive : DB.t -> ('a, 'a) t -> DB.t
     (** Axioms for transitivity are added to the DB *)
 
-  val tc_of : Logic.DB.t -> tc:('a,'a) t -> ('a,'a) t -> unit
+  val tc_of : DB.t -> tc:('a,'a) t -> ('a,'a) t -> DB.t
     (** [tc_of db ~tc r] adds to [db] axioms that make the relation [tc]
         the transitive closure of the relation [r]. *)
 
-  val reflexive : Logic.DB.t -> ('a, 'a) t -> unit
+  val reflexive : DB.t -> ('a, 'a) t -> DB.t
     (** [reflexive db r] makes [r] reflexive in [db], ie for all [X],
         [r(X,X)] holds in [db]. *)
 
-  val symmetry : Logic.DB.t -> ('a, 'a) t -> unit
+  val symmetry : DB.t -> ('a, 'a) t -> DB.t
     (** Axiom for symmetry (ie "r(X,Y) <=> r(Y,X)") added to the DB *)
 
-  val from_fun : Logic.DB.t -> ('a, 'b) t -> ('a -> 'b -> bool) -> unit
+  val from_fun : DB.t -> ('a, 'b) t -> ('a -> 'b -> bool) -> DB.t
     (** The given function decides of the given relation (if it
         returns true for a couple of constants, then the relation
         holds for those constants) *)
 
-  val add_list : Logic.DB.t -> ('a,'b) t -> ('a * 'b) list -> unit
+  val add_list : DB.t -> ('a,'b) t -> ('a * 'b) list -> DB.t
     (** Add given list of axioms *)
 
   val to_string : (_,_) t -> string
@@ -176,13 +178,13 @@ module Rel3 : sig
 
   val apply : (_,_,_) t -> Logic.T.t -> Logic.T.t -> Logic.T.t -> Logic.T.t
 
-  val find : Logic.DB.t -> ('a,'b,'c) t -> ('a *'b*'c) list
+  val find : DB.t -> ('a,'b,'c) t -> ('a *'b*'c) list
 
-  val subset : Logic.DB.t -> ('a,'b,'c) t -> ('a,'b,'c) t -> unit
+  val subset : DB.t -> ('a,'b,'c) t -> ('a,'b,'c) t -> DB.t
 
-  val from_fun : Logic.DB.t -> ('a, 'b, 'c) t -> ('a -> 'b -> 'c -> bool) -> unit
+  val from_fun : DB.t -> ('a, 'b, 'c) t -> ('a -> 'b -> 'c -> bool) -> DB.t
 
-  val add_list : Logic.DB.t -> ('a, 'b, 'c) t -> ('a * 'b * 'c) list -> unit
+  val add_list : DB.t -> ('a, 'b, 'c) t -> ('a * 'b * 'c) list -> DB.t
 
   val to_string : (_,_,_) t -> string
   val fmt : Format.formatter -> (_,_,_) t -> unit
@@ -203,18 +205,18 @@ end
 (** {2 IO} *)
 
 module Parse : sig
-  include TopDown.PARSE
+  include Base.PARSE
    with type term = Logic.T.t
     and type lit = Logic.Lit.t
     and type clause = Logic.C.t
 
   (** Additional functions, to load clauses directly into the DB *)
 
-  val load_chan : Logic.DB.t -> in_channel -> bool
-  val load_file : Logic.DB.t -> string -> bool
-  val load_string : Logic.DB.t -> string -> bool
+  val load_chan : DB.t -> in_channel -> [`Error of string | `Ok of DB.t]
+  val load_file : DB.t -> string -> [`Error of string | `Ok of DB.t]
+  val load_string : DB.t -> string -> [`Error of string | `Ok of DB.t]
 end
 
 (** {2 Interpretation} *)
 
-val add_builtin : Logic.DB.t -> unit
+val add_builtin : DB.t -> DB.t

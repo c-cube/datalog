@@ -24,7 +24,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 *)
 
 {
-  open TopDownParser 
+  open Parser 
   
   let fail () = raise Parsing.Parse_error
 }

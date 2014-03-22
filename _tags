@@ -1,7 +1,7 @@
 # OASIS_START
-# DO NOT EDIT (digest: 15c60c74a117a2865ff8c70a1b134e2c)
-# Ignore VCS directories, you can use the same kind of rule outside 
-# OASIS_START/STOP if you want to exclude directories that contains 
+# DO NOT EDIT (digest: 96190e476c7cd73eed2806a60e447a87)
+# Ignore VCS directories, you can use the same kind of rule outside
+# OASIS_START/STOP if you want to exclude directories that contains
 # useless stuff for the build process
 <**/.svn>: -traverse
 <**/.svn>: not_hygienic
@@ -15,32 +15,30 @@
 "_darcs": not_hygienic
 # Library datalog
 "src/datalog.cmxs": use_datalog
+"src/base.cmx": for-pack(Datalog)
+"src/persistentHashtbl.cmx": for-pack(Datalog)
+"src/sequence.cmx": for-pack(Datalog)
 "src/bottomUp.cmx": for-pack(Datalog)
 "src/topDown.cmx": for-pack(Datalog)
-"src/default.cmx": for-pack(Datalog)
-"src/bottomUpAst.cmx": for-pack(Datalog)
-"src/bottomUpParser.cmx": for-pack(Datalog)
-"src/bottomUpLexer.cmx": for-pack(Datalog)
-"src/topDownParser.cmx": for-pack(Datalog)
-"src/topDownLexer.cmx": for-pack(Datalog)
-"src/topDownAst.cmx": for-pack(Datalog)
+"src/ast.cmx": for-pack(Datalog)
+"src/parser.cmx": for-pack(Datalog)
+"src/lexer.cmx": for-pack(Datalog)
 "src/version.cmx": for-pack(Datalog)
-"src/topDownUnix.cmx": for-pack(Datalog)
 "src/camlInterface.cmx": for-pack(Datalog)
+# Library datalog_unix
+"src/unix/datalog_unix.cmxs": use_datalog_unix
+<src/unix/*.ml{,i}>: package(unix)
+<src/unix/*.ml{,i}>: use_datalog
 # Executable datalog_cli
+"src/datalog_cli.native": package(unix)
 "src/datalog_cli.native": use_datalog
-"src/datalog_cli.native": pkg_unix
-"src/datalog_cli.native": pkg_num
-"src/datalog_cli.native": pkg_str
 # Executable topDownCli
+"src/topDownCli.native": package(unix)
 "src/topDownCli.native": use_datalog
-"src/topDownCli.native": pkg_unix
-"src/topDownCli.native": pkg_num
-"src/topDownCli.native": pkg_str
+"src/topDownCli.native": use_datalog_unix
+<src/*.ml{,i}>: package(unix)
 <src/*.ml{,i}>: use_datalog
-<src/*.ml{,i}>: pkg_unix
-<src/*.ml{,i}>: pkg_num
-<src/*.ml{,i}>: pkg_str
+<src/*.ml{,i}>: use_datalog_unix
 # OASIS_STOP
 <**/*.cmx>: inline(10)
 

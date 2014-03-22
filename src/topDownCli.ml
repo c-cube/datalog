@@ -26,10 +26,11 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 (** {1 Prolog-like command line tool} *)
 
-module D = Datalog.TopDown.Default
-module DParser = Datalog.TopDownParser
-module DLexer = Datalog.TopDownLexer
-module DAst = Datalog.TopDownAst
+module Logic = Datalog.Base.Default
+module DB = Datalog.TopDown.Default
+module DParser = Datalog.Parser
+module DLexer = Datalog.Lexer
+module DAst = Datalog.Ast
 
 (** Options *)
 
@@ -42,23 +43,23 @@ let print = ref true
 (** Evaluate query *)
 
 let parse_files_into db files =
-  List.iter
-    (fun file ->
-      match D.parse_file file with
+  List.fold_left
+    (fun db file ->
+      match Logic.parse_file file with
       | `Error e ->
         print_endline e;
-        ()
+        db
       | `Ok clauses ->
-        D.DB.add_clauses db clauses)
-    files
+        DB.add_clauses db clauses)
+    db files
 
 let eval_query files tuple goals =
-  let db = D.DB.create () in
-  if !builtin then D.setup_default db;
-  if !unix then Datalog.TopDownUnix.Default.setup_handlers db;
+  let db = DB.create () in
+  let db = if !builtin then DB.setup_default db else db in
+  if !unix then Datalog_unix.Default.setup_handlers db;
   (* print doc and exit, if asked *)
   if !doc then begin
-    let l = List.sort compare (D.DB.help db) in
+    let l = List.sort compare (DB.help db) in
     print_endline "interpreted predicates:";
     List.iter (fun s -> print_endline ("  " ^ s)) l;
     exit 0

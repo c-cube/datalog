@@ -26,14 +26,14 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 (** {1 Unix Interpreted Predicates} *)
 
-module type S = sig
-  module TD : TopDown.S
+open Datalog
 
-  val setup_handlers : TD.DB.t -> unit
+module type S = sig
+  module DB : TopDown.S
+
+  val setup_handlers : DB.t -> DB.t
 end
 
-module Make(TD : TopDown.S) : S with module TD = TD
+module Make(DB : TopDown.S) : S with module DB = DB
 
-module Default : S
-  with type TD.DB.t = TopDown.Default.DB.t
-  and module TD.Const = TopDown.Default.Const
+module Default : S with type DB.t = TopDown.Default.t

@@ -26,9 +26,10 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 (** The main datalog file. It provides a CLI tool to parse clause/fact files and compute
     their fixpoint *)
 
-module DLogic = Datalog.Default
-module DParser = Datalog.BottomUpParser
-module DLexer = Datalog.BottomUpLexer
+module DLogic = Datalog.Base.Default
+module DB = Datalog.BottomUp.Default
+module DParser = Datalog.Parser
+module DLexer = Datalog.Lexer
 
 let progress = ref false
 let print_input = ref false

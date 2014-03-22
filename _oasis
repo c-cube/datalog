@@ -18,13 +18,25 @@ Description:
     tries to achieve good behavior in presence of incremental modifications of the
     relations.
 
+Flag "unix"
+  Description:      Build and install the Unix interface
+  Default:          false
+
 Library "datalog"
   Path:             src/
   Pack:             true
-  Modules:          BottomUp, TopDown, Default, BottomUpAst, BottomUpParser,
-                    BottomUpLexer, TopDownParser, TopDownLexer, TopDownAst,
-                    Version, TopDownUnix, CamlInterface
-  BuildDepends:     unix,num,str
+  Modules:          Base, PersistentHashtbl, Sequence, BottomUp, TopDown,
+                    Ast, Parser, Lexer, Version, CamlInterface
+  BuildDepends:     unix
+
+Library "datalog_unix"
+  Path:             src/unix/
+  Pack:             false
+  Modules:          Datalog_unix
+  FindlibName:      unix
+  FindlibParent:    datalog
+  BuildDepends:     datalog,unix
+  XMETARequires:    datalog,unix
 
 Document datalog
   Title:                documentation for Datalog
@@ -36,19 +48,19 @@ Document datalog
 
 # CLI client using BottomUp
 Executable datalog_cli
-  Path: src/
-  Install: true
-  CompiledObject: native
-  MainIs: datalog_cli.ml
-  BuildDepends: datalog
+  Path:             src/
+  Install:          true
+  CompiledObject:   native
+  MainIs:           datalog_cli.ml
+  BuildDepends:     datalog
 
 # CLI client using TopDown
 Executable topDownCli
-  Path: src/
-  Install: false
-  CompiledObject: native
-  MainIs: topDownCli.ml
-  BuildDepends: datalog
+  Path:             src/
+  Install:          false
+  CompiledObject:   native
+  MainIs:           topDownCli.ml
+  BuildDepends:     datalog,datalog.unix
 
 SourceRepository head
   Type: git

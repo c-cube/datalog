@@ -157,7 +157,7 @@ let _key_query = Univ.new_key ~print:(fun () -> "query") ()
 let of_string s = Univ.pack ~key:Univ.string s
 let of_int i = Univ.pack ~key:Univ.int i
 
-module Logic = TopDown.Make(struct
+module Logic = Base.Make(struct
   type t = const
   let equal = Univ.eq
   let hash = Univ.hash
@@ -170,7 +170,7 @@ end)
 
 module T = Logic.T
 module C = Logic.C
-module DB = Logic.DB
+module DB = TopDown.Make(Logic)
 
 module Rel1 = struct
   type 'a t = Univ.t * 'a Univ.key
@@ -196,7 +196,7 @@ module Rel1 = struct
   (* find instances of the relation *)
   let find db ((n,k) as rel) =
     let query = T.mk_apply n [| T.mk_var 0 |] in
-    let l = Logic.ask db query in
+    let l = DB.ask db query in
     List.fold_left
       (fun acc t -> match get rel t with
         | None -> acc
@@ -222,9 +222,9 @@ module Rel1 = struct
             else [])
 
   let add_list db rel l =
-    List.iter
-      (fun t -> DB.add_fact db (make rel t))
-      l
+    List.fold_left
+      (fun db t -> DB.add_fact db (make rel t))
+      db l
 
   let to_string t = name t ^ "/1"
   let fmt fmt t = Format.pp_print_string fmt (to_string t)
@@ -262,7 +262,7 @@ module Rel2 = struct
   (* find instances of the relation *)
   let find db ((n,_,_) as rel) =
     let query = T.mk_apply n [| T.mk_var 0; T.mk_var 1 |] in
-    let l = Logic.ask db query in
+    let l = DB.ask db query in
     List.fold_left
       (fun acc t -> match get rel t with
         | None -> acc
@@ -298,9 +298,8 @@ module Rel2 = struct
       ; Logic.Lit.mk_pos (T.mk_apply name_tc [|z; y|])
       ]
     in
-    DB.add_clause db c;
-    subset db r tc;
-    ()
+    let db = DB.add_clause db c in
+    subset db r tc
 
   (* r(X,Y) :- X=Y *)
   let reflexive db (n,_,_) =
@@ -330,9 +329,9 @@ module Rel2 = struct
             else [])
 
   let add_list db rel l =
-    List.iter
-      (fun (x,y) -> DB.add_fact db (make rel x y))
-      l
+    List.fold_left
+      (fun db (x,y) -> DB.add_fact db (make rel x y))
+      db l
 
   let to_string t = name t ^ "/2"
   let fmt fmt t = Format.pp_print_string fmt (to_string t)
@@ -355,7 +354,9 @@ module Rel3 = struct
       ;  T.Apply(u2, [| |])
       ;  T.Apply(u3, [| |])
       |]) when Univ.eq name name' ->
-      begin match Univ.unpack ~key:k1 u1, Univ.unpack ~key:k2 u2, Univ.unpack ~key:k3 u3 with
+      begin match Univ.unpack ~key:k1 u1, Univ.unpack ~key:k2 u2,
+                Univ.unpack ~key:k3 u3
+      with
       | Some x1, Some x2, Some x3 -> Some (x1,x2,x3)
       | _ -> None
       end
@@ -372,7 +373,7 @@ module Rel3 = struct
   (* find instances of the relation *)
   let find db ((n,_,_,_) as rel) =
     let query = T.mk_apply n [| T.mk_var 0; T.mk_var 1; T.mk_var 2 |] in
-    let l = Logic.ask db query in
+    let l = DB.ask db query in
     List.fold_left
       (fun acc t -> match get rel t with
         | None -> acc
@@ -398,9 +399,9 @@ module Rel3 = struct
             else [])
 
   let add_list db rel l =
-    List.iter
-      (fun (x,y,z) -> DB.add_fact db (make rel x y z))
-      l
+    List.fold_left
+      (fun db (x,y,z) -> DB.add_fact db (make rel x y z))
+      db l
 
   let to_string t = name t ^ "/3"
   let fmt fmt t = Format.pp_print_string fmt (to_string t)
@@ -440,7 +441,7 @@ module RelList = struct
 end
 
 module Parse = struct
-  include TopDown.MakeParse(struct
+  include Base.MakeParse(struct
     type t = const
     let of_string = of_string
     let of_int = of_int
@@ -448,10 +449,9 @@ module Parse = struct
 
   let _load db res =
     match res with
-    | `Error _ -> false
+    | `Error str -> `Error str
     | `Ok clauses ->
-      Logic.DB.add_clauses db clauses;
-      true
+        `Ok (DB.add_clauses db clauses)
 
   let load_chan db ic = _load db (parse_chan ic)
 
@@ -496,13 +496,11 @@ let add_builtin db =
         "eval(*goals): add eval(goals) :- g for each g in goals", _eval
     ]
   in
-  DB.interpret_list db builtin;
+  let db = DB.interpret_list db builtin in
   let _assertz db goal = match goal with
     | Logic.T.Apply(_, [| fact |]) when Logic.T.ground fact ->
-      Logic.DB.add_fact db fact;
       [ C.mk_fact goal ]
     | _ -> []
   in
   DB.interpret ~help:"assertz(fact): add fact to the DB"
-    db (of_string "assertz") (_assertz db);
-  ()
+    db (of_string "assertz") (_assertz db)

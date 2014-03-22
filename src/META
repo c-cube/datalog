@@ -1,12 +1,22 @@
 # OASIS_START
-# DO NOT EDIT (digest: e21235d151ba533cb463d8725a2884e5)
+# DO NOT EDIT (digest: 42521f6b3a20e30c7b4f7b69494dde64)
 version = "0.5.1"
 description = "An in-memory datalog implementation for OCaml"
-requires = "unix num str"
+requires = "unix"
 archive(byte) = "datalog.cma"
 archive(byte, plugin) = "datalog.cma"
 archive(native) = "datalog.cmxa"
 archive(native, plugin) = "datalog.cmxs"
 exists_if = "datalog.cma"
+package "unix" (
+ version = "0.5.1"
+ description = "An in-memory datalog implementation for OCaml"
+ requires = "datalog unix"
+ archive(byte) = "datalog_unix.cma"
+ archive(byte, plugin) = "datalog_unix.cma"
+ archive(native) = "datalog_unix.cmxa"
+ archive(native, plugin) = "datalog_unix.cmxs"
+ exists_if = "datalog_unix.cma"
+)
 # OASIS_STOP
 

@@ -46,8 +46,6 @@ end
 module type S = sig
   module Const : CONST
 
-  type const = Const.t
-
   val set_debug : bool -> unit
 
   (** {2 Terms} *)
@@ -55,12 +53,12 @@ module type S = sig
   module T : sig
     type t = private
     | Var of int
-    | Apply of const * t array
+    | Apply of Const.t * t array
 
     val mk_var : int -> t
-    val mk_const : const -> t
-    val mk_apply : const -> t array -> t
-    val mk_apply_l : const -> t list -> t
+    val mk_const : Const.t -> t
+    val mk_apply : Const.t -> t array -> t
+    val mk_apply_l : Const.t -> t list -> t
 
     val is_var : t -> bool
     val is_apply : t -> bool
@@ -73,7 +71,7 @@ module type S = sig
     val ground : t -> bool
     val vars : t -> int list
     val max_var : t -> int    (** max var, or 0 if ground *)
-    val head_symbol : t -> const option
+    val head_symbol : t -> Const.t option
 
     val to_string : t -> string
     val pp : out_channel -> t -> unit
@@ -103,7 +101,7 @@ module type S = sig
   module Lit : sig
     type aggregate = {
       left : T.t;
-      constructor : const;
+      constructor : Const.t;
       var : T.t;
       guard : T.t;
     } (* aggregate: ag_left = ag_constructor set
@@ -119,7 +117,7 @@ module type S = sig
     val mk_neg : T.t -> t
     val mk : bool -> T.t -> t
 
-    val mk_aggr : left:T.t -> constructor:const -> var:T.t -> guard:T.t -> t
+    val mk_aggr : left:T.t -> constructor:Const.t -> var:T.t -> guard:T.t -> t
 
     val eq : t -> t -> bool
     val hash : t -> int
@@ -155,7 +153,7 @@ module type S = sig
 
     val is_fact : t -> bool
 
-    val head_symbol : t -> const option
+    val head_symbol : t -> Const.t option
     val max_var : t -> int
     val fmap : (T.t -> T.t) -> t -> t
 
@@ -314,6 +312,11 @@ module type S = sig
       (** Retrieve data associated with terms that unify with the given
           query term *)
 
+    val variant : t -> scope -> T.t -> scope ->
+                  (Data.t -> Subst.t -> unit) -> unit
+      (** retrieve data associated with terms that are alpha-equivalent
+          with the given term *)
+
     val iter : t -> (T.t -> Data.t -> unit) -> unit
       (** Iterate on bindings *)
 
@@ -358,42 +361,6 @@ module type S = sig
 end
 
 (** {2 Implementation} *)
-
-let combine_hash hash i =
-  abs (hash * 65599 + i)
-
-(** Hash a list. Each element is hashed using [f]. *)
-let rec hash_list f h l = match l with
-  | [] -> h
-  | x::l' -> hash_list f (combine_hash h (f x)) l'
-
-let _array_forall2 p a1 a2 =
-  if Array.length a1 = Array.length a2
-    then try
-      for i = 0 to Array.length a1 - 1 do
-        if not (p a1.(i) a2.(i)) then raise Exit
-      done;
-      true
-    with Exit -> false
-    else false
-
-let _array_exists p a =
-  try
-    for i = 0 to Array.length a - 1 do
-      if p a.(i) then raise Exit
-    done;
-    false
-  with Exit -> true
-
-let _array_fold2 f acc a1 a2 =
-  if Array.length a1 <> Array.length a2
-    then failwith "_array_fold2: arrays must have same length";
-  let acc = ref acc in
-  for i = 0 to Array.length a1 - 1 do
-    acc := f !acc a1.(i) a2.(i)
-  done;
-  !acc
-
 
 module Make(Const : CONST) : S with module Const = Const = struct
   module Const = Const
@@ -441,7 +408,7 @@ module Make(Const : CONST) : S with module Const = Const = struct
     | Apply (c1, l1), Apply (c2, l2) ->
       Array.length l1 = Array.length l2 &&
       Const.equal c1 c2 &&
-      _array_forall2 eq l1 l2
+      Util.array_forall2 eq l1 l2
     | Var _, Apply _
     | Apply _, Var _ -> false
 
@@ -452,7 +419,7 @@ module Make(Const : CONST) : S with module Const = Const = struct
     | Apply (c, args) ->
       let h = ref (Const.hash c) in
       for i = 0 to Array.length args -1 do
-        h := combine_hash !h (hash args.(i))
+        h := Util.combine_hash !h (hash args.(i))
       done;
       !h
 
@@ -462,7 +429,7 @@ module Make(Const : CONST) : S with module Const = Const = struct
     | Apply(c, args) ->
       let h = ref (Const.hash c) in
       for i = 0 to Array.length args -1 do
-        h := combine_hash !h (hash_novar args.(i))
+        h := Util.combine_hash !h (hash_novar args.(i))
       done;
       !h
 
@@ -611,17 +578,17 @@ module Make(Const : CONST) : S with module Const = Const = struct
     | LitPos t -> T.hash t
     | LitNeg t -> T.hash t + 65599 * 13
     | LitAggr a ->
-      combine_hash
-        (combine_hash (T.hash a.left) (T.hash a.var))
-        (combine_hash (Const.hash a.constructor) (T.hash a.guard))
+      Util.combine_hash
+        (Util.combine_hash (T.hash a.left) (T.hash a.var))
+        (Util.combine_hash (Const.hash a.constructor) (T.hash a.guard))
 
     let hash_novar lit = match lit with
     | LitPos t -> T.hash_novar t
     | LitNeg t -> T.hash_novar t + 65599 * 13
     | LitAggr a ->
-      combine_hash
-        (combine_hash (T.hash_novar a.left) (T.hash_novar a.var))
-        (combine_hash (Const.hash a.constructor) (T.hash_novar a.guard))
+      Util.combine_hash
+        (Util.combine_hash (T.hash_novar a.left) (T.hash_novar a.var))
+        (Util.combine_hash (Const.hash a.constructor) (T.hash_novar a.guard))
 
     let to_term = function
     | LitPos t
@@ -686,11 +653,11 @@ module Make(Const : CONST) : S with module Const = Const = struct
 
     let hash c = match c.body with
       | [] -> T.hash c.head
-      | _ -> hash_list Lit.hash (T.hash c.head) c.body
+      | _ -> Util.hash_list Lit.hash (T.hash c.head) c.body
 
     let hash_novar c = match c.body with
       | [] -> T.hash_novar c.head
-      | _ -> hash_list Lit.hash_novar (T.hash_novar c.head) c.body
+      | _ -> Util.hash_list Lit.hash_novar (T.hash_novar c.head) c.body
 
     let head_symbol c = T.head_symbol c.head
 
@@ -829,7 +796,7 @@ module Make(Const : CONST) : S with module Const = Const = struct
     | T.Var _ -> false
     | T.Apply (_, [| |]) -> false
     | T.Apply (_, args) ->
-      _array_exists (fun t' -> _occur_check subst v sc_v t' sc_t) args
+      Util.array_exists (fun t' -> _occur_check subst v sc_v t' sc_t) args
 
     let rec unify ?(oc=false) ?(subst=Subst.empty) t1 sc1 t2 sc2 =
       let t1, sc1 = Subst.deref subst t1 sc1 in
@@ -843,7 +810,7 @@ module Make(Const : CONST) : S with module Const = Const = struct
       | T.Apply (c1, [| |]), T.Apply (c2, [| |]) when Const.equal c1 c2 -> subst
       | T.Apply (c1, l1), T.Apply (c2, l2)
         when Const.equal c1 c2 && Array.length l1 = Array.length l2 ->
-        _array_fold2
+        Util.array_fold2
           (fun subst t1' t2' -> unify ~oc ~subst t1' sc1 t2' sc2)
           subst l1 l2
       | _, _ -> raise Fail
@@ -858,7 +825,7 @@ module Make(Const : CONST) : S with module Const = Const = struct
       | T.Apply (c1, [| |]), T.Apply (c2, [| |]) when Const.equal c1 c2 -> subst
       | T.Apply (c1, l1), T.Apply (c2, l2)
         when Const.equal c1 c2 && Array.length l1 = Array.length l2 ->
-        _array_fold2
+        Util.array_fold2
           (fun subst t1' t2' -> match_ ~oc ~subst t1' sc1 t2' sc2)
           subst l1 l2
       | _, _ -> raise Fail
@@ -873,7 +840,7 @@ module Make(Const : CONST) : S with module Const = Const = struct
       | T.Apply (c1, [| |]), T.Apply (c2, [| |]) when Const.equal c1 c2 -> subst
       | T.Apply (c1, l1), T.Apply (c2, l2)
         when Const.equal c1 c2 && Array.length l1 = Array.length l2 ->
-        _array_fold2
+        Util.array_fold2
           (fun subst t1' t2' -> alpha_equiv ~subst t1' sc1 t2' sc2)
           subst l1 l2
       | _, _ -> raise Fail
@@ -973,7 +940,7 @@ module Make(Const : CONST) : S with module Const = Const = struct
       let equal (t1,d1) (t2,d2) =
         Unif.are_alpha_equiv t1 t2 && Data.equal d1 d2
       let hash (t,d) =
-        combine_hash (T.hash_novar t) (Data.hash d)
+        Util.combine_hash (T.hash_novar t) (Data.hash d)
     end)
 
     type t = {
@@ -1157,6 +1124,40 @@ module Make(Const : CONST) : S with module Const = Const = struct
             end;
             match arr.(i) with
             | Var -> ()  (* only variable does it *)
+            | Const s ->
+              (* iterate on the subtree with same symbol, if present *)
+              try
+                let tree' = ConstTbl.find tree.sub s in
+                iter tree' (i+1)
+              with Not_found -> ()
+            end
+      in
+      iter tree 0
+
+    (* same as {!unify} but for alpha-equivalence *)
+    let variant tree s_tree t s_t k =
+      let arr = term_to_fingerprint t in
+      (* iterate on tree *)
+      let rec iter tree i =
+        if i = Array.length arr
+          then match tree with
+            | {data=Some set} ->
+              (* unify against the indexed terms now *)
+              TermDataTbl.iter set
+                (fun (t',data) () ->
+                  try
+                    let subst = Unif.alpha_equiv t' s_tree t s_t in
+                    k data subst
+                  with Unif.Fail -> ())
+            | _ -> ()
+          else begin
+            match arr.(i) with
+            | Var ->
+              (* recurse into subterms which have a variable *)
+              begin match tree.var with
+              | None -> ()
+              | Some tree' -> iter tree' (i+1)
+              end
             | Const s ->
               (* iterate on the subtree with same symbol, if present *)
               try
@@ -1369,22 +1370,21 @@ type const =
   | Int of int
   | String of string
 
-module Default = struct
-  module B = Make(struct
-    type t = const
-    let equal a b = a = b
-    let hash a = Hashtbl.hash a
-    let to_string a = match a with
-      | String s -> s
-      | Int i -> string_of_int i
-    let of_string s = String s
-    let query = String ""
-  end)
+module Default = Make(struct
+  type t = const =
+    | Int of int
+    | String of string
+  let equal a b = a = b
+  let hash a = Hashtbl.hash a
+  let to_string a = match a with
+    | String s -> s
+    | Int i -> string_of_int i
+  let of_string s = String s
+  let query = String ""
+end)
 
-  include B
-  include MakeParse(struct
-    type t = const
-    let of_int i = Int i
-    let of_string s = String s
-  end)(B)
-end
+module DefaultParse = MakeParse(struct
+  type t = const
+  let of_int i = Int i
+  let of_string s = String s
+end)(Default)

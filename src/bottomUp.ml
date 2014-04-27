@@ -30,19 +30,6 @@ module type S = sig
   module Base : Base.S
   type const = Base.Const.t
 
-  (** {2 Higher level API} *)
-
-  (** This part of the API can be used to avoid building variables
-      yourself. Calling [quantify3 f] with call [f] with 3 distinct
-      variables, and [f] can use those variables to, for instance,
-      build a clause *)
-
-  val quantify1 : (Base.T.t -> 'a) -> 'a
-  val quantify2 : (Base.T.t -> Base.T.t -> 'a) -> 'a
-  val quantify3 : (Base.T.t -> Base.T.t -> Base.T.t -> 'a) -> 'a
-  val quantify4 : (Base.T.t -> Base.T.t -> Base.T.t -> Base.T.t -> 'a) -> 'a
-  val quantifyn : int -> (Base.T.t list -> 'a) -> 'a
-
   (** {2 The Datalog unit resolution algorithm} *)
 
   type t
@@ -50,7 +37,7 @@ module type S = sig
 
   type explanation =
     | Axiom
-    | Resolution of Base.C.t * Base.Lit.t
+    | Resolution of Base.C.t * Base.T.t
     (** Explanation for a clause or fact. *)
 
   val create : unit -> t
@@ -66,18 +53,18 @@ module type S = sig
     (** Add the clause/fact to the DB as an axiom, updating fixpoint.
         UnsafeRule will be raised if the rule is not safe (see {!check_safe}) *)
 
-  val add_fact : ?expl:explanation -> t -> Base.Lit.t  -> t
+  val add_fact : ?expl:explanation -> t -> Base.T.t  -> t
     (** Add a fact (ground unit clause) *)
 
-  val goal : t -> Base.Lit.t -> t
+  val goal : t -> Base.T.t -> t
     (** Add a goal to the DB. The goal is used to trigger backward chaining
         (calling goal handlers that could help solve the goal) *)
 
-  val match_ : t -> Base.Lit.t -> (Base.Lit.t -> unit) -> unit
+  val match_ : t -> Base.T.t -> (Base.C.t -> unit) -> unit
     (** match the given literal with facts of the DB, calling the handler on
         each fact that match *)
 
-  val query : t -> Base.Lit.t -> int list -> (const list -> unit) -> unit
+  val query : t -> Base.T.t -> int list -> (const list -> unit) -> unit
     (** Like {!db_match}, but the additional int list is used to select
         bindings of variables in the literal. Their bindings, in the same
         order, are given to the callback. *)
@@ -88,27 +75,26 @@ module type S = sig
   val fold : ('a -> Base.C.t -> 'a) -> 'a -> t -> 'a
     (** Fold on all clauses in the current DB (including fixpoint) *)
 
-  type fact_handler = Base.Lit.t -> unit
-  type goal_handler = Base.Lit.t -> unit
+  type fact_handler = Base.T.t -> unit
+  type goal_handler = Base.T.t -> unit
 
   val subscribe_fact : t -> const -> fact_handler -> unit
   val subscribe_all_facts : t -> fact_handler -> unit
   val subscribe_goal : t -> goal_handler -> unit
 
-  type user_fun = Base.Lit.t -> Base.Lit.t
+  type user_fun = Base.T.t -> Base.T.t option
 
   val add_fun : t -> const -> user_fun -> t
-    (** Add a function to be called on new literals. Only one function per
-        symbol can be registered. *)
+    (** Add a function to be called on new literals. *)
 
-  val goals : t -> (Base.Lit.t -> unit) -> unit
+  val goals : t -> (Base.T.t -> unit) -> unit
     (** Iterate on all current goals *)
 
-  val explain : t -> Base.Lit.t -> Base.Lit.t list
+  val explain : t -> Base.T.t -> Base.T.t list
     (** Explain the given fact by returning a list of facts that imply it
         under the current clauses, or raise Not_found *)
 
-  val premises : t -> Base.Lit.t -> Base.C.t * Base.Lit.t list
+  val premises : t -> Base.T.t -> Base.C.t * Base.T.t list
     (** Immediate premises of the fact (ie the facts that resolved with
         a clause to give the literal), plus the clause that has been used. *)
 
@@ -117,6 +103,7 @@ module type S = sig
 
   (** {2 Querying} *)
 
+  (* TODO: update
   module Query : sig
     type set
       (** mutable set of term lists *)
@@ -143,6 +130,7 @@ module type S = sig
     val pp_plan : Format.formatter -> set -> unit
       (** Print query plan *)
   end
+  *)
 end
 
 (** Build a Datalog module *)
@@ -152,6 +140,9 @@ module Make(Base : Base.S) = struct
   module C = Base.C
   module Lit = Base.Lit
   module Unif = Base.Unif
+  module S = Base.Subst
+
+  type const = Base.Const.t
 
   (* ----------------------------------------------------------------------
    * The datalog bipartite resolution algorithm
@@ -174,16 +165,16 @@ module Make(Base : Base.S) = struct
   (** Explanation for a clause or fact. It is extensible through universal types. *)
   type explanation =
     | Axiom
-    | Resolution of C.t * Base.Lit.t
+    | Resolution of C.t * T.t
 
-  type fact_handler = Base.Lit.t -> unit
-  type goal_handler = Base.Lit.t -> unit
+  type fact_handler = T.t -> unit
+  type goal_handler = T.t -> unit
 
-  type user_fun = Lit.t -> Lit.t
+  type user_fun = T.t -> T.t option
 
   type queue_item =
     [ `AddClause of C.t * explanation
-    | `AddGoal of Base.Lit.t
+    | `AddGoal of T.t
     ]
 
   module ConstTbl = Hashtbl.Make(Base.Const)
@@ -193,8 +184,8 @@ module Make(Base : Base.S) = struct
     db_all : explanation C.Tbl.t;  (** maps all clauses to their explanations *)
     mutable db_facts : ClausesIndex.t;       (** index on facts *)
     mutable db_goals : GoalIndex.t;          (** set of goals *)
-    mutable db_selected : ClausesIndex.t;    (** index on clauses' selected premises *)
-    db_heads : ClausesIndex.t;                    (** index on clauses' heads *)
+    mutable db_selected : ClausesIndex.t;    (** index on selected premises *)
+    mutable db_heads : ClausesIndex.t;      (** index on clauses' heads *)
     db_fact_handlers : fact_handler ConstTbl.t;   (** map symbol -> fact handlers *)
     mutable db_all_facts : fact_handler list;
     mutable db_goal_handlers : goal_handler list; (** goal handlers *)
@@ -241,15 +232,15 @@ module Make(Base : Base.S) = struct
 
   let resolve ?(oc=true) fact clause =
     match clause.C.body with
-    | (Base.Lit.LitPos lit) :: body' ->
+    | (Lit.LitPos lit) :: body' ->
       begin try
-        let subst = Base.Unif.unify fact 0 lit 1 in
-        let renaming = Base.Subst.create_renaming () in
+        let subst = Unif.unify fact 0 lit 1 in
+        let renaming = S.create_renaming () in
         Some (C.mk_clause
-          (Base.Subst.eval subst ~renaming clause.C.head 1)
-          (Base.Subst.eval_lits subst ~renaming body' 1)
+          (S.eval subst ~renaming clause.C.head 1)
+          (S.eval_lits subst ~renaming body' 1)
         )
-      with Base.Unif.Fail -> None
+      with Unif.Fail -> None
       end
     | _ -> None
 
@@ -258,176 +249,191 @@ module Make(Base : Base.S) = struct
     (* check if clause already present; in any case add the explanation *)
     let already_present = mem db clause in
     C.Tbl.add db.db_all clause explanation;
-    if already_present then ()
+    if already_present then db
     (* generate new clauses by resolution *)
     else if C.is_fact clause then begin
       db.db_facts <- ClausesIndex.add db.db_facts clause.C.head clause;
-      (* FIXME  handlers
       (* call handler for this fact, if any *)
-      let call_handler h =
+      let call_handler ?sym h =
         try h clause.C.head
         with e ->
           Format.eprintf
-            "Datalog: exception while calling handler for %s@."
-            (Base.Const.to_string s);
+            "Datalog: exception while calling handler%s@."
+            (match sym with
+              | None -> ""
+              | Some s -> Format.sprintf "for %s" (Base.Const.to_string s)
+            );
           raise e
       in
       begin match C.head_symbol clause with
-        | Some s -> 
-          List.iter call_handler (ConstTbl.find_all db.db_fact_handlers s);
+        | Some sym -> 
+          List.iter (call_handler ~sym)
+            (ConstTbl.find_all db.db_fact_handlers sym);
         | None -> ()
       end;
-      List.iter call_handler db.db_all_facts;
-      *)
+      List.iter (call_handler ?sym:None) db.db_all_facts;
       (* insertion of a fact: resolution with all clauses whose
          first body literal matches the fact. No offset is needed, because
          the fact is ground. *)
       ClausesIndex.generalizations db.db_selected 0 clause.C.head 0
         (fun clause' subst ->
-          (* subst(clause'.(1)) = clause.(0) , remove the first element of the
-             body of subst(clause'), that makes a new clause *)
-          let clause'' = C. remove_first_subst subst (clause',0) in
-          let explanation = Resolution (clause', clause.(0)) in
-          Queue.push (`AddClause (clause'', explanation)) db.db_queue)
+          match resolve clause.C.head clause' with
+          | None -> ()
+          | Some clause'' ->
+            let explanation = Resolution (clause', clause.C.head) in
+            Queue.push (`AddClause (clause'', explanation)) db.db_queue
+        );
+      db
     end else begin
-      assert (Array.length clause > 1);
+      assert (List.length clause.C.body > 1);
       (* check if some goal unifies with head of clause *)
-      let offset = offset clause in
-      GoalIndex.retrieve_unify
-        (fun () goal () subst ->
-          (* subst(goal) = subst(clause.(0)), so subst(clause.(1)) is a goal *)
-          let new_goal = subst_literal subst (clause.(1),0) in
-          Queue.push (`AddGoal new_goal) db.db_queue)
-        () (db.db_goals,offset) (clause.(0),0);
+      GoalIndex.unify db.db_goals 1 clause.C.head 0
+        (fun () subst ->
+          match clause.C.body with
+          | Lit.LitPos t :: _ ->
+            let renaming = S.create_renaming () in
+            let new_goal = S.eval subst ~renaming t 0 in
+            Queue.push (`AddGoal new_goal) db.db_queue
+          | _ -> failwith "bottomUp: can only deal with positive Horn clauses"
+        );
       (* add to index *)
-      ClausesIndex.add db.db_selected clause.(1) clause;
-      ClausesIndex.add db.db_heads clause.(0) clause;
+      let premise = match List.hd clause.C.body with
+        | Lit.LitPos t -> t
+        | _ -> failwith "bottom up: only handles positive Horn clauses"
+      in
+      db.db_selected <- ClausesIndex.add db.db_selected premise clause;
+      db.db_heads <- ClausesIndex.add db.db_heads clause.C.head clause;
       (* insertion of a non_unit clause: resolution with all facts that match the
          first body literal of the clause *)
-      ClausesIndex.retrieve_specializations
-        (fun () fact _ subst ->
-          (* subst(clause.body.(0)) = fact, remove this first literal *)
-          let clause' = remove_first_subst subst (clause,0) in
-          let explanation = Resolution (clause, fact) in
-          Queue.push (`AddClause (clause', explanation)) db.db_queue)
-        () (db.db_facts,offset) (clause.(1),0)
+      ClausesIndex.unify db.db_facts 1 premise 0
+        (fun clause' subst ->
+          assert (C.is_fact clause');
+          let fact = clause'.C.head in
+          match resolve fact clause with
+          | None -> ()
+          | Some clause'' ->
+            let explanation = Resolution (clause, fact) in
+            Queue.push (`AddClause (clause'', explanation)) db.db_queue
+        );
+      db
     end
 
-  let add_goal db lit =
+  let add_goal db goal =
     try
-      let offset = offset [|lit|] in
-      GoalIndex.retrieve_renaming
-        (fun () _ _ _ -> raise Exit)
-        () (db.db_goals,offset) (lit,0);
+      GoalIndex.variant db.db_goals 1 goal 0
+        (fun () _ -> raise Exit);
       (* goal is not present! call handlers and add it *)
-      List.iter (fun h -> h lit) db.db_goal_handlers;
-      GoalIndex.add db.db_goals lit ();
+      List.iter (fun h -> h goal) db.db_goal_handlers;
+      db.db_goals <- GoalIndex.add db.db_goals goal ();
       (* find clauses that may help solving this goal *)
-      ClausesIndex.retrieve_unify
-        (fun () head clause subst ->
+      ClausesIndex.unify db.db_heads 1 goal 0
+        (fun clause subst ->
           (* subst(clause.(0)) = subst(lit), so subst(clause.(1)) is a new goal *)
-          let new_goal = subst_literal subst (clause.(1),offset) in
-          Queue.push (`AddGoal new_goal) db.db_queue)
-        () (db.db_heads,offset) (lit,0)
+          match clause.C.body with
+          | Lit.LitPos goal' :: _ ->
+            let renaming = S.create_renaming () in
+            let new_goal = S.eval ~renaming subst goal' 1 in
+            Queue.push (`AddGoal new_goal) db.db_queue
+          | _ -> ()
+        ;)
     with Exit ->
-      (* goal already present (in an alpha-equivalent form) *)
-      ()
+      () (* goal already present (in an alpha-equivalent form) *)
 
   (** Push the item in the queue, and process items in the queue
       if no other function call is already doing it *)
   let process_items db item =
-    let empty = Queue.is_empty db.db_queue in
-    Queue.push item db.db_queue;
+    let empty = Queue.is_empty !db.db_queue in
+    Queue.push item !db.db_queue;
     (* how to process one queue item *)
     let process_item item = 
       match item with
-      | `AddClause (c, explanation) -> add_clause db c explanation
-      | `AddGoal goal -> add_goal db goal
+      | `AddClause (c, explanation) -> db := add_clause !db c explanation
+      | `AddGoal goal -> add_goal !db goal
     in
     (* if the queue was not empty, that means that another call
         below in the stack is already processing items. We only
         need to do it if it is not the case *)
     if empty then begin
-      while not (Queue.is_empty db.db_queue) do
-        let item = Queue.pop db.db_queue in
+      while not (Queue.is_empty !db.db_queue) do
+        let item = Queue.pop !db.db_queue in
         process_item item
       done
     end
 
   (** Add the clause/fact to the DB, updating fixpoint *)
-  let db_add ?(expl=Axiom) db clause =
-    process_items db (`AddClause (clause, expl))
+  let add ?(expl=Axiom) db clause =
+    let db = ref db in
+    process_items db (`AddClause (clause, expl));
+    !db
 
   (** Add a fact (ground unit clause) *)
-  let db_add_fact ?(expl=Axiom) db lit =
-    (if not (is_ground lit) then raise UnsafeClause);
-    process_items db (`AddClause ([|lit|], expl))
+  let add_fact ?(expl=Axiom) db fact =
+    if not (T.ground fact) then raise UnsafeClause;
+    let db = ref db in
+    process_items db (`AddClause (C.mk_fact fact, expl));
+    !db
 
   (** Add a goal to the DB. The goal is used to trigger backward chaining
       (calling goal handlers that could help solve the goal) *)
-  let db_goal db lit =
-    process_items db (`AddGoal lit)
+  let goal db lit =
+    let db = ref db in
+    process_items db (`AddGoal lit);
+    !db
 
   (** match the given literal with facts of the DB, calling the handler on
       each fact that match (with the corresponding substitution) *)
-  let db_match db pattern handler =
-    ClausesIndex.retrieve_specializations
-      (fun () fact _ subst -> handler fact)
-      () (db.db_facts,0) (pattern,1)
+  let match_ db pattern handler =
+    ClausesIndex.unify db.db_facts 0 pattern 1
+      (fun fact subst -> handler fact)
 
   (** Like {!db_match}, but the additional int list is used to select
       bindings of variables in the literal. Their bindings, in the same
       order, are given to the callback. *)
-  let db_query db pattern vars k =
-    ClausesIndex.retrieve_specializations
-      (fun () lit _ subst ->
+  let query db pattern vars k =
+    ClausesIndex.unify db.db_facts 0 pattern 1
+      (fun _clause subst ->
         let terms = List.map
           (fun i ->
-            let v = mk_var i in
-            let t, _ = deref subst v 1 in
+            let v = T.mk_var i in
+            let t, _ = S.deref subst v 1 in
             match t with 
-            | Var _ -> assert false  (* should be ground *)
-            | Const s -> s)
+            | T.Var _ -> assert false  (* should be ground *)
+            | T.Apply (s, _) -> s)
           vars in
         (* yield the list of terms *)
         k terms)
-      () (db.db_facts,0) (pattern,1)
 
   (** Size of the DB *)
-  let db_size db =
+  let size db =
     ClausesIndex.size db.db_facts + ClausesIndex.size db.db_selected
 
   (** Fold on all clauses in the current DB (including fixpoint) *)
-  let db_fold k acc db =
+  let fold k acc db =
     C.Tbl.fold
       (fun clause _ acc -> k acc clause)
       db.db_all acc
 
-  let db_add_fun db s f =
-    (if ConstTbl.mem db.db_funs s
-      then failwith ("function already defined for symbol " ^ Symbol.to_string s));
-    ConstTbl.replace db.db_funs s f
+  let add_fun db s f =
+    {db with db_funs=Base.BuiltinFun.add db.db_funs s f }
 
-  let db_subscribe_fact db symbol handler =
+  let subscribe_fact db symbol handler =
     ConstTbl.add db.db_fact_handlers symbol handler
 
-  let db_subscribe_all_facts db handler =
+  let subscribe_all_facts db handler =
     db.db_all_facts <- handler :: db.db_all_facts
 
-  let db_subscribe_goal db handler =
+  let subscribe_goal db handler =
     db.db_goal_handlers <- handler :: db.db_goal_handlers
 
   (** Iterate on all current goals *)
-  let db_goals db k =
-    GoalIndex.fold
-      (fun () goal () -> k goal)
-      () db.db_goals
+  let goals db k =
+    GoalIndex.iter db.db_goals (fun x () -> k x)
 
   (** Explain the given fact by returning a list of facts that imply it
       under the current clauses. *)
-  let db_explain db fact =
+  let explain db fact =
     let explored = C.Tbl.create 5 in
-    let set = LitHashtbl.create 5 in
+    let set = T.Tbl.create 16 in
     (* recursively collect explanations *)
     let rec search clause =
       if C.Tbl.mem explored clause then ()
@@ -435,43 +441,42 @@ module Make(Base : Base.S) = struct
         C.Tbl.add explored clause ();
         let explanation = C.Tbl.find db.db_all clause in
         match explanation with
-        | Axiom when is_fact clause ->
-          LitHashtbl.replace set clause.(0) ();
-        | ExtExplanation _
+        | Axiom when C.is_fact clause ->
+          T.Tbl.replace set clause.C.head ();
         | Axiom -> ()
         | Resolution (clause, fact) -> begin
           search clause;
-          search [|fact|]
+          search (C.mk_fact fact)
         end
       end
     in
     (* once the set is collected, convert it to list *)
-    search [|fact|];
-    LitHashtbl.fold (fun lit () acc -> lit :: acc) set []
+    search (C.mk_fact fact);
+    T.Tbl.fold (fun t () acc -> t :: acc) set []
 
   (** Immediate premises of the fact (ie the facts that resolved with
       a clause to give the literal), plus the clause that has been used. *)
-  let db_premises db fact =
+  let premises db fact =
     let rec search acc clause =
       let explanation = C.Tbl.find db.db_all clause in
       match explanation with
-      | ExtExplanation _
       | Axiom -> clause, acc  (* no premises *)
       | Resolution (clause, fact) -> let acc = fact :: acc in search acc clause
     in
-    search [] [|fact|]
+    search [] (C.mk_fact fact)
 
   (** Get all the explanations that explain why this clause is true *)
-  let db_explanations db clause =
+  let explanations db clause =
     C.Tbl.find_all db.db_all clause
 
   (** {2 Querying} *)
 
+  (* TODO: update
   module Query = struct
     module RowTable = Hashtbl.Make(struct
-      type t = term array
-      let equal = eq_literal
-      let hash = hash_literal
+      type t = T.t array
+      let equal = Util.array_eq T.eq
+      let hash = Util.hash_array T.hash 13
     end)
 
     type set = {
@@ -484,16 +489,16 @@ module Make(Base : Base.S) = struct
       mutable q_table : table option;   (* answer table *)
     } (** A query *)
     and expr =
-      | Match of literal * int array * int array  (* match with literal, then project *)
-      | Join of query * query                 (* join on common variables *)
+      | Match of T.t * int array * int array  (* match with literal, then project *)
+      | Join of query * query   (* join on common variables *)
       | ProjectJoin of int array * query * query  (* join and project immediately *)
-      | Project of int array * query            (* project on given columns*)
-      | AntiJoin of query * query               (* tuples of q1 that are not joinable with q2 *)
+      | Project of int array * query  (* project on given columns*)
+      | AntiJoin of query * query (* tuples of q1 that are not joinable with q2 *)
     and table = {
       tbl_vars : int array;             (* vars labelling columns *)
       tbl_rows : unit RowTable.t;       (* set of rows *)
     } (** A relational table; column are labelled with variables *)
-    and index = (int array, term array list) Hashtbl.t
+    and index = (int array, T.t array list) Hashtbl.t
       (** Index for a table. It indexes the given list of variables *)
 
     (* union of two sets of variable *)
@@ -539,13 +544,17 @@ module Make(Base : Base.S) = struct
     let length_table tbl = RowTable.length tbl.tbl_rows
 
     (* list of (var, index) for each variables in literal *)
-    let vars_index_of_lit lit =
-      let vars, indexes, _ = Array.fold_left
-        (fun (vars,indexes,idx) t -> match t with
-          | Var i when not (List.mem i vars) ->
-            i::vars, idx::indexes, idx+1
-          | _ -> vars, indexes, idx+1)
-        ([], [], 0) lit
+    let vars_index_of_lit t =
+      let vars, indexes, _ =
+      match t with
+      | T.Apply (_, a) ->
+        Array.fold_left
+          (fun (vars,indexes,idx) t -> match t with
+            | T.Var i when not (List.mem i vars) ->
+              i::vars, idx::indexes, idx+1
+            | _ -> vars, indexes, idx+1)
+          ([], [], 0) a
+      | T.Var _ -> [], [], 0
       in
       Array.of_list vars, Array.of_list indexes
 
@@ -802,5 +811,8 @@ module Make(Base : Base.S) = struct
       | Project (vars, q) ->
         Format.fprintf fmt "project[%a] %a" (pp_array ~sep:"," pp_var) vars (pp_q ~top:false) q
       in pp_q ~top:true formatter set.query
-  end
+  end Array.fold_left
+  *)
 end
+
+module Default = Make(Base.Default)

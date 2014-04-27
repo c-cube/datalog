@@ -46,8 +46,6 @@ end
 module type S = sig
   module Const : CONST
 
-  type const = Const.t
-
   val set_debug : bool -> unit
 
   (** {2 Terms} *)
@@ -55,12 +53,12 @@ module type S = sig
   module T : sig
     type t = private
     | Var of int
-    | Apply of const * t array
+    | Apply of Const.t * t array
 
     val mk_var : int -> t
-    val mk_const : const -> t
-    val mk_apply : const -> t array -> t
-    val mk_apply_l : const -> t list -> t
+    val mk_const : Const.t -> t
+    val mk_apply : Const.t -> t array -> t
+    val mk_apply_l : Const.t -> t list -> t
 
     val is_var : t -> bool
     val is_apply : t -> bool
@@ -73,7 +71,7 @@ module type S = sig
     val ground : t -> bool
     val vars : t -> int list
     val max_var : t -> int    (** max var, or 0 if ground *)
-    val head_symbol : t -> const option
+    val head_symbol : t -> Const.t option
 
     val to_string : t -> string
     val pp : out_channel -> t -> unit
@@ -103,7 +101,7 @@ module type S = sig
   module Lit : sig
     type aggregate = {
       left : T.t;
-      constructor : const;
+      constructor : Const.t;
       var : T.t;
       guard : T.t;
     } (* aggregate: ag_left = ag_constructor set
@@ -119,7 +117,7 @@ module type S = sig
     val mk_neg : T.t -> t
     val mk : bool -> T.t -> t
 
-    val mk_aggr : left:T.t -> constructor:const -> var:T.t -> guard:T.t -> t
+    val mk_aggr : left:T.t -> constructor:Const.t -> var:T.t -> guard:T.t -> t
 
     val eq : t -> t -> bool
     val hash : t -> int
@@ -155,7 +153,7 @@ module type S = sig
 
     val is_fact : t -> bool
 
-    val head_symbol : t -> const option
+    val head_symbol : t -> Const.t option
     val max_var : t -> int
     val fmap : (T.t -> T.t) -> t -> t
 
@@ -314,6 +312,11 @@ module type S = sig
       (** Retrieve data associated with terms that unify with the given
           query term *)
 
+    val variant : t -> scope -> T.t -> scope ->
+                  (Data.t -> Subst.t -> unit) -> unit
+      (** retrieve data associated with terms that are alpha-equivalent
+          with the given term *)
+
     val iter : t -> (T.t -> Data.t -> unit) -> unit
       (** Iterate on bindings *)
 
@@ -406,8 +409,8 @@ type const =
   | Int of int
   | String of string
 
-module Default : sig
-  include S with type Const.t = const
-
-  include PARSE with type term = T.t and type lit = Lit.t and type clause = C.t
-end
+module Default : S with type Const.t = const
+module DefaultParse : PARSE
+  with type term = Default.T.t
+  and type lit = Default.Lit.t
+  and type clause = Default.C.t

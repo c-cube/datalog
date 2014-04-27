@@ -23,13 +23,17 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 *)
 
-(** The main datalog file. It provides a CLI tool to parse clause/fact files and compute
-    their fixpoint *)
+(** The main datalog file. It provides a CLI tool to parse clause/fact files
+    and compute their fixpoint *)
 
-module DLogic = Datalog.Base.Default
-module DB = Datalog.BottomUp.Default
-module DParser = Datalog.Parser
-module DLexer = Datalog.Lexer
+open Datalog
+
+module DLogic = Base.Default
+module DB = BottomUp.Default
+
+module T = DLogic.T
+module C = DLogic.C
+module Cst = Base
 
 let progress = ref false
 let print_input = ref false
@@ -38,11 +42,13 @@ let print_saturated = ref false
 let print_size = ref false
 let print_version = ref false
 let sums = ref []
-let patterns = (ref [] : DLogic.literal list ref)
-let goals = (ref [] : DLogic.literal list ref)
+let patterns = (ref [] : T.t list ref)
+let goals = (ref [] : T.t list ref)
 let explains = ref []
 let files = ref []
+(* TODO: update
 let queries = ref []
+*)
 
 (** Parse file and returns the clauses *)
 let parse_file filename =
@@ -50,12 +56,13 @@ let parse_file filename =
   let ic = open_in filename in
   let lexbuf = Lexing.from_channel ic in
   try
-    let clauses = DParser.parse_file DLexer.token lexbuf in
+    let clauses = Parser.parse_file Lexer.token lexbuf in
     close_in ic;
     clauses
   with Parsing.Parse_error ->
     (* error, signal it and return no clause *)
-    Format.eprintf "%% error parsing %s (%s)@." filename (DLexer.print_location lexbuf);
+    Format.eprintf "%% error parsing %s (%s)@." filename
+      (Lexer.print_location lexbuf);
     []
 
 (** Parse files *)
@@ -71,58 +78,74 @@ let pp_progress i total =
   Format.print_flush ()
 
 (** Simple goal handler (interprets 'lt') *)
-let handle_goal db lit =
+let handle_goal db g =
   (* debug: Format.printf "%% goal %a@." DLogic.pp_literal lit; *)
   let compare a b =
-    try let a = int_of_string a and b = int_of_string b in
-        compare a b
-    with Invalid_argument _ -> compare a b
+    match a, b with
+    | T.Apply (Cst.String a, [| |]), T.Apply (Cst.String b, [| |]) ->
+        Some (String.compare a b)
+    | T.Apply (Cst.Int a, [| |]), T.Apply (Cst.Int b, [| |]) ->
+        Some (a-b)
+    | _ -> None
   in
-  match DLogic.open_literal lit with
-  | "lt", [DLogic.Const a; DLogic.Const b] when compare a b < 0 ->
-    DLogic.db_add_fact db lit (* literal is true *)
-  | "le", [DLogic.Const a; DLogic.Const b] when compare a b <= 0 ->
-    DLogic.db_add_fact db lit (* literal is true *)
-  | "equal", [DLogic.Const a; DLogic.Const b] when a = b ->
-    DLogic.db_add_fact db lit (* literal is true *)
+  match g with
+  | T.Apply (Cst.String "lt", [| a; b |]) ->
+      begin match compare a b with
+      | Some n when n < 0 ->
+        db := DB.add_fact !db g (* literal is true *)
+      | _ -> ()
+      end
+  | T.Apply (Cst.String "le", [| a; b |]) ->
+      begin match compare a b with
+      | Some n when n <= 0 ->
+        db := DB.add_fact !db g (* literal is true *)
+      | _ -> ()
+      end
+  | T.Apply (Cst.String "equal", [| a; b |])
+    when compare a b = Some 0 ->
+    db := DB.add_fact !db g  (* literal is true *)
   | _ -> ()
 
 (** Compute fixpoint of clauses *)
 let process_clauses clauses =
   Format.printf "%% process %d clauses@." (List.length clauses);
-  (if !print_input then
-    List.iter (Format.printf "  clause @[<h>%a@]@." DLogic.pp_clause) clauses);
+  if !print_input then
+    List.iter (fun c -> Printf.printf "  clause %a\n" C.pp c) clauses;
   Format.printf "%% computing fixpoint...@.";
-  let db = DLogic.db_create () in
+  let db = ref (DB.create ()) in
   (* handlers *)
-  List.iter (fun (symbol,handler,_) -> DLogic.db_subscribe_fact db symbol handler) !sums;
+  List.iter (fun (symbol,handler,_) -> DB.subscribe_fact !db symbol handler) !sums;
   (* goals *)
-  DLogic.db_subscribe_goal db (handle_goal db);
-  List.iter (fun goal -> DLogic.db_goal db goal) !goals;
+  DB.subscribe_goal !db (handle_goal db);
+  List.iter (fun goal -> db := DB.goal !db goal) !goals;
   (* add clauses one by one *)
   let total = List.length clauses in
-  ignore (List.fold_left (fun i clause -> (if !progress then pp_progress i total);
-                          DLogic.db_add db clause; i+1)
-          1 clauses);
+  ignore (List.fold_left
+    (fun i clause ->
+      if !progress then pp_progress i total;
+      db := DB.add !db clause;
+      i+1)
+    1 clauses);
   Format.printf "%% done.@.";
   (* print fixpoint of set after application of clauses *)
-  (if !print_size then
-    Format.printf "%% size of saturated set: %d@." (DLogic.db_size db));
-  (if !print_saturated then
-    DLogic.db_fold (fun () clause ->
-      Format.printf "  @[<h>%a@]@." DLogic.pp_clause clause) () db
+  if !print_size then
+    Format.printf "%% size of saturated set: %d@." (DB.size !db);
+  if !print_saturated then
+    DB.fold (fun () clause ->
+      Printf.printf "  %a\n" C.pp clause) () !db
   else if !print_result then
-    DLogic.db_fold (fun () clause ->
-      if DLogic.is_fact clause then
-        Format.printf "  @[<h>%a@]@." DLogic.pp_clause clause) () db);
+    DB.fold (fun () clause ->
+      if C.is_fact clause then
+        Format.printf "  @[<h>%a@]@." C.fmt clause) () !db;
   (* print aggregates *)
   List.iter (fun (_,_,printer) -> printer ()) !sums;
   (* print patterns *)
   List.iter (fun pattern ->
-    Format.printf "%% facts matching pattern %a:@." DLogic.pp_literal pattern;
-    DLogic.db_match db pattern
-      (fun fact -> Format.printf "  @[<h>%a.@]@." DLogic.pp_literal fact))
+    Format.printf "%% facts matching pattern %a:@." T.fmt pattern;
+    DB.match_ !db pattern
+      (fun fact -> Format.printf "  @[<h>%a.@]@." C.fmt fact))
     !patterns;
+  (* TODO: update
   (* run queries *)
   List.iter (fun (vars, lits, neg) ->
     let set = DLogic.Query.ask ~neg db vars lits in
@@ -139,20 +162,21 @@ let process_clauses clauses =
       l;
     Format.printf "@]@.")
   !queries;
+  *)
   (* print explanations *)
   List.iter (fun pattern ->
-    DLogic.db_match db pattern
+    DB.match_ !db pattern
       (fun fact ->
         (* premises *)
-        Format.printf "  premises of @[<h>%a@]: @[<h>" DLogic.pp_literal fact;
-        let clause, premises = DLogic.db_premises db fact in
-        List.iter (fun fact' -> Format.printf "%a, " DLogic.pp_literal fact') premises;
-        Format.printf " with @[<h>%a@]" DLogic.pp_clause clause;
+        Format.printf "  premises of @[<h>%a@]: @[<h>" C.fmt fact;
+        let clause, premises = DB.premises !db fact.C.head in
+        List.iter (fun fact' -> Format.printf "%a, " T.fmt fact') premises;
+        Format.printf " with @[<h>%a@]" C.fmt clause;
         Format.printf "@]@.";
         (* explanation *)
-        let explanation = DLogic.db_explain db fact in
-        Format.printf "  explain @[<h>%a@] by: @[<h>" DLogic.pp_literal fact;
-        List.iter (fun fact' -> Format.printf " %a" DLogic.pp_literal fact') explanation;
+        let explanation = DB.explain !db fact.C.head in
+        Format.printf "  explain @[<h>%a@] by: @[<h>" C.fmt fact;
+        List.iter (fun fact' -> Format.printf " %a" T.fmt fact') explanation;
         Format.printf "@]@."))
     !explains;
   (* print memory usage *)
@@ -168,32 +192,35 @@ let add_sum symbol =
   (* print result at exit *)
   let printer () = Format.printf "%% number of fact with head %s: %d@." symbol !count in
   let handler _ = incr count in
-  sums := (symbol, handler, printer) :: !sums
+  sums := (Cst.String symbol, handler, printer) :: !sums
+
+let ctx = Base.DefaultParse.create_ctx ()
 
 (** Handler that prints facts that match the given [pattern] once the
     set is saturated *)
 let add_pattern p =
   let lexbuf = Lexing.from_string p in
-  let literal = DParser.parse_literal DLexer.token lexbuf in
-  let literal = DLogic.literal_of_ast literal in
-  patterns := literal :: !patterns
+  let t = Parser.parse_term Lexer.token lexbuf in
+  let t = Base.DefaultParse.term_of_ast ~ctx t in
+  patterns := t :: !patterns
 
 (** Handler that add a goal *)
 let add_goal p =
   let lexbuf = Lexing.from_string p in
-  let literal = DParser.parse_literal DLexer.token lexbuf in
-  let literal = DLogic.literal_of_ast literal in
-  goals := literal :: !goals
+  let t = Parser.parse_term Lexer.token lexbuf in
+  let t = Base.DefaultParse.term_of_ast ~ctx t in
+  goals := t :: !goals
 
 (** Add the pattern to the list of patterns to explain *)
 let add_explain p =
   let lexbuf = Lexing.from_string p in
-  let literal = DParser.parse_literal DLexer.token lexbuf in
-  let literal = DLogic.literal_of_ast literal in
-  explains := literal :: !explains
+  let t = Parser.parse_term Lexer.token lexbuf in
+  let t = Base.DefaultParse.term_of_ast ~ctx t in
+  explains := t :: !explains
 
 (** Add a query to the list of queries to run *)
-let add_query q_str =
+let add_query q_str = failwith "queries not handled"
+(* TODO: update?
   try
     let lexbuf = Lexing.from_string q_str in
     let ast = DParser.parse_query DLexer.token lexbuf in
@@ -201,6 +228,7 @@ let add_query q_str =
     queries := q :: !queries
   with Parsing.Parse_error ->
     failwith ("could not parse query string " ^ q_str)
+*)
 
 (** parse CLI arguments *)
 let parse_args () =
@@ -225,5 +253,5 @@ let () =
   parse_args ();
   (if !print_version then Printf.printf "%% version : %s\n" Datalog.Version.version);
   let clauses = parse_files () in
-  let clauses = List.map DLogic.clause_of_ast clauses in
+  let clauses = List.map (Base.DefaultParse.clause_of_ast ~ctx) clauses in
   process_clauses clauses

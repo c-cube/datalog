@@ -27,6 +27,11 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
   open Parser 
   
   let fail () = raise Parsing.Parse_error
+
+  let print_location lexbuf =
+    let open Lexing in
+    let pos = lexbuf.lex_curr_p in
+    Format.sprintf "at line %d, column %d" pos.pos_lnum pos.pos_cnum
 }
 
 let numeric = ['0' - '9']
@@ -74,4 +79,5 @@ rule token =
       | _                            { fail ()}
 
 {
+  let print_location = print_location
 }

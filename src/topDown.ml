@@ -284,8 +284,11 @@ module Make(Base : Base.S) = struct
 
   let rec find_interpretation ?(oc=false) db s_db t s_t k =
     assert (not (T.is_var t));
-    let c = T.head_symbol t in
     begin try
+      let c = match T.head_symbol t with
+        | None -> raise Not_found
+        | Some c -> c
+      in
       let interpreters = ConstTbl.find db.interpreters c in
       List.iter
         (fun inter ->

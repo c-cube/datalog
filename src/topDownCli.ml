@@ -26,11 +26,10 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 (** {1 Prolog-like command line tool} *)
 
-module Logic = Datalog.Base.Default
-module DB = Datalog.TopDown.Default
-module DParser = Datalog.Parser
-module DLexer = Datalog.Lexer
-module DAst = Datalog.Ast
+open Datalog
+
+module Logic = Base.Default
+module DB = TopDown.Default
 
 (** Options *)
 
@@ -45,7 +44,7 @@ let print = ref true
 let parse_files_into db files =
   List.fold_left
     (fun db file ->
-      match Logic.parse_file file with
+      match Base.DefaultParse.parse_file file with
       | `Error e ->
         print_endline e;
         db
@@ -56,19 +55,21 @@ let parse_files_into db files =
 let eval_query files tuple goals =
   let db = DB.create () in
   let db = if !builtin then DB.setup_default db else db in
-  if !unix then Datalog_unix.Default.setup_handlers db;
+  let db =
+    if !unix then Datalog_unix.Default.setup_handlers db else db
+  in
   (* print doc and exit, if asked *)
   if !doc then begin
     let l = List.sort compare (DB.help db) in
     print_endline "interpreted predicates:";
     List.iter (fun s -> print_endline ("  " ^ s)) l;
     exit 0
-    end;
-  parse_files_into db files;
-  let answers = D.ask_lits ~oc:!oc db tuple goals in
+  end;
+  let db = parse_files_into db files in
+  let answers = DB.ask_lits ~oc:!oc db tuple goals in
   if !print
   then List.iter
-    (fun ans -> Printf.printf "  %a.\n" D.T.pp ans)
+    (fun ans -> Printf.printf "  %a.\n" Logic.T.pp ans)
     answers
 
 (** Options *)
@@ -77,7 +78,7 @@ let files = ref []
 let add_file f = files := f :: !files
 
 let options =
-  [ "-debug", Arg.Unit (fun () -> D.set_debug true), "enable debug"
+  [ "-debug", Arg.Unit (fun () -> Logic.set_debug true), "enable debug"
   ; "-load", Arg.String add_file, "load given file"
   ; "-oc", Arg.Set oc, "enable occur-check in unification"
   ; "-builtin", Arg.Set builtin, "enable some builtin predicates"
@@ -95,8 +96,8 @@ let _ =
   if !goal = ""
     then failwith "require a goal";
   (* parse goal literals *)
-  let tuple, goals = DParser.parse_query DLexer.token (Lexing.from_string !goal) in
-  let ctx = D.create_ctx () in
-  let tuple = List.map (D.term_of_ast ~ctx) tuple in
-  let goals = List.map (D.lit_of_ast ~ctx) goals in
+  let tuple, goals = Parser.parse_query Lexer.token (Lexing.from_string !goal) in
+  let ctx = Base.DefaultParse.create_ctx () in
+  let tuple = List.map (Base.DefaultParse.term_of_ast ~ctx) tuple in
+  let goals = List.map (Base.DefaultParse.lit_of_ast ~ctx) goals in
   eval_query !files tuple goals 

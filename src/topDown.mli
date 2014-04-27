@@ -137,7 +137,7 @@ end
 module Make(B : Base.S) : S with module Base = B
 
 module Default : sig
-  include S with type Base.Const.t = Base.const
+  include S with module Base = Base.Default
 
   val default_interpreters : (const * string * interpreter) list
     (** List of default interpreters for some symbols, mostly

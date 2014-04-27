@@ -50,19 +50,6 @@ module type S = sig
   module Base : Base.S
   type const = Base.Const.t
 
-  (** {2 Higher level API} *)
-
-  (** This part of the API can be used to avoid building variables
-      yourself. Calling [quantify3 f] with call [f] with 3 distinct
-      variables, and [f] can use those variables to, for instance,
-      build a clause *)
-
-  val quantify1 : (Base.T.t -> 'a) -> 'a
-  val quantify2 : (Base.T.t -> Base.T.t -> 'a) -> 'a
-  val quantify3 : (Base.T.t -> Base.T.t -> Base.T.t -> 'a) -> 'a
-  val quantify4 : (Base.T.t -> Base.T.t -> Base.T.t -> Base.T.t -> 'a) -> 'a
-  val quantifyn : int -> (Base.T.t list -> 'a) -> 'a
-
   (** {2 The Datalog unit resolution algorithm} *)
 
   type t
@@ -70,7 +57,7 @@ module type S = sig
 
   type explanation =
     | Axiom
-    | Resolution of Base.C.t * Base.Lit.t
+    | Resolution of Base.C.t * Base.T.t
     (** Explanation for a clause or fact. *)
 
   val create : unit -> t
@@ -86,18 +73,18 @@ module type S = sig
     (** Add the clause/fact to the DB as an axiom, updating fixpoint.
         UnsafeRule will be raised if the rule is not safe (see {!check_safe}) *)
 
-  val add_fact : ?expl:explanation -> t -> Base.Lit.t  -> t
+  val add_fact : ?expl:explanation -> t -> Base.T.t  -> t
     (** Add a fact (ground unit clause) *)
 
-  val goal : t -> Base.Lit.t -> t
+  val goal : t -> Base.T.t -> t
     (** Add a goal to the DB. The goal is used to trigger backward chaining
         (calling goal handlers that could help solve the goal) *)
 
-  val match_ : t -> Base.Lit.t -> (Base.Lit.t -> unit) -> unit
+  val match_ : t -> Base.T.t -> (Base.C.t -> unit) -> unit
     (** match the given literal with facts of the DB, calling the handler on
         each fact that match *)
 
-  val query : t -> Base.Lit.t -> int list -> (const list -> unit) -> unit
+  val query : t -> Base.T.t -> int list -> (const list -> unit) -> unit
     (** Like {!db_match}, but the additional int list is used to select
         bindings of variables in the literal. Their bindings, in the same
         order, are given to the callback. *)
@@ -108,27 +95,26 @@ module type S = sig
   val fold : ('a -> Base.C.t -> 'a) -> 'a -> t -> 'a
     (** Fold on all clauses in the current DB (including fixpoint) *)
 
-  type fact_handler = Base.Lit.t -> unit
-  type goal_handler = Base.Lit.t -> unit
+  type fact_handler = Base.T.t -> unit
+  type goal_handler = Base.T.t -> unit
 
   val subscribe_fact : t -> const -> fact_handler -> unit
   val subscribe_all_facts : t -> fact_handler -> unit
   val subscribe_goal : t -> goal_handler -> unit
 
-  type user_fun = Base.Lit.t -> Base.Lit.t
+  type user_fun = Base.T.t -> Base.T.t option
 
   val add_fun : t -> const -> user_fun -> t
-    (** Add a function to be called on new literals. Only one function per
-        symbol can be registered. *)
+    (** Add a function to be called on new literals. *)
 
-  val goals : t -> (Base.Lit.t -> unit) -> unit
+  val goals : t -> (Base.T.t -> unit) -> unit
     (** Iterate on all current goals *)
 
-  val explain : t -> Base.Lit.t -> Base.Lit.t list
+  val explain : t -> Base.T.t -> Base.T.t list
     (** Explain the given fact by returning a list of facts that imply it
         under the current clauses, or raise Not_found *)
 
-  val premises : t -> Base.Lit.t -> Base.C.t * Base.Lit.t list
+  val premises : t -> Base.T.t -> Base.C.t * Base.T.t list
     (** Immediate premises of the fact (ie the facts that resolved with
         a clause to give the literal), plus the clause that has been used. *)
 
@@ -137,6 +123,7 @@ module type S = sig
 
   (** {2 Querying} *)
 
+  (* TODO: update
   module Query : sig
     type set
       (** mutable set of term lists *)
@@ -163,9 +150,11 @@ module type S = sig
     val pp_plan : Format.formatter -> set -> unit
       (** Print query plan *)
   end
+  *)
 end
 
 (** {2 Main functor} *)
 
 module Make(Base : Base.S) : S with module Base = Base
 
+module Default : S with module Base = Base.Default

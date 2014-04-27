@@ -1,8 +1,7 @@
 # OASIS_START
-# DO NOT EDIT (digest: 0a6726c5ddf366c47cb4b9cef881e98f)
+# DO NOT EDIT (digest: 060ed7091caea3ca5cb79e52c6aa2737)
 Base
 PersistentHashtbl
-Sequence
 BottomUp
 TopDown
 Ast
@@ -10,4 +9,6 @@ Parser
 Lexer
 Version
 CamlInterface
+lib/Sequence
+lib/Util
 # OASIS_STOP

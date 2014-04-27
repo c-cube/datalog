@@ -73,7 +73,7 @@ module type S = sig
     val ground : t -> bool
     val vars : t -> int list
     val max_var : t -> int    (** max var, or 0 if ground *)
-    val head_symbol : t -> const
+    val head_symbol : t -> const option
 
     val to_string : t -> string
     val pp : out_channel -> t -> unit
@@ -83,6 +83,20 @@ module type S = sig
 
     module Tbl : Hashtbl.S with type key = t
   end
+
+  (** {2 Higher level API} *)
+
+  (** This part of the API can be used to avoid building variables
+      yourself. Calling [quantify3 f] with call [f] with 3 distinct
+      variables, and [f] can use those variables to, for instance,
+      build a clause *)
+
+  val quantify1 : (T.t -> 'a) -> 'a
+  val quantify2 : (T.t -> T.t -> 'a) -> 'a
+  val quantify3 : (T.t -> T.t -> T.t -> 'a) -> 'a
+  val quantify4 : (T.t -> T.t -> T.t -> T.t -> 'a) -> 'a
+  val quantifyn : int -> (T.t list -> 'a) -> 'a
+
 
   (** {2 Literals} *)
 
@@ -139,7 +153,9 @@ module type S = sig
     val hash : t -> int
     val hash_novar : t -> int
 
-    val head_symbol : t -> const
+    val is_fact : t -> bool
+
+    val head_symbol : t -> const option
     val max_var : t -> int
     val fmap : (T.t -> T.t) -> t -> t
 
@@ -240,6 +256,8 @@ module type S = sig
 
     val create : unit -> map
 
+    val copy : map -> map
+
     val add : map -> Const.t -> t -> map
       (** Interpret the given constant by the given function. The function
           can assume that any term is it given as a parameter has the
@@ -252,6 +270,10 @@ module type S = sig
 
     val eval : map -> T.t -> T.t
       (** Evaluate the term at root *)
+
+    val eval_lit : map -> Lit.t -> Lit.t
+
+    val eval_clause : map -> C.t -> C.t
   end
 
   (** The following hashtables use alpha-equivalence checking instead of

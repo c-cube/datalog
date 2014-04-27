@@ -73,7 +73,7 @@ module type S = sig
     val ground : t -> bool
     val vars : t -> int list
     val max_var : t -> int    (** max var, or 0 if ground *)
-    val head_symbol : t -> const
+    val head_symbol : t -> const option
 
     val to_string : t -> string
     val pp : out_channel -> t -> unit
@@ -83,6 +83,20 @@ module type S = sig
 
     module Tbl : Hashtbl.S with type key = t
   end
+
+  (** {2 Higher level API} *)
+
+  (** This part of the API can be used to avoid building variables
+      yourself. Calling [quantify3 f] with call [f] with 3 distinct
+      variables, and [f] can use those variables to, for instance,
+      build a clause *)
+
+  val quantify1 : (T.t -> 'a) -> 'a
+  val quantify2 : (T.t -> T.t -> 'a) -> 'a
+  val quantify3 : (T.t -> T.t -> T.t -> 'a) -> 'a
+  val quantify4 : (T.t -> T.t -> T.t -> T.t -> 'a) -> 'a
+  val quantifyn : int -> (T.t list -> 'a) -> 'a
+
 
   (** {2 Literals} *)
 
@@ -139,7 +153,9 @@ module type S = sig
     val hash : t -> int
     val hash_novar : t -> int
 
-    val head_symbol : t -> const
+    val is_fact : t -> bool
+
+    val head_symbol : t -> const option
     val max_var : t -> int
     val fmap : (T.t -> T.t) -> t -> t
 
@@ -240,6 +256,8 @@ module type S = sig
 
     val create : unit -> map
 
+    val copy : map -> map
+
     val add : map -> Const.t -> t -> map
       (** Interpret the given constant by the given function. The function
           can assume that any term is it given as a parameter has the
@@ -252,6 +270,10 @@ module type S = sig
 
     val eval : map -> T.t -> T.t
       (** Evaluate the term at root *)
+
+    val eval_lit : map -> Lit.t -> Lit.t
+
+    val eval_clause : map -> C.t -> C.t
   end
 
   (** The following hashtables use alpha-equivalence checking instead of
@@ -472,8 +494,8 @@ module Make(Const : CONST) : S with module Const = Const = struct
       Array.fold_left (fun m t' -> max m (max_var t')) 0 args
 
     let head_symbol t = match t with
-    | Var _ -> failwith "variable has no head symbol"
-    | Apply(c,_) -> c
+    | Var _ -> None
+    | Apply(c,_) -> Some c
 
     let to_string t =
       let rec pp buf t = match t with
@@ -514,6 +536,38 @@ module Make(Const : CONST) : S with module Const = Const = struct
       let hash = hash
     end)
   end
+
+  (** {2 Higher level API} *)
+
+  let quantify1 f =
+    let v1 = T.mk_var 1 in
+    f v1
+
+  let quantify2 f =
+    let v1 = T.mk_var 1 in
+    let v2 = T.mk_var 2 in
+    f v1 v2
+
+  let quantify3 f =
+    let v1 = T.mk_var 1 in
+    let v2 = T.mk_var 2 in
+    let v3 = T.mk_var 3 in
+    f v1 v2 v3
+
+  let quantify4 f =
+    let v1 = T.mk_var 1 in
+    let v2 = T.mk_var 2 in
+    let v3 = T.mk_var 3 in
+    let v4 = T.mk_var 4 in
+    f v1 v2 v3 v4
+
+  let quantifyn n f =
+    let rec mk_vars = function
+      | 0 -> []
+      | n -> T.mk_var n :: mk_vars (n-1)
+    in
+    assert(n >= 0);
+    f (mk_vars n)
 
   module Lit = struct
     type aggregate = {
@@ -622,6 +676,8 @@ module Make(Const : CONST) : S with module Const = Const = struct
 
     let set_head c head = {c with head; }
     let set_body c body = {c with body; }
+
+    let is_fact c = c.body = []
 
     let eq c1 c2 =
       T.eq c1.head c2.head &&
@@ -855,6 +911,8 @@ module Make(Const : CONST) : S with module Const = Const = struct
     
     let create () = ConstTbl.create 17
 
+    let copy = ConstTbl.copy
+
     let add map c f =
       ConstTbl.replace map c f
 
@@ -877,6 +935,10 @@ module Make(Const : CONST) : S with module Const = Const = struct
           with Not_found -> t
         in
         if t == t' then t else eval map t'
+
+    let eval_lit map lit = Lit.fmap (eval map) lit
+
+    let eval_clause map c = C.fmap (eval map) c
   end
 
   (* hashtable on terms that use alpha-equiv-checking as equality *)

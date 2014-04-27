@@ -1,8 +1,7 @@
 # OASIS_START
-# DO NOT EDIT (digest: 822d6b00e4a615aa34e20dcb9c7d52ed)
+# DO NOT EDIT (digest: 4a6948ead5826625bdca21a6c32b5f0f)
 src/Base
 src/PersistentHashtbl
-src/Sequence
 src/BottomUp
 src/TopDown
 src/Ast

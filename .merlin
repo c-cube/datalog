@@ -1,2 +1,6 @@
 S src
+S src/lib
+S src/unix
 B _build/src
+B _build/src/lib
+B _build/src/unix

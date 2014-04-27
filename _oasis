@@ -25,8 +25,9 @@ Flag "unix"
 Library "datalog"
   Path:             src/
   Pack:             true
-  Modules:          Base, PersistentHashtbl, Sequence, BottomUp, TopDown,
+  Modules:          Base, PersistentHashtbl, BottomUp, TopDown,
                     Ast, Parser, Lexer, Version, CamlInterface
+  InternalModules:  lib/Sequence, lib/Util
   BuildDepends:     unix
 
 Library "datalog_unix"

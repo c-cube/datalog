@@ -94,8 +94,13 @@ let _ =
   if !goal = ""
     then failwith "require a goal";
   (* parse goal literals *)
-  let tuple, goals = DParser.parse_query DLexer.token (Lexing.from_string !goal) in
-  let ctx = D.create_ctx () in
-  let tuple = List.map (D.term_of_ast ~ctx) tuple in
-  let goals = List.map (D.lit_of_ast ~ctx) goals in
-  eval_query !files tuple goals 
+  let lexbuf = Lexing.from_string !goal in
+  try
+    let tuple, goals = DParser.parse_query DLexer.token (Lexing.from_string !goal) in
+    let ctx = D.create_ctx () in
+    let tuple = List.map (D.term_of_ast ~ctx) tuple in
+    let goals = List.map (D.lit_of_ast ~ctx) goals in
+    eval_query !files tuple goals 
+  with Parsing.Parse_error ->
+    Printf.eprintf "parse error at %s\n" (Lexer.print_location lexbuf);
+    exit 1

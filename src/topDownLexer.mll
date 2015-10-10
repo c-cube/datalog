@@ -25,7 +25,12 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 {
   open TopDownParser 
-  
+
+  let print_location lexbuf =
+    let open Lexing in
+    let pos = lexbuf.lex_curr_p in
+    Format.sprintf "at line %d, column %d" pos.pos_lnum pos.pos_cnum
+    
   let fail () = raise Parsing.Parse_error
 }
 

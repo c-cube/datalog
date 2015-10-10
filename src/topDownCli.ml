@@ -102,5 +102,5 @@ let _ =
     let goals = List.map (D.lit_of_ast ~ctx) goals in
     eval_query !files tuple goals 
   with Parsing.Parse_error ->
-    Printf.eprintf "parse error at %s\n" (Lexer.print_location lexbuf);
+    Printf.eprintf "parse error at %s\n" (DLexer.print_location lexbuf);
     exit 1

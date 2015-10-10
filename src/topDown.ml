@@ -159,7 +159,7 @@ module type S = sig
 
     val empty : t
       (** Empty subst *)
-    
+
     val bind : t -> T.t -> scope -> T.t -> scope -> t
       (** Bind a variable,scope to a term,scope *)
 
@@ -421,7 +421,7 @@ module type S = sig
         the list of literals that form a constraint.
 
         [ask_lits db vars lits] queries over variables [vars] with
-        the constraints given by [lits]. 
+        the constraints given by [lits].
 
         Conceptually, the query adds a clause (v1, ..., vn) :- lits, which
         should respect the same safety constraint as other clauses.
@@ -474,7 +474,7 @@ module Make(Const : CONST) = struct
   type const = Const.t
 
   let _debug_enabled = ref false
-  let _debug format = 
+  let _debug format =
     if !_debug_enabled
       then
         Printf.kfprintf
@@ -941,7 +941,7 @@ module Make(Const : CONST) = struct
     type t = T.t -> T.t option
 
     type map = t ConstTbl.t
-    
+
     let create () = ConstTbl.create 17
     let clear t = ConstTbl.clear t
 
@@ -1407,13 +1407,13 @@ module Make(Const : CONST) = struct
     let num_clauses db = ClauseIndex.size db.rules
 
     let size db = num_facts db + num_clauses db
-    
+
     let rec find_facts ?(oc=false) db s_db t s_t k =
       TermIndex.unify ~oc db.facts s_db t s_t k;
       match db.parent with
       | None -> ()
       | Some db' -> find_facts ~oc db' s_db t s_t k
-    
+
     let rec find_clauses_head ?(oc=false) db s_db t s_t k =
       ClauseIndex.unify ~oc db.rules s_db t s_t k;
       match db.parent with
@@ -1880,7 +1880,7 @@ module Default = struct
     let of_string s = String s
     let query = String ""
   end)
- 
+
   include TD
 
   include MakeParse(struct

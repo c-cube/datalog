@@ -86,7 +86,11 @@ let options =
   ; "-doc", Arg.Set doc, "print interpreted predicates documentation and exit"
   ]
 
-let help = "topDownCli [options] goal: evaluates goal"
+let help =
+"topDownCli [options] goal: evaluates goal
+
+Example: topDownCli -load tests/graph10.pl '(X,Y) :- reachable(X,Y)'
+"
 let goal = ref ""
 
 let _ =
@@ -100,7 +104,7 @@ let _ =
     let ctx = D.create_ctx () in
     let tuple = List.map (D.term_of_ast ~ctx) tuple in
     let goals = List.map (D.lit_of_ast ~ctx) goals in
-    eval_query !files tuple goals 
+    eval_query !files tuple goals
   with Parsing.Parse_error ->
     Printf.eprintf "parse error at %s\n" (DLexer.print_location lexbuf);
     exit 1

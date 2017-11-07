@@ -1031,7 +1031,7 @@ module Make(Const : CONST) = struct
       | T.Apply (s, [||]) -> [| Const s |]
       | T.Apply (s, arr) ->
         let n = Array.length arr in
-        let a = Array.create (n+1) Var in
+        let a = Array.make (n+1) Var in
         a.(0) <- Const s;
         for i = 0 to n-1 do
           a.(i+1) <- match arr.(i) with

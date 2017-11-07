@@ -1,8 +1,9 @@
 # OASIS_START
-# DO NOT EDIT (digest: 15c60c74a117a2865ff8c70a1b134e2c)
-# Ignore VCS directories, you can use the same kind of rule outside 
-# OASIS_START/STOP if you want to exclude directories that contains 
+# DO NOT EDIT (digest: 1e65ecc659c1b6bfaef6b073d8967ef9)
+# Ignore VCS directories, you can use the same kind of rule outside
+# OASIS_START/STOP if you want to exclude directories that contains
 # useless stuff for the build process
+true: annot, bin_annot
 <**/.svn>: -traverse
 <**/.svn>: not_hygienic
 ".bzr": -traverse
@@ -28,19 +29,19 @@
 "src/topDownUnix.cmx": for-pack(Datalog)
 "src/camlInterface.cmx": for-pack(Datalog)
 # Executable datalog_cli
+"src/datalog_cli.native": package(num)
+"src/datalog_cli.native": package(str)
+"src/datalog_cli.native": package(unix)
 "src/datalog_cli.native": use_datalog
-"src/datalog_cli.native": pkg_unix
-"src/datalog_cli.native": pkg_num
-"src/datalog_cli.native": pkg_str
 # Executable topDownCli
+"src/topDownCli.native": package(num)
+"src/topDownCli.native": package(str)
+"src/topDownCli.native": package(unix)
 "src/topDownCli.native": use_datalog
-"src/topDownCli.native": pkg_unix
-"src/topDownCli.native": pkg_num
-"src/topDownCli.native": pkg_str
-<src/*.ml{,i}>: use_datalog
-<src/*.ml{,i}>: pkg_unix
-<src/*.ml{,i}>: pkg_num
-<src/*.ml{,i}>: pkg_str
+<src/*.ml{,i,y}>: package(num)
+<src/*.ml{,i,y}>: package(str)
+<src/*.ml{,i,y}>: package(unix)
+<src/*.ml{,i,y}>: use_datalog
 # OASIS_STOP
 true: safe_string, color(always), short_paths
 <**/*.cmx>: inline(10)

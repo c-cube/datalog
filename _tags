@@ -42,5 +42,6 @@
 <src/*.ml{,i}>: pkg_num
 <src/*.ml{,i}>: pkg_str
 # OASIS_STOP
+true: safe_string, color(always), short_paths
 <**/*.cmx>: inline(10)
 

@@ -1,0 +1,43 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<link rel="stylesheet" href="style.css" type="text/css">
+<meta content="text/html; charset=iso-8859-1" http-equiv="Content-Type">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="Start" href="index.html">
+<link rel="previous" href="BottomUp.S.html">
+<link rel="Up" href="BottomUp.html">
+<link title="Index of types" rel=Appendix href="index_types.html">
+<link title="Index of exceptions" rel=Appendix href="index_exceptions.html">
+<link title="Index of values" rel=Appendix href="index_values.html">
+<link title="Index of modules" rel=Appendix href="index_modules.html">
+<link title="Index of module types" rel=Appendix href="index_module_types.html">
+<link title="BottomUp" rel="Chapter" href="BottomUp.html">
+<link title="TopDown" rel="Chapter" href="TopDown.html">
+<link title="Default" rel="Chapter" href="Default.html">
+<link title="BottomUpAst" rel="Chapter" href="BottomUpAst.html">
+<link title="BottomUpParser" rel="Chapter" href="BottomUpParser.html">
+<link title="BottomUpLexer" rel="Chapter" href="BottomUpLexer.html">
+<link title="TopDownParser" rel="Chapter" href="TopDownParser.html">
+<link title="TopDownLexer" rel="Chapter" href="TopDownLexer.html">
+<link title="TopDownAst" rel="Chapter" href="TopDownAst.html">
+<link title="Version" rel="Chapter" href="Version.html">
+<link title="TopDownUnix" rel="Chapter" href="TopDownUnix.html">
+<link title="CamlInterface" rel="Chapter" href="CamlInterface.html"><title>BottomUp.SymbolType</title>
+</head>
+<body>
+<div class="navbar"><a class="pre" href="BottomUp.S.html" title="BottomUp.S">Previous</a>
+&nbsp;<a class="up" href="BottomUp.html" title="BottomUp">Up</a>
+&nbsp;</div>
+<h1>Module type <a href="type_BottomUp.SymbolType.html">BottomUp.SymbolType</a></h1>
+
+<pre><span id="MODULETYPESymbolType"><span class="keyword">module type</span> SymbolType</span> = <code class="code">sig</code> <a href="BottomUp.SymbolType.html">..</a> <code class="code">end</code></pre><div class="info modtype top">
+<div class="info-desc">
+<p>A symbol must be hashable, comparable and printable.</p>
+</div>
+</div>
+<hr width="100%">
+
+<pre><span class="keyword">include</span> Hashtbl.HashedType</pre>
+
+<pre><span id="VALto_string"><span class="keyword">val</span> to_string</span> : <code class="type">t -> string</code></pre></body></html>

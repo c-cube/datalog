@@ -1,0 +1,126 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<link rel="stylesheet" href="style.css" type="text/css">
+<meta content="text/html; charset=iso-8859-1" http-equiv="Content-Type">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="Start" href="index.html">
+<link rel="previous" href="TopDown.S.Rewriting.html">
+<link rel="Up" href="TopDown.S.html">
+<link title="Index of types" rel=Appendix href="index_types.html">
+<link title="Index of exceptions" rel=Appendix href="index_exceptions.html">
+<link title="Index of values" rel=Appendix href="index_values.html">
+<link title="Index of modules" rel=Appendix href="index_modules.html">
+<link title="Index of module types" rel=Appendix href="index_module_types.html">
+<link title="BottomUp" rel="Chapter" href="BottomUp.html">
+<link title="TopDown" rel="Chapter" href="TopDown.html">
+<link title="Default" rel="Chapter" href="Default.html">
+<link title="BottomUpAst" rel="Chapter" href="BottomUpAst.html">
+<link title="BottomUpParser" rel="Chapter" href="BottomUpParser.html">
+<link title="BottomUpLexer" rel="Chapter" href="BottomUpLexer.html">
+<link title="TopDownParser" rel="Chapter" href="TopDownParser.html">
+<link title="TopDownLexer" rel="Chapter" href="TopDownLexer.html">
+<link title="TopDownAst" rel="Chapter" href="TopDownAst.html">
+<link title="Version" rel="Chapter" href="Version.html">
+<link title="TopDownUnix" rel="Chapter" href="TopDownUnix.html">
+<link title="CamlInterface" rel="Chapter" href="CamlInterface.html"><title>TopDown.S.DB</title>
+</head>
+<body>
+<div class="navbar"><a class="pre" href="TopDown.S.Rewriting.html" title="TopDown.S.Rewriting">Previous</a>
+&nbsp;<a class="up" href="TopDown.S.html" title="TopDown.S">Up</a>
+&nbsp;</div>
+<h1>Module <a href="type_TopDown.S.DB.html">TopDown.S.DB</a></h1>
+
+<pre><span id="MODULEDB"><span class="keyword">module</span> DB</span>: <code class="code">sig</code> <a href="TopDown.S.DB.html">..</a> <code class="code">end</code></pre><hr width="100%">
+
+<pre><span id="TYPEt"><span class="keyword">type</span> <code class="type"></code>t</span> </pre>
+<div class="info ">
+<div class="info-desc">
+<p>A database is a repository for Datalog clauses.</p>
+</div>
+</div>
+
+
+<pre><span id="TYPEinterpreter"><span class="keyword">type</span> <code class="type"></code>interpreter</span> = <code class="type"><a href="TopDown.S.T.html#TYPEt">TopDown.S.T.t</a> -> <a href="TopDown.S.C.html#TYPEt">TopDown.S.C.t</a> list</code> </pre>
+<div class="info ">
+<div class="info-desc">
+<p>Interpreted predicate. It takes terms which have a given
+          symbol as head, and return a list of (safe) clauses that
+          have the same symbol as head, and should unify with the
+          query term.</p>
+</div>
+</div>
+
+
+<pre><span id="VALcreate"><span class="keyword">val</span> create</span> : <code class="type">?parent:<a href="TopDown.S.DB.html#TYPEt">t</a> -> unit -> <a href="TopDown.S.DB.html#TYPEt">t</a></code></pre>
+<pre><span id="VALcopy"><span class="keyword">val</span> copy</span> : <code class="type"><a href="TopDown.S.DB.html#TYPEt">t</a> -> <a href="TopDown.S.DB.html#TYPEt">t</a></code></pre>
+<pre><span id="VALclear"><span class="keyword">val</span> clear</span> : <code class="type"><a href="TopDown.S.DB.html#TYPEt">t</a> -> unit</code></pre>
+<pre><span id="VALadd_fact"><span class="keyword">val</span> add_fact</span> : <code class="type"><a href="TopDown.S.DB.html#TYPEt">t</a> -> <a href="TopDown.S.T.html#TYPEt">TopDown.S.T.t</a> -> unit</code></pre>
+<pre><span id="VALadd_facts"><span class="keyword">val</span> add_facts</span> : <code class="type"><a href="TopDown.S.DB.html#TYPEt">t</a> -> <a href="TopDown.S.T.html#TYPEt">TopDown.S.T.t</a> list -> unit</code></pre>
+<pre><span id="VALadd_clause"><span class="keyword">val</span> add_clause</span> : <code class="type"><a href="TopDown.S.DB.html#TYPEt">t</a> -> <a href="TopDown.S.C.html#TYPEt">TopDown.S.C.t</a> -> unit</code></pre>
+<pre><span id="VALadd_clauses"><span class="keyword">val</span> add_clauses</span> : <code class="type"><a href="TopDown.S.DB.html#TYPEt">t</a> -> <a href="TopDown.S.C.html#TYPEt">TopDown.S.C.t</a> list -> unit</code></pre>
+<pre><span id="VALinterpret"><span class="keyword">val</span> interpret</span> : <code class="type">?help:string -><br>       <a href="TopDown.S.DB.html#TYPEt">t</a> -> <a href="TopDown.S.html#TYPEconst">TopDown.S.const</a> -> <a href="TopDown.S.DB.html#TYPEinterpreter">interpreter</a> -> unit</code></pre><div class="info ">
+<div class="info-desc">
+<p>Add an interpreter for the given constant. Goals that start with
+          this constant will be given to all registered interpreters, all
+          of which can add new clauses. The returned clauses must
+          have the constant as head symbol.</p>
+</div>
+</div>
+
+<pre><span id="VALinterpret_list"><span class="keyword">val</span> interpret_list</span> : <code class="type"><a href="TopDown.S.DB.html#TYPEt">t</a> -><br>       (<a href="TopDown.S.html#TYPEconst">TopDown.S.const</a> * string * <a href="TopDown.S.DB.html#TYPEinterpreter">interpreter</a>) list -> unit</code></pre><div class="info ">
+<div class="info-desc">
+<p>Add several interpreters, with their documentation</p>
+</div>
+</div>
+
+<pre><span id="VALis_interpreted"><span class="keyword">val</span> is_interpreted</span> : <code class="type"><a href="TopDown.S.DB.html#TYPEt">t</a> -> <a href="TopDown.S.html#TYPEconst">TopDown.S.const</a> -> bool</code></pre><div class="info ">
+<div class="info-desc">
+<p>Is the constant interpreted by some OCaml code?</p>
+</div>
+</div>
+
+<pre><span id="VALadd_builtin"><span class="keyword">val</span> add_builtin</span> : <code class="type"><a href="TopDown.S.DB.html#TYPEt">t</a> -> Const.t -> <a href="TopDown.S.BuiltinFun.html#TYPEt">TopDown.S.BuiltinFun.t</a> -> unit</code></pre><div class="info ">
+<div class="info-desc">
+<p>Add a builtin fun</p>
+</div>
+</div>
+
+<pre><span id="VALbuiltin_funs"><span class="keyword">val</span> builtin_funs</span> : <code class="type"><a href="TopDown.S.DB.html#TYPEt">t</a> -> <a href="TopDown.S.BuiltinFun.html#TYPEmap">TopDown.S.BuiltinFun.map</a></code></pre>
+<pre><span id="VALeval"><span class="keyword">val</span> eval</span> : <code class="type"><a href="TopDown.S.DB.html#TYPEt">t</a> -> <a href="TopDown.S.T.html#TYPEt">TopDown.S.T.t</a> -> <a href="TopDown.S.T.html#TYPEt">TopDown.S.T.t</a></code></pre><div class="info ">
+<div class="info-desc">
+<p>Evaluate the given term at root</p>
+</div>
+</div>
+
+<pre><span id="VALhelp"><span class="keyword">val</span> help</span> : <code class="type"><a href="TopDown.S.DB.html#TYPEt">t</a> -> string list</code></pre><div class="info ">
+<div class="info-desc">
+<p>Help messages for interpreted predicates</p>
+</div>
+</div>
+
+<pre><span id="VALnum_facts"><span class="keyword">val</span> num_facts</span> : <code class="type"><a href="TopDown.S.DB.html#TYPEt">t</a> -> int</code></pre>
+<pre><span id="VALnum_clauses"><span class="keyword">val</span> num_clauses</span> : <code class="type"><a href="TopDown.S.DB.html#TYPEt">t</a> -> int</code></pre>
+<pre><span id="VALsize"><span class="keyword">val</span> size</span> : <code class="type"><a href="TopDown.S.DB.html#TYPEt">t</a> -> int</code></pre>
+<pre><span id="VALfind_facts"><span class="keyword">val</span> find_facts</span> : <code class="type">?oc:bool -><br>       <a href="TopDown.S.DB.html#TYPEt">t</a> -><br>       <a href="TopDown.S.html#TYPEscope">TopDown.S.scope</a> -><br>       <a href="TopDown.S.T.html#TYPEt">TopDown.S.T.t</a> -><br>       <a href="TopDown.S.html#TYPEscope">TopDown.S.scope</a> -> (<a href="TopDown.S.T.html#TYPEt">TopDown.S.T.t</a> -> <a href="TopDown.S.Subst.html#TYPEt">TopDown.S.Subst.t</a> -> unit) -> unit</code></pre><div class="info ">
+<div class="info-desc">
+<p>find facts unifying with the given term, and give them
+          along with the unifier, to the callback</p>
+</div>
+</div>
+
+<pre><span id="VALfind_clauses_head"><span class="keyword">val</span> find_clauses_head</span> : <code class="type">?oc:bool -><br>       <a href="TopDown.S.DB.html#TYPEt">t</a> -><br>       <a href="TopDown.S.html#TYPEscope">TopDown.S.scope</a> -><br>       <a href="TopDown.S.T.html#TYPEt">TopDown.S.T.t</a> -><br>       <a href="TopDown.S.html#TYPEscope">TopDown.S.scope</a> -> (<a href="TopDown.S.C.html#TYPEt">TopDown.S.C.t</a> -> <a href="TopDown.S.Subst.html#TYPEt">TopDown.S.Subst.t</a> -> unit) -> unit</code></pre><div class="info ">
+<div class="info-desc">
+<p>find clauses whose head unifies with the given term,
+          and give them along with the unifier, to the callback</p>
+</div>
+</div>
+
+<pre><span id="VALfind_interpretation"><span class="keyword">val</span> find_interpretation</span> : <code class="type">?oc:bool -><br>       <a href="TopDown.S.DB.html#TYPEt">t</a> -><br>       <a href="TopDown.S.html#TYPEscope">TopDown.S.scope</a> -><br>       <a href="TopDown.S.T.html#TYPEt">TopDown.S.T.t</a> -><br>       <a href="TopDown.S.html#TYPEscope">TopDown.S.scope</a> -> (<a href="TopDown.S.C.html#TYPEt">TopDown.S.C.t</a> -> <a href="TopDown.S.Subst.html#TYPEt">TopDown.S.Subst.t</a> -> unit) -> unit</code></pre><div class="info ">
+<div class="info-desc">
+<p>Given an interpreted goal, try all interpreters on it,
+          and match the query against their heads. Returns clauses
+          whose head unifies with the goal, along with the substitution.</p>
+</div>
+</div>
+</body></html>

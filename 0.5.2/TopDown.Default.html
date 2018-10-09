@@ -1,0 +1,58 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<link rel="stylesheet" href="style.css" type="text/css">
+<meta content="text/html; charset=iso-8859-1" http-equiv="Content-Type">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="Start" href="index.html">
+<link rel="previous" href="TopDown.MakeParse.html">
+<link rel="Up" href="TopDown.html">
+<link title="Index of types" rel=Appendix href="index_types.html">
+<link title="Index of exceptions" rel=Appendix href="index_exceptions.html">
+<link title="Index of values" rel=Appendix href="index_values.html">
+<link title="Index of modules" rel=Appendix href="index_modules.html">
+<link title="Index of module types" rel=Appendix href="index_module_types.html">
+<link title="BottomUp" rel="Chapter" href="BottomUp.html">
+<link title="TopDown" rel="Chapter" href="TopDown.html">
+<link title="Default" rel="Chapter" href="Default.html">
+<link title="BottomUpAst" rel="Chapter" href="BottomUpAst.html">
+<link title="BottomUpParser" rel="Chapter" href="BottomUpParser.html">
+<link title="BottomUpLexer" rel="Chapter" href="BottomUpLexer.html">
+<link title="TopDownParser" rel="Chapter" href="TopDownParser.html">
+<link title="TopDownLexer" rel="Chapter" href="TopDownLexer.html">
+<link title="TopDownAst" rel="Chapter" href="TopDownAst.html">
+<link title="Version" rel="Chapter" href="Version.html">
+<link title="TopDownUnix" rel="Chapter" href="TopDownUnix.html">
+<link title="CamlInterface" rel="Chapter" href="CamlInterface.html"><title>TopDown.Default</title>
+</head>
+<body>
+<div class="navbar"><a class="pre" href="TopDown.MakeParse.html" title="TopDown.MakeParse">Previous</a>
+&nbsp;<a class="up" href="TopDown.html" title="TopDown">Up</a>
+&nbsp;</div>
+<h1>Module <a href="type_TopDown.Default.html">TopDown.Default</a></h1>
+
+<pre><span id="MODULEDefault"><span class="keyword">module</span> Default</span>: <code class="code">sig</code> <a href="TopDown.Default.html">..</a> <code class="code">end</code></pre><hr width="100%">
+
+<pre><span class="keyword">include</span> <a href="TopDown.S.html">TopDown.S</a></pre>
+
+<pre><span id="VALdefault_interpreters"><span class="keyword">val</span> default_interpreters</span> : <code class="type">(<a href="TopDown.html#TYPEconst">TopDown.const</a> * string * DB.interpreter) list</code></pre><div class="info ">
+<div class="info-desc">
+<p>List of default interpreters for some symbols, mostly
+        infix predicates</p>
+</div>
+</div>
+
+<pre><span id="VALbuiltin"><span class="keyword">val</span> builtin</span> : <code class="type">(<a href="TopDown.html#TYPEconst">TopDown.const</a> * BuiltinFun.t) list</code></pre><div class="info ">
+<div class="info-desc">
+<p>Default builtin functions</p>
+</div>
+</div>
+
+<pre><span id="VALsetup_default"><span class="keyword">val</span> setup_default</span> : <code class="type">DB.t -> unit</code></pre><div class="info ">
+<div class="info-desc">
+<p>Load the default interpreters and builtin functions into the DB</p>
+</div>
+</div>
+
+<pre><span class="keyword">include</span> <a href="TopDown.PARSE.html">TopDown.PARSE</a></pre>
+</body></html>

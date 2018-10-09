@@ -1,0 +1,78 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<link rel="stylesheet" href="style.css" type="text/css">
+<meta content="text/html; charset=iso-8859-1" http-equiv="Content-Type">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="Start" href="index.html">
+<link rel="Up" href="BottomUp.S.html">
+<link title="Index of types" rel=Appendix href="index_types.html">
+<link title="Index of exceptions" rel=Appendix href="index_exceptions.html">
+<link title="Index of values" rel=Appendix href="index_values.html">
+<link title="Index of modules" rel=Appendix href="index_modules.html">
+<link title="Index of module types" rel=Appendix href="index_module_types.html">
+<link title="BottomUp" rel="Chapter" href="BottomUp.html">
+<link title="TopDown" rel="Chapter" href="TopDown.html">
+<link title="Default" rel="Chapter" href="Default.html">
+<link title="BottomUpAst" rel="Chapter" href="BottomUpAst.html">
+<link title="BottomUpParser" rel="Chapter" href="BottomUpParser.html">
+<link title="BottomUpLexer" rel="Chapter" href="BottomUpLexer.html">
+<link title="TopDownParser" rel="Chapter" href="TopDownParser.html">
+<link title="TopDownLexer" rel="Chapter" href="TopDownLexer.html">
+<link title="TopDownAst" rel="Chapter" href="TopDownAst.html">
+<link title="Version" rel="Chapter" href="Version.html">
+<link title="TopDownUnix" rel="Chapter" href="TopDownUnix.html">
+<link title="CamlInterface" rel="Chapter" href="CamlInterface.html"><title>BottomUp.S.Query</title>
+</head>
+<body>
+<div class="navbar">&nbsp;<a class="up" href="BottomUp.S.html" title="BottomUp.S">Up</a>
+&nbsp;</div>
+<h1>Module <a href="type_BottomUp.S.Query.html">BottomUp.S.Query</a></h1>
+
+<pre><span id="MODULEQuery"><span class="keyword">module</span> Query</span>: <code class="code">sig</code> <a href="BottomUp.S.Query.html">..</a> <code class="code">end</code></pre><hr width="100%">
+
+<pre><span id="TYPEset"><span class="keyword">type</span> <code class="type"></code>set</span> </pre>
+<div class="info ">
+<div class="info-desc">
+<p>mutable set of term lists</p>
+</div>
+</div>
+
+
+<pre><span id="VALask"><span class="keyword">val</span> ask</span> : <code class="type"><a href="BottomUp.S.html#TYPEdb">BottomUp.S.db</a> -><br>       ?neg:<a href="BottomUp.S.html#TYPEliteral">BottomUp.S.literal</a> list -><br>       int array -> <a href="BottomUp.S.html#TYPEliteral">BottomUp.S.literal</a> list -> <a href="BottomUp.S.Query.html#TYPEset">set</a></code></pre><div class="info ">
+<div class="info-desc">
+<p>Given a list of variables, and a list of literals that contain those
+          variables, return a set. Each element of the set is an instantiation
+          of the variables such that all instantiated literals are facts of
+          the <code class="code">db</code>. <code class="code">neg</code> is an optional list of literals that must be false
+          for an instantiation to be an answer.
+          This is lazy, and will only be evaluated upon calls to <a href="BottomUp.S.Query.html#VALiter"><code class="code">BottomUp.S.Query.iter</code></a>,
+          <a href="BottomUp.S.Query.html#VALto_list"><code class="code">BottomUp.S.Query.to_list</code></a> or other similar functions. The answers will be cached
+          in the set and readily available thereafter.</p>
+</div>
+</div>
+
+<pre><span id="VALiter"><span class="keyword">val</span> iter</span> : <code class="type"><a href="BottomUp.S.Query.html#TYPEset">set</a> -> (<a href="BottomUp.S.html#TYPEterm">BottomUp.S.term</a> array -> unit) -> unit</code></pre><div class="info ">
+<div class="info-desc">
+<p>Evaluate the set by iterating on it</p>
+</div>
+</div>
+
+<pre><span id="VALto_list"><span class="keyword">val</span> to_list</span> : <code class="type"><a href="BottomUp.S.Query.html#TYPEset">set</a> -> <a href="BottomUp.S.html#TYPEterm">BottomUp.S.term</a> array list</code></pre><div class="info ">
+<div class="info-desc">
+<p>Convert to a list</p>
+</div>
+</div>
+
+<pre><span id="VALcardinal"><span class="keyword">val</span> cardinal</span> : <code class="type"><a href="BottomUp.S.Query.html#TYPEset">set</a> -> int</code></pre><div class="info ">
+<div class="info-desc">
+<p>Number of elements of the set</p>
+</div>
+</div>
+
+<pre><span id="VALpp_plan"><span class="keyword">val</span> pp_plan</span> : <code class="type">Format.formatter -> <a href="BottomUp.S.Query.html#TYPEset">set</a> -> unit</code></pre><div class="info ">
+<div class="info-desc">
+<p>Print query plan</p>
+</div>
+</div>
+</body></html>

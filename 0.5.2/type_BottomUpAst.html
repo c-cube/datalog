@@ -1,0 +1,33 @@
+<html><head>
+<link rel="stylesheet" href="style.css" type="text/css">
+<meta content="text/html; charset=iso-8859-1" http-equiv="Content-Type">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="Start" href="index.html">
+<link title="Index of types" rel=Appendix href="index_types.html">
+<link title="Index of exceptions" rel=Appendix href="index_exceptions.html">
+<link title="Index of values" rel=Appendix href="index_values.html">
+<link title="Index of modules" rel=Appendix href="index_modules.html">
+<link title="Index of module types" rel=Appendix href="index_module_types.html">
+<link title="BottomUp" rel="Chapter" href="BottomUp.html">
+<link title="TopDown" rel="Chapter" href="TopDown.html">
+<link title="Default" rel="Chapter" href="Default.html">
+<link title="BottomUpAst" rel="Chapter" href="BottomUpAst.html">
+<link title="BottomUpParser" rel="Chapter" href="BottomUpParser.html">
+<link title="BottomUpLexer" rel="Chapter" href="BottomUpLexer.html">
+<link title="TopDownParser" rel="Chapter" href="TopDownParser.html">
+<link title="TopDownLexer" rel="Chapter" href="TopDownLexer.html">
+<link title="TopDownAst" rel="Chapter" href="TopDownAst.html">
+<link title="Version" rel="Chapter" href="Version.html">
+<link title="TopDownUnix" rel="Chapter" href="TopDownUnix.html">
+<link title="CamlInterface" rel="Chapter" href="CamlInterface.html"><title>BottomUpAst</title>
+</head>
+<body>
+<code class="code"><span class="keyword">sig</span><br>
+&nbsp;&nbsp;<span class="keyword">type</span>&nbsp;file&nbsp;=&nbsp;<span class="constructor">BottomUpAst</span>.clause&nbsp;list<br>
+&nbsp;&nbsp;<span class="keyword">and</span>&nbsp;clause&nbsp;=&nbsp;<span class="constructor">Clause</span>&nbsp;<span class="keyword">of</span>&nbsp;<span class="constructor">BottomUpAst</span>.literal&nbsp;*&nbsp;<span class="constructor">BottomUpAst</span>.literal&nbsp;list<br>
+&nbsp;&nbsp;<span class="keyword">and</span>&nbsp;literal&nbsp;=&nbsp;<span class="constructor">Atom</span>&nbsp;<span class="keyword">of</span>&nbsp;string&nbsp;*&nbsp;<span class="constructor">BottomUpAst</span>.term&nbsp;list<br>
+&nbsp;&nbsp;<span class="keyword">and</span>&nbsp;term&nbsp;=&nbsp;<span class="constructor">Var</span>&nbsp;<span class="keyword">of</span>&nbsp;string&nbsp;<span class="keywordsign">|</span>&nbsp;<span class="constructor">Const</span>&nbsp;<span class="keyword">of</span>&nbsp;string&nbsp;<span class="keywordsign">|</span>&nbsp;<span class="constructor">Quoted</span>&nbsp;<span class="keyword">of</span>&nbsp;string<br>
+&nbsp;&nbsp;<span class="keyword">and</span>&nbsp;query&nbsp;=<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="constructor">Query</span>&nbsp;<span class="keyword">of</span>&nbsp;<span class="constructor">BottomUpAst</span>.term&nbsp;list&nbsp;*&nbsp;<span class="constructor">BottomUpAst</span>.literal&nbsp;list&nbsp;*<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="constructor">BottomUpAst</span>.literal&nbsp;list<br>
+<span class="keyword">end</span></code></body></html>

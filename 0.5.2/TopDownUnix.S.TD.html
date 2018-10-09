@@ -1,0 +1,156 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<link rel="stylesheet" href="style.css" type="text/css">
+<meta content="text/html; charset=iso-8859-1" http-equiv="Content-Type">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="Start" href="index.html">
+<link rel="Up" href="TopDownUnix.S.html">
+<link title="Index of types" rel=Appendix href="index_types.html">
+<link title="Index of exceptions" rel=Appendix href="index_exceptions.html">
+<link title="Index of values" rel=Appendix href="index_values.html">
+<link title="Index of modules" rel=Appendix href="index_modules.html">
+<link title="Index of module types" rel=Appendix href="index_module_types.html">
+<link title="BottomUp" rel="Chapter" href="BottomUp.html">
+<link title="TopDown" rel="Chapter" href="TopDown.html">
+<link title="Default" rel="Chapter" href="Default.html">
+<link title="BottomUpAst" rel="Chapter" href="BottomUpAst.html">
+<link title="BottomUpParser" rel="Chapter" href="BottomUpParser.html">
+<link title="BottomUpLexer" rel="Chapter" href="BottomUpLexer.html">
+<link title="TopDownParser" rel="Chapter" href="TopDownParser.html">
+<link title="TopDownLexer" rel="Chapter" href="TopDownLexer.html">
+<link title="TopDownAst" rel="Chapter" href="TopDownAst.html">
+<link title="Version" rel="Chapter" href="Version.html">
+<link title="TopDownUnix" rel="Chapter" href="TopDownUnix.html">
+<link title="CamlInterface" rel="Chapter" href="CamlInterface.html"><link title="Terms" rel="Section" href="#2_Terms">
+<link title="Literals" rel="Section" href="#2_Literals">
+<link title="Clauses" rel="Section" href="#2_Clauses">
+<link title="Substs" rel="Section" href="#2_Substs">
+<link title="Unification, matching..." rel="Section" href="#2_Unificationmatching">
+<link title="Special built-in functions" rel="Section" href="#2_Specialbuiltinfunctions">
+<link title="Index" rel="Section" href="#2_Index">
+<link title="Rewriting" rel="Section" href="#2_Rewriting">
+<link title="DB" rel="Section" href="#2_DB">
+<link title="Query" rel="Section" href="#2_Query">
+<title>TopDownUnix.S.TD</title>
+</head>
+<body>
+<div class="navbar">&nbsp;<a class="up" href="TopDownUnix.S.html" title="TopDownUnix.S">Up</a>
+&nbsp;</div>
+<h1>Module <a href="type_TopDownUnix.S.TD.html">TopDownUnix.S.TD</a></h1>
+
+<pre><span id="MODULETD"><span class="keyword">module</span> TD</span>: <code class="type"><a href="TopDown.S.html">TopDown.S</a></code><code class="type"> </code></pre><hr width="100%">
+
+<pre><span id="MODULEConst"><span class="keyword">module</span> <a href="TopDown.S.Const.html">Const</a></span>: <code class="type"><a href="TopDown.CONST.html">TopDown.CONST</a></code><code class="type"> </code></pre>
+<pre><span id="TYPEconst"><span class="keyword">type</span> <code class="type"></code>const</span> = <code class="type">Const.t</code> </pre>
+
+
+<pre><span id="VALset_debug"><span class="keyword">val</span> set_debug</span> : <code class="type">bool -> unit</code></pre><h3 id="2_Terms">Terms</h3>
+<pre><span id="MODULET"><span class="keyword">module</span> <a href="TopDown.S.T.html">T</a></span>: <code class="code">sig</code> <a href="TopDown.S.T.html">..</a> <code class="code">end</code></pre><h3 id="2_Literals">Literals</h3>
+<pre><span id="MODULELit"><span class="keyword">module</span> <a href="TopDown.S.Lit.html">Lit</a></span>: <code class="code">sig</code> <a href="TopDown.S.Lit.html">..</a> <code class="code">end</code></pre><h3 id="2_Clauses">Clauses</h3>
+<pre><span id="MODULEC"><span class="keyword">module</span> <a href="TopDown.S.C.html">C</a></span>: <code class="code">sig</code> <a href="TopDown.S.C.html">..</a> <code class="code">end</code></pre><h3 id="2_Substs">Substs</h3><p>This module is used for variable bindings.</p>
+
+<pre><span id="MODULESubst"><span class="keyword">module</span> <a href="TopDown.S.Subst.html">Subst</a></span>: <code class="code">sig</code> <a href="TopDown.S.Subst.html">..</a> <code class="code">end</code></pre><h3 id="2_Unificationmatching">Unification, matching...</h3>
+<pre><span id="TYPEscope"><span class="keyword">type</span> <code class="type"></code>scope</span> = <code class="type"><a href="TopDown.S.Subst.html#TYPEscope">Subst.scope</a></code> </pre>
+
+
+<pre><span id="EXCEPTIONUnifFail"><span class="keyword">exception</span> UnifFail</span></pre>
+<p>For <a href="TopDown.S.html#VALunify"><code class="code">TopDown.S.unify</code></a> and <a href="TopDown.S.html#VALmatch_"><code class="code">TopDown.S.match_</code></a>, the optional parameter <code class="code">oc</code> is used to
+      enable or disable occur-check. It is disabled by default.</p>
+
+<pre><span id="VALunify"><span class="keyword">val</span> unify</span> : <code class="type">?oc:bool -><br>       ?subst:<a href="TopDown.S.Subst.html#TYPEt">Subst.t</a> -><br>       <a href="TopDown.S.T.html#TYPEt">T.t</a> -><br>       <a href="TopDown.S.html#TYPEscope">scope</a> -> <a href="TopDown.S.T.html#TYPEt">T.t</a> -> <a href="TopDown.S.html#TYPEscope">scope</a> -> <a href="TopDown.S.Subst.html#TYPEt">Subst.t</a></code></pre><div class="info ">
+<div class="info-desc">
+<p>Unify the two terms.</p>
+</div>
+<ul class="info-attributes">
+<li><b>Raises</b> <code>UnifFail</code> if it fails</li>
+</ul>
+</div>
+
+<pre><span id="VALmatch_"><span class="keyword">val</span> match_</span> : <code class="type">?oc:bool -><br>       ?subst:<a href="TopDown.S.Subst.html#TYPEt">Subst.t</a> -><br>       <a href="TopDown.S.T.html#TYPEt">T.t</a> -><br>       <a href="TopDown.S.html#TYPEscope">scope</a> -> <a href="TopDown.S.T.html#TYPEt">T.t</a> -> <a href="TopDown.S.html#TYPEscope">scope</a> -> <a href="TopDown.S.Subst.html#TYPEt">Subst.t</a></code></pre><div class="info ">
+<div class="info-desc">
+<p><code class="code">match_ a sa b sb</code> matches the pattern <code class="code">a</code> in scope <code class="code">sa</code> with term
+        <code class="code">b</code> in scope <code class="code">sb</code>.</p>
+</div>
+<ul class="info-attributes">
+<li><b>Raises</b> <code>UnifFail</code> if it fails</li>
+</ul>
+</div>
+
+<pre><span id="VALalpha_equiv"><span class="keyword">val</span> alpha_equiv</span> : <code class="type">?subst:<a href="TopDown.S.Subst.html#TYPEt">Subst.t</a> -><br>       <a href="TopDown.S.T.html#TYPEt">T.t</a> -><br>       <a href="TopDown.S.html#TYPEscope">scope</a> -> <a href="TopDown.S.T.html#TYPEt">T.t</a> -> <a href="TopDown.S.html#TYPEscope">scope</a> -> <a href="TopDown.S.Subst.html#TYPEt">Subst.t</a></code></pre><div class="info ">
+<div class="info-desc">
+<p>Test for alpha equivalence.</p>
+</div>
+<ul class="info-attributes">
+<li><b>Raises</b> <code>UnifFail</code> if it fails</li>
+</ul>
+</div>
+
+<pre><span id="VALare_alpha_equiv"><span class="keyword">val</span> are_alpha_equiv</span> : <code class="type"><a href="TopDown.S.T.html#TYPEt">T.t</a> -> <a href="TopDown.S.T.html#TYPEt">T.t</a> -> bool</code></pre><div class="info ">
+<div class="info-desc">
+<p>Special version of <code class="code">alpha_equiv</code>, using distinct scopes for the two
+        terms to test, and discarding the result</p>
+</div>
+</div>
+
+<pre><span id="VALclause_are_alpha_equiv"><span class="keyword">val</span> clause_are_alpha_equiv</span> : <code class="type"><a href="TopDown.S.C.html#TYPEt">C.t</a> -> <a href="TopDown.S.C.html#TYPEt">C.t</a> -> bool</code></pre><div class="info ">
+<div class="info-desc">
+<p>Alpha equivalence of clauses.</p>
+</div>
+</div>
+<h3 id="2_Specialbuiltinfunctions">Special built-in functions</h3><p>The built-in functions are symbols that have a special <b>meaning</b>. The
+  meaning is given by a set of OCaml functions that can evaluate applications
+  of the function symbol to arguments.</p>
+
+<p>For instance, <code class="code">sum</code> is a special built-in function that tries to add its
+  arguments if those are constants.</p>
+
+<p><b>Note</b> that a constant will never be interpreted.</p>
+
+<pre><span id="MODULEBuiltinFun"><span class="keyword">module</span> <a href="TopDown.S.BuiltinFun.html">BuiltinFun</a></span>: <code class="code">sig</code> <a href="TopDown.S.BuiltinFun.html">..</a> <code class="code">end</code></pre><p>The following hashtables use alpha-equivalence checking instead of
+      regular, syntactic equality</p>
+
+<pre><span id="MODULETVariantTbl"><span class="keyword">module</span> <a href="TopDown.S.TVariantTbl.html">TVariantTbl</a></span>: <code class="type">Hashtbl.S</code><code class="type">  with type key = T.t</code></pre>
+<pre><span id="MODULECVariantTbl"><span class="keyword">module</span> <a href="TopDown.S.CVariantTbl.html">CVariantTbl</a></span>: <code class="type">Hashtbl.S</code><code class="type">  with type key = C.t</code></pre><h3 id="2_Index">Index</h3><p>An index is a specialized data structured that is used to efficiently
+  store and retrieve data by a key, where the key is a term. Retrieval
+  involves finding all data associated with terms that match,
+  or unify with, a given term.</p>
+
+<pre><span id="MODULEIndex"><span class="keyword">module</span> <a href="TopDown.S.Index.html">Index</a></span>: <div class="sig_block"><code class="code">functor (</code><code class="code">Data</code><code class="code"> : </code><code class="type">Hashtbl.HashedType</code><code class="code">) -&gt; </code><code class="code">sig</code> <a href="TopDown.S.Index.html">..</a> <code class="code">end</code></div></pre><h3 id="2_Rewriting">Rewriting</h3><p>Rewriting consists in having a set of <b>rules</b>, oriented from left to right,
+  that we will write <code class="code">l -&gt; r</code> (say "l rewrites to r"). Any term t that l matches
+  is <b>rewritten</b> into r by replacing it by sigma(r), where sigma(l) = t.</p>
+
+<pre><span id="MODULERewriting"><span class="keyword">module</span> <a href="TopDown.S.Rewriting.html">Rewriting</a></span>: <code class="code">sig</code> <a href="TopDown.S.Rewriting.html">..</a> <code class="code">end</code></pre><h3 id="2_DB">DB</h3><p>A DB stores facts and clauses, that constitute a logic program.
+      Facts and clauses can only be added.</p>
+
+<p>Non-stratified programs will be rejected with NonStratifiedProgram.</p>
+
+<pre><span id="EXCEPTIONNonStratifiedProgram"><span class="keyword">exception</span> NonStratifiedProgram</span></pre>
+
+<pre><span id="MODULEDB"><span class="keyword">module</span> <a href="TopDown.S.DB.html">DB</a></span>: <code class="code">sig</code> <a href="TopDown.S.DB.html">..</a> <code class="code">end</code></pre><h3 id="2_Query">Query</h3>
+<pre><span id="VALask"><span class="keyword">val</span> ask</span> : <code class="type">?oc:bool -><br>       ?with_rules:<a href="TopDown.S.C.html#TYPEt">C.t</a> list -><br>       ?with_facts:<a href="TopDown.S.T.html#TYPEt">T.t</a> list -><br>       <a href="TopDown.S.DB.html#TYPEt">DB.t</a> -> <a href="TopDown.S.T.html#TYPEt">T.t</a> -> <a href="TopDown.S.T.html#TYPEt">T.t</a> list</code></pre><div class="info ">
+<div class="info-desc">
+<p>Returns the answers to a query in a given DB. Additional facts and rules can be
+        added in a local scope.</p>
+</div>
+</div>
+<div class="param_info"><code class="code">oc</code> : enable occur-check in unification (default <code class="code">false</code>)</div>
+
+<pre><span id="VALask_lits"><span class="keyword">val</span> ask_lits</span> : <code class="type">?oc:bool -><br>       ?with_rules:<a href="TopDown.S.C.html#TYPEt">C.t</a> list -><br>       ?with_facts:<a href="TopDown.S.T.html#TYPEt">T.t</a> list -><br>       <a href="TopDown.S.DB.html#TYPEt">DB.t</a> -><br>       <a href="TopDown.S.T.html#TYPEt">T.t</a> list -> <a href="TopDown.S.Lit.html#TYPEt">Lit.t</a> list -> <a href="TopDown.S.T.html#TYPEt">T.t</a> list</code></pre><div class="info ">
+<div class="info-desc">
+<p>Extension of <a href="TopDown.S.html#VALask"><code class="code">TopDown.S.ask</code></a>, where the query ranges over the list of
+        variables (the term list), all of which must be bound in
+        the list of literals that form a constraint.</p>
+
+<p><code class="code">ask_lits db vars lits</code> queries over variables <code class="code">vars</code> with
+        the constraints given by <code class="code">lits</code>.</p>
+
+<p>Conceptually, the query adds a clause (v1, ..., vn) :- lits, which
+        should respect the same safety constraint as other clauses.</p>
+</div>
+<ul class="info-attributes">
+<li><b>Returns</b> a list of answers, each of which is a list of terms that
+          map to the given list of variables.</li>
+</ul>
+</div>
+</body></html>

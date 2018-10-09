@@ -1,0 +1,25 @@
+opam-version: "2.0"
+name: "datalog"
+maintainer: "simon.cruanes.2007@m4x.org"
+authors: ["Simon Cruanes"]
+homepage: "https://github.com/c-cube/datalog"
+license: "BSD-2-Clause"
+doc: ["http://cedeela.fr/~simon/software/datalog/index.html"] # TODO
+tags: [
+  "datalog"
+  "relational"
+  "query"
+  "prolog"
+]
+build: [
+  ["dune" "build" "@install" "-p" name "-j" jobs]
+  ["dune" "build" "@doc" "-p" name] {with-doc}
+]
+depends: [
+  "dune"
+  "num"
+  "ocaml" { >= "4.02" }
+  "odoc" {with-doc}
+]
+dev-repo: "git://github.com/c-cube/datalog"
+bug-reports: "https://github.com/c-cube/datalog/issues"

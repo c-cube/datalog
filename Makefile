@@ -1,68 +1,40 @@
-# OASIS_START
-# DO NOT EDIT (digest: a3c674b4239234cbbe53afe090018954)
 
-SETUP = ocaml setup.ml
+all: build test bottom_up top_down
 
-build: setup.data
-	$(SETUP) -build $(BUILDFLAGS)
+build:
+	@dune build @install
 
-doc: setup.data build
-	$(SETUP) -doc $(DOCFLAGS)
+bottom_up:
+	@dune build src/bottom_up_cli/datalog_cli.exe
+	@ln -sf _build/default/src/bottom_up_cli/datalog_cli.exe
 
-test: setup.data build
-	$(SETUP) -test $(TESTFLAGS)
+top_down:
+	@dune build src/top_down_cli/topDownCli.exe
+	@ln -sf _build/default/src/top_down_cli/topDownCli.exe
 
-all:
-	$(SETUP) -all $(ALLFLAGS)
-
-install: setup.data
-	$(SETUP) -install $(INSTALLFLAGS)
-
-uninstall: setup.data
-	$(SETUP) -uninstall $(UNINSTALLFLAGS)
-
-reinstall: setup.data
-	$(SETUP) -reinstall $(REINSTALLFLAGS)
+test:
+	@dune runtest --no-buffer --force
 
 clean:
-	$(SETUP) -clean $(CLEANFLAGS)
+	@dune clean
 
-distclean:
-	$(SETUP) -distclean $(DISTCLEANFLAGS)
+doc:
+	@dune build @doc
 
-setup.data:
-	$(SETUP) -configure $(CONFIGUREFLAGS)
+VERSION=$(shell awk '/^version:/ {print $$2}' datalog.opam)
 
-configure:
-	$(SETUP) -configure $(CONFIGUREFLAGS)
+update_next_tag:
+	@echo "update version to $(VERSION)..."
+	sed -i "s/NEXT_VERSION/$(VERSION)/g" src/*.ml src/*.mli
+	sed -i "s/NEXT_RELEASE/$(VERSION)/g" src/*.ml src/*.mli
 
-.PHONY: build doc test all install uninstall reinstall clean distclean configure
-
-# OASIS_STOP
-
-push_doc: doc
-	scp -r datalog.docdir/* cedeela.fr:~/simon/root/software/datalog/
-
-tags:
-	otags *.ml *.mli
-
-MLIFILES=$(wildcard *.mli)
-
-man:
-	mkdir -p man/man3/
-	ocamlfind ocamldoc -I _build/ -man -d man/man3 $(MLIFILES)
-
-install_file: doc man
-	@rm datalog.install || true
-	@echo 'doc: [' >> datalog.install
-	@for m in $(wildcard datalog.docdir/*.html) ; do \
-		echo "  \"?$${m}\"" >> datalog.install; \
+TO_WATCH ?= all
+watch:
+	while find src/ -print0 | xargs -0 inotifywait -e delete_self -e modify ; do \
+		echo "============ at `date` ==========" ; \
+		sleep 0.2; \
+		make $(TO_WATCH); \
 	done
-	@echo ']' >> datalog.install
-	@echo 'man: [' >> datalog.install
-	@for m in $(wildcard man/man3/[A-Z]*.3o) ; do \
-		echo "  \"?$${m}\"" >> datalog.install; \
-	done
-	@echo ']' >> datalog.install
 
-.PHONY: tags push_doc man install_file
+.PHONY: benchs tests update_next_tag watch
+

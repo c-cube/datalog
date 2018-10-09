@@ -24,7 +24,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 *)
 
 {
-  open TopDownParser 
+  open Parser 
 
   let print_location lexbuf =
     let open Lexing in

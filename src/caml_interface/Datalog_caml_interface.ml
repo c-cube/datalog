@@ -26,6 +26,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 (** {1 Bridge between Datalog.TopDown and OCaml} *)
 
+module TopDown = Datalog_top_down
+
 (** {2 Constants with universal types} *)
 
 module Univ = struct
@@ -194,7 +196,7 @@ module Rel1 = struct
   let apply (n,_) t = T.mk_apply n [| t |]
 
   (* find instances of the relation *)
-  let find db ((n,k) as rel) =
+  let find db ((n,_k) as rel) =
     let query = T.mk_apply n [| T.mk_var 0 |] in
     let l = Logic.ask db query in
     List.fold_left
@@ -212,7 +214,7 @@ module Rel1 = struct
     in
     DB.add_clause db c
 
-  let from_fun db ((n,k) as rel) f =
+  let from_fun db ((n,_k) as rel) f =
     DB.interpret db n
       (fun t -> match get rel t with
         | None -> []

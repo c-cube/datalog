@@ -204,18 +204,18 @@ let add_query q_str =
 (** parse CLI arguments *)
 let parse_args () =
   let options =
-    [ ("-progress", Arg.Set progress, "print progress");
-      ("-input", Arg.Set print_input, "print input clauses");
-      ("-output", Arg.Set print_result, "print facts after fixpoint");
-      ("-saturated", Arg.Set print_saturated, "print facts and clauses after fixpoint");
-      ("-sum", Arg.String add_sum, "aggregate number of literals for the given symbol");
-      ("-pattern", Arg.String add_pattern, "print facts matching this pattern");
-      ("-goal", Arg.String add_goal, "add a goal for backward chaining");
-      ("-explain", Arg.String add_explain, "explain facts matching this pattern");
-      ("-query", Arg.String add_query, "execute the query once fixpoint is reached");
-      ("-size", Arg.Set print_size, "print number of clauses after fixpoint");
-      ("-version", Arg.Set print_version, "print version");
-    ]
+    [ ("-progress", Arg.Set progress, " print progress");
+      ("-input", Arg.Set print_input, " print input clauses");
+      ("-output", Arg.Set print_result, " print facts after fixpoint");
+      ("-saturated", Arg.Set print_saturated, " print facts and clauses after fixpoint");
+      ("-sum", Arg.String add_sum, " aggregate number of literals for the given symbol");
+      ("-pattern", Arg.String add_pattern, " print facts matching this pattern");
+      ("-goal", Arg.String add_goal, " add a goal for backward chaining");
+      ("-explain", Arg.String add_explain, " explain facts matching this pattern");
+      ("-query", Arg.String add_query, " execute the query once fixpoint is reached");
+      ("-size", Arg.Set print_size, " print number of clauses after fixpoint");
+      ("-version", Arg.Set print_version, " print version");
+    ] |> Arg.align
   in
   Arg.parse options (fun f -> files := f :: !files) "compute fixpoint of given files"
 

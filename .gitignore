@@ -1,12 +1,8 @@
 _build
-datalog/const.ml
 .*.swp
 *.native
 *.docdir
 .session
-TAGS
-version.ml
-setup.log
-setup.data
-datalog.install
-man/
+*.install
+*.exe
+*.merlin

@@ -32,6 +32,10 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
     semantics"
 *)
 
+module AST = AST
+module Lexer = Lexer
+module Parser = Parser
+
 (** {2 Signature for symbols} *)
 
 module type CONST = sig
@@ -75,7 +79,7 @@ module type S = sig
 
     val ground : t -> bool
     val vars : t -> int list
-    val max_var : t -> int    (** max var, or 0 if ground *)
+    val max_var : t -> int    (* max var, or 0 if ground *)
     val head_symbol : t -> const
 
     val to_string : t -> string
@@ -704,7 +708,7 @@ module Make(Const : CONST) = struct
 
     exception Unsafe
 
-    let _safe_clause head body =
+    let _safe_clause _head _body =
       true  (* TODO *)
 
     let mk_clause head body =
@@ -820,7 +824,7 @@ module Make(Const : CONST) = struct
       match t with
       | T.Var _ when renaming == __dummy_renaming -> t (* keep *)
       | T.Var _ -> rename ~renaming t scope  (* free var *)
-      | T.Apply (c, [| |]) -> t
+      | T.Apply (_c, [| |]) -> t
       | T.Apply (c, args) ->
         let args' = Array.map
           (fun t' -> eval subst ~renaming t' scope)
@@ -902,8 +906,8 @@ module Make(Const : CONST) = struct
     let t2, sc2 = Subst.deref subst t2 sc2 in
     match t1, t2 with
     | T.Var i, T.Var j when i = j && sc1 = sc2 -> subst
-    | T.Var i, T.Var j when sc1 = sc2 -> raise UnifFail  (* would be matching *)
-    | T.Var i, T.Var j -> Subst.bind subst t1 sc1 t2 sc2  (* can bind *)
+    | T.Var _, T.Var _ when sc1 = sc2 -> raise UnifFail  (* would be matching *)
+    | T.Var _, T.Var _ -> Subst.bind subst t1 sc1 t2 sc2  (* can bind *)
     | T.Apply (c1, [| |]), T.Apply (c2, [| |]) when Const.equal c1 c2 -> subst
     | T.Apply (c1, l1), T.Apply (c2, l2)
       when Const.equal c1 c2 && Array.length l1 = Array.length l2 ->
@@ -1141,7 +1145,7 @@ module Make(Const : CONST) = struct
       let rec iter tree i =
         if i = Array.length arr
           then match tree with
-            | {data=Some set} ->
+            | {data=Some set;_} ->
               (* unify against the indexed terms now *)
               TermDataTbl.iter
                 (fun (t',data) () ->
@@ -1180,7 +1184,7 @@ module Make(Const : CONST) = struct
       let rec iter tree i =
         if i = Array.length arr
           then match tree with
-            | {data=Some set} ->
+            | {data=Some set;_} ->
               (* unify against the indexed terms now *)
               TermDataTbl.iter
                 (fun (t',data) () ->
@@ -1253,7 +1257,7 @@ module Make(Const : CONST) = struct
 
     let rec add_list trs l = match l with
       | [] -> ()
-      | ((x,y) as hd)::l' ->
+      | hd::l' ->
         add trs hd;
         add_list trs l'
 
@@ -1268,7 +1272,7 @@ module Make(Const : CONST) = struct
     let rec rewrite_root trs t =
       match t with
       | T.Var _ -> t
-      | T.Apply (s, arr) ->
+      | T.Apply _ ->
         try
           TermIndex.generalizations trs.idx 1 t 0
             (fun r subst -> raise (RewriteInto (r, subst, 1)));
@@ -1281,7 +1285,7 @@ module Make(Const : CONST) = struct
     (* TODO: more efficient rewriting *)
     let rec rewrite trs t = match t with
       | T.Var _ -> t
-      | T.Apply (s, [| |]) -> rewrite_root trs t
+      | T.Apply (_, [| |]) -> rewrite_root trs t
       | T.Apply (s, arr) ->
         let arr' = Array.map (rewrite trs) arr in
         rewrite_root trs (T.mk_apply s arr')
@@ -1354,7 +1358,7 @@ module Make(Const : CONST) = struct
     let add_fact db t =
       db.facts <- TermIndex.add db.facts t t
 
-    let rec add_facts db l = List.iter (fun f -> add_fact db f) l
+    let add_facts db l = List.iter (fun f -> add_fact db f) l
 
     let add_clause db c =
       match c.C.body with
@@ -1564,7 +1568,7 @@ module Make(Const : CONST) = struct
     and slg_subgoal ~query goal_entry =
       _debug "slg_subgoal with %a" T.pp goal_entry.goal;
       DB.find_facts ~oc:query.oc query.db 1 goal_entry.goal 0
-        (fun fact subst ->
+        (fun _fact subst ->
           let renaming = _get_renaming ~query in
           let answer = Subst.eval subst ~renaming goal_entry.goal 0 in
           (* process the new answer to the goal *)
@@ -1764,10 +1768,10 @@ module type PARSE = sig
 
   val create_ctx : unit -> name_ctx
 
-  val term_of_ast : ctx:name_ctx -> TopDownAst.term -> term
-  val lit_of_ast : ctx:name_ctx -> TopDownAst.literal -> lit
-  val clause_of_ast : ?ctx:name_ctx -> TopDownAst.clause -> clause
-  val clauses_of_ast : ?ctx:name_ctx -> TopDownAst.clause list -> clause list
+  val term_of_ast : ctx:name_ctx -> AST.term -> term
+  val lit_of_ast : ctx:name_ctx -> AST.literal -> lit
+  val clause_of_ast : ?ctx:name_ctx -> AST.clause -> clause
+  val clauses_of_ast : ?ctx:name_ctx -> AST.clause list -> clause list
 
   val parse_chan : in_channel -> [`Ok of clause list | `Error of string]
   val parse_file : string -> [`Ok of clause list | `Error of string]
@@ -1782,7 +1786,7 @@ module MakeParse(C : PARSABLE_CONST)(TD : S with type Const.t = C.t) = struct
   type lit = TD.Lit.t
   type clause = TD.C.t
 
-  module A = TopDownAst
+  module A = AST
 
   type name_ctx = (string, TD.T.t) Hashtbl.t
 
@@ -1825,7 +1829,7 @@ module MakeParse(C : PARSABLE_CONST)(TD : S with type Const.t = C.t) = struct
 
   let _parse ~msg lexbuf =
     try
-      let decls = TopDownParser.parse_file TopDownLexer.token lexbuf in
+      let decls = Parser.parse_file Lexer.token lexbuf in
       `Ok (clauses_of_ast decls)
     with
     | Parsing.Parse_error ->
@@ -1850,14 +1854,14 @@ module MakeParse(C : PARSABLE_CONST)(TD : S with type Const.t = C.t) = struct
   let clause_of_string s =
     try
       let lexbuf = Lexing.from_string s in
-      let ast = TopDownParser.parse_clause TopDownLexer.token lexbuf in
+      let ast = Parser.parse_clause Lexer.token lexbuf in
       clause_of_ast ast
     with Parsing.Parse_error -> failwith "clause_of_string: parse error"
 
   let term_of_string s =
     try
       let lexbuf = Lexing.from_string s in
-      let ast = TopDownParser.parse_term TopDownLexer.token lexbuf in
+      let ast = Parser.parse_term Lexer.token lexbuf in
       let ctx = create_ctx () in
       term_of_ast ~ctx ast
     with Parsing.Parse_error -> failwith "term_of_string: parse error"

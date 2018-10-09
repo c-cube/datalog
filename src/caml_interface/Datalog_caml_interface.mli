@@ -32,6 +32,8 @@ constants. It is {b NOT thread-safe}.
 This is largely inspired by {{: https://ocaml.janestreet.com/?q=node/18}this thread}
 *)
 
+module TopDown = Datalog_top_down
+
 module Univ : sig
   type t (** The universal type *)
 

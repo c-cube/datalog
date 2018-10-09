@@ -24,4 +24,18 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 *)
 
-let version = "$(pkg_version)"
+(** {1 Unix Interpreted Predicates} *)
+
+module TopDown = Datalog_top_down
+
+module type S = sig
+  module TD : TopDown.S
+
+  val setup_handlers : TD.DB.t -> unit
+end
+
+module Make(TD : TopDown.S) : S with module TD = TD
+
+module Default : S
+  with type TD.DB.t = TopDown.Default.DB.t
+  and module TD.Const = TopDown.Default.Const

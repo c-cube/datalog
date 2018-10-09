@@ -1,0 +1,4 @@
+
+(executable
+  (public_name datalog_cli)
+  (libraries datalog))

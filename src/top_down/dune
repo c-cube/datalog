@@ -1,0 +1,10 @@
+
+(library
+  (name datalog_top_down)
+  (public_name datalog.top_down)
+  (optional)
+  (libraries str num datalog)
+  (flags :standard -color always -safe-string -warn-error -a+8))
+
+(ocamllex (modules Lexer))
+(ocamlyacc (modules Parser))

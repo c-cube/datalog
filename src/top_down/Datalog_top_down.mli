@@ -32,6 +32,10 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
     semantics"
 *)
 
+module AST = AST
+module Lexer = Lexer
+module Parser = Parser
+
 (** {2 Signature for symbols} *)
 
 module type CONST = sig
@@ -75,7 +79,9 @@ module type S = sig
 
     val ground : t -> bool
     val vars : t -> int list
-    val max_var : t -> int    (** max var, or 0 if ground *)
+
+    val max_var : t -> int (** max var, or 0 if ground *)
+
     val head_symbol : t -> const
 
     val to_string : t -> string
@@ -159,7 +165,7 @@ module type S = sig
 
     val empty : t
       (** Empty subst *)
-    
+
     val bind : t -> T.t -> scope -> T.t -> scope -> t
       (** Bind a variable,scope to a term,scope *)
 
@@ -421,7 +427,7 @@ module type S = sig
         the list of literals that form a constraint.
 
         [ask_lits db vars lits] queries over variables [vars] with
-        the constraints given by [lits]. 
+        the constraints given by [lits].
 
         Conceptually, the query adds a clause (v1, ..., vn) :- lits, which
         should respect the same safety constraint as other clauses.
@@ -453,10 +459,10 @@ module type PARSE = sig
 
   val create_ctx : unit -> name_ctx
 
-  val term_of_ast : ctx:name_ctx -> TopDownAst.term -> term
-  val lit_of_ast : ctx:name_ctx -> TopDownAst.literal -> lit
-  val clause_of_ast : ?ctx:name_ctx -> TopDownAst.clause -> clause
-  val clauses_of_ast : ?ctx:name_ctx -> TopDownAst.clause list -> clause list
+  val term_of_ast : ctx:name_ctx -> AST.term -> term
+  val lit_of_ast : ctx:name_ctx -> AST.literal -> lit
+  val clause_of_ast : ?ctx:name_ctx -> AST.clause -> clause
+  val clauses_of_ast : ?ctx:name_ctx -> AST.clause list -> clause list
 
   val parse_chan : in_channel -> [`Ok of clause list | `Error of string]
   val parse_file : string -> [`Ok of clause list | `Error of string]

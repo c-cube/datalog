@@ -1,0 +1,5 @@
+
+(executable
+  (name topDownCli)
+  (libraries datalog datalog.top_down datalog.unix))
+

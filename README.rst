@@ -46,9 +46,9 @@ Top-Down
 
 There is also a top-down, prolog-like algorithm that should be very efficient
 for querying only a subpart of the intensional database (the set of all
-facts that can be deduced from rules). The main module is ``Datalog.TopDown``,
+facts that can be deduced from rules). The main module is ``Datalog_top_down``,
 and it has its own parser and lexer. An executable (not installed but compiled)
-is ``topDownCli.native``. A very important distinction is that terms
+is ``topDownCli.exe``. A very important distinction is that terms
 can be nested (hence the distinct AST and parsers).
 
 The format of semantic attachments for symbols is simpler: a handler, when

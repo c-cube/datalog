@@ -1,0 +1,5 @@
+
+(library
+  (name datalog_caml_interface)
+  (public_name datalog.caml_interface)
+  (libraries datalog.top_down unix))

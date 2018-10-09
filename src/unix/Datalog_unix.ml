@@ -26,6 +26,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 (** {1 Unix Interpreted Predicates} *)
 
+module TopDown = Datalog_top_down
 
 module type S = sig
   module TD : TopDown.S
@@ -79,7 +80,7 @@ module Make(TD : TopDown.S) = struct
             let t = T.mk_apply head [| lit1; T.mk_const (str2c f) |] in
             C.mk_fact t)
           !l
-      with e -> []
+      with _e -> []
       end
     | _ -> []
 
@@ -104,7 +105,7 @@ module Make(TD : TopDown.S) = struct
     | _ -> []
 
   let _isDir lit = match lit with
-    | T.Apply (head, [| T.Apply (path, [| |]) |]) ->
+    | T.Apply (_, [| T.Apply (path, [| |]) |]) ->
       begin try
         let path = String.trim (c2str path) in
         let stat = Unix.lstat path in
@@ -120,7 +121,7 @@ module Make(TD : TopDown.S) = struct
     | _ -> []
 
   let _isFile lit = match lit with
-    | T.Apply (head, [| T.Apply (path, [| |]) |]) ->
+    | T.Apply (_, [| T.Apply (path, [| |]) |]) ->
       begin try
         let path = String.trim (c2str path) in
         let stat = Unix.lstat path in
@@ -136,7 +137,7 @@ module Make(TD : TopDown.S) = struct
     | _ -> []
 
   let _isLink lit = match lit with
-    | T.Apply (head, [| T.Apply (path, [| |]) |]) ->
+    | T.Apply (_, [| T.Apply (path, [| |]) |]) ->
       begin try
         let path = String.trim (c2str path) in
         let stat = Unix.lstat path in

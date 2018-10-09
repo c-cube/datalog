@@ -175,7 +175,7 @@ edge(8, 9).
 edge(9, 10).
 edge(10, 7).
 
-$ datalog_cli tests/clique10.pl -pattern 'same_clique(1,X)'
+$ datalog_cli tests/clique10.pl --pattern 'same_clique(1,X)'
 % start datalog
 % parse file tests/clique10.pl
 % process 15 rules
@@ -194,7 +194,7 @@ same_clique(1, 4).
 Or
 
 ```prolog
-$ datalog_cli tests/graph200.pl -size -sum reachable
+$ datalog_cli tests/graph200.pl --size --sum reachable
 % start datalog
 % parse file tests/graph200.pl
 % process 203 rules
@@ -208,7 +208,7 @@ $ datalog_cli tests/graph200.pl -size -sum reachable
 Or
 
 ```prolog
-$ datalog_cli tests/graph10.pl -goal 'increasing(3,7)' -pattern 'increasing(3,X)'
+$ datalog_cli tests/graph10.pl --goal 'increasing(3,7)' --pattern 'increasing(3,X)'
 % start datalog
 % parse file tests/graph10.pl
 % process 15 clauses
@@ -228,7 +228,7 @@ increasing(3, 10).
 Or
 
 ```prolog
-$ ./datalog_cli.native tests/small.pl -query '(X,Y) :- ancestor(X,john), father(X,Y), not mother(Y,Z)'
+$ ./datalog_cli.native tests/small.pl --query '(X,Y) :- ancestor(X,john), father(X,Y), not mother(Y,Z)'
 % start datalog
 % parse file tests/small.pl
 % process 12 clauses

@@ -34,7 +34,8 @@ definitions of `lt`, `le` (lower or equal) and `equal`; see the last example.
 Thus, goals are a way to call semantic attachments in a goal-oriented way.
 
 A relational query mode is available (its signature is in
-`Datalog.BottomUp.S.Query`, see the [module's documentation](http://cedeela.fr/~simon/software/datalog/BottomUp.S.Query.html)
+`Datalog.BottomUp.S.Query`, see the
+[module's documentation](http://c-cube.github.io/datalog/0.6/datalog/Datalog/BottomUp/module-type-S/Query/index.html).
 It allows to make one-shot queries on a `db` (the result won't update
 if facts or clauses are added later), with a simple relational model
 with negation.

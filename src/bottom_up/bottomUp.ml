@@ -16,7 +16,7 @@ module Univ = struct
 
   (** Create a new embedding. Values packed by a given embedding can
       only be unpacked by the same embedding. *)
-  let embed () = 
+  let embed () =
     let r = ref None in (* place to store values *)
     let pack a =        (* pack the 'a value into a new univ cell *)
       let o = Some a in
@@ -382,12 +382,12 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
 
   (** Check whether clauses are (syntactically) equal *)
   let eq_clause r1 r2 =
-    let rec check t1 t2 i =
+    let rec check i =
       if i = Array.length r1
         then true
-        else eq_literal r1.(i) r2.(i) && check r1 r2 (i+1)
+        else eq_literal r1.(i) r2.(i) && check (i+1)
     in
-    Array.length r1 = Array.length r2 && check r1 r2 0
+    Array.length r1 = Array.length r2 && check 0
 
   (** Hash the clause *)
   let hash_clause r =
@@ -408,7 +408,7 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
   (** Offset to avoid collisions with the given clause *)
   let offset clause =
     (* explore literals of the clause, looking for the lowest var *)
-    let rec fold_lit terms offset i = 
+    let rec fold_lit terms offset i =
       if i = Array.length terms then offset
       else
         let offset = match terms.(i) with
@@ -483,7 +483,7 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
         | Var i, Var j when i = j && o1' = o2' -> subst
         | Var _, _ ->
           bind_subst subst t1 o1' t2 o2' (* bind var *)
-        | Const _, Var _ -> 
+        | Const _, Var _ ->
           bind_subst subst t2 o2' t1 o1' (* bind var *)
       in unif_pairs subst 0
 
@@ -518,10 +518,6 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
       | Const _ -> t)
       lit
 
-  let shift_clause c offset =
-    if offset = 0 then c
-    else Array.map (fun lit -> shift_lit lit offset) c
-
   (** Apply substitution to the literal *)
   let subst_literal subst (lit,offset) =
     if is_ground lit || (is_empty_subst subst && offset = 0) then lit
@@ -534,14 +530,6 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
         | Var i -> Var (i + o_t')
         | Const _ -> t')
       lit
-
-  (** Apply substitution to the clause. TODO remove duplicate literals afterward *)
-  let subst_clause subst (clause,offset) =
-    if is_empty_subst subst && offset = 0 then clause
-    else if is_empty_subst subst then shift_clause clause offset
-    else Array.map
-      (fun lit -> subst_literal subst (lit,offset))
-      clause
 
   (** Remove first body element of the clause, after substitution *)
   let remove_first_subst subst (clause,offset) =
@@ -636,15 +624,12 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
 
     val create : unit -> t
       (** Create a new index *)
-  
+
     val copy : t -> t
       (** Deep copy (TODO copy-on-write?) *)
 
     val add : t -> literal -> elt -> unit
       (** Add an element indexed by the literal *)
-
-    val clear : t -> unit
-      (** Reset to empty index *)
 
     val retrieve_generalizations : ('a -> literal -> elt -> subst -> 'a) -> 'a ->
                                    t bind -> literal bind -> 'a
@@ -665,9 +650,6 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
     val fold : ('a -> literal -> elt -> 'a) -> 'a -> t -> 'a
       (** Fold on all indexed elements *)
 
-    val is_empty : t -> bool
-      (** Is the index empty? *)
-
     val size : t -> int
       (** Number of indexed elements (linear time) *)
   end
@@ -675,8 +657,6 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
   (** Create an Index module for the given type of elements. The implementation
       is based on non-perfect discrimination trees. *)
   module MakeIndex(X : Hashtbl.HashedType) : Index with type elt = X.t = struct
-    type char_ = term
-
     (** A set of literal+indexed data *)
     module DataSet = Hashtbl.Make(struct
       type t = literal * X.t
@@ -717,7 +697,7 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
       let len = Array.length literal in
       (* index in subtrie [t], with a cursor at literal[i]. *)
       let rec add t i = match t, i with
-      | Node (set, subtries), i when i = len ->
+      | Node (set, _subtries), i when i = len ->
         DataSet.replace set (literal,elt) () (* insert in leaf *)
       | Node (_, subtries), i ->
         let c = term_to_char literal.(i) in
@@ -731,12 +711,6 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
           add subtrie (i+1)
       in
       add t 0
-
-    (** Reset to empty index *)
-    let clear t = match t with
-      | Node (set, subtries) ->
-        DataSet.clear set;
-        TermHashtbl.clear subtries
 
     (** Fold on generalizations of given ground literal *)
     let retrieve_generalizations k acc (t,o_t) (literal,o_lit) =
@@ -856,20 +830,6 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
           (fun _ subtrie acc -> fold k acc subtrie)
           subtries acc
 
-    (** Check whether the property is true for all subtries *)
-    let for_all p subtries =
-      try
-        TermHashtbl.iter
-          (fun _ t' -> if not (p t') then raise Exit)
-        subtries;
-        true
-      with Exit -> false
-
-    (** Check whether there are no elements in the index *)
-    let rec is_empty t = match t with
-      | Node (set, subtries) ->
-        DataSet.length set = 0 && for_all is_empty subtries
-
     (** Number of elements *)
     let size t = fold (fun i _ _ -> i + 1) 0 t
   end
@@ -888,8 +848,8 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
 
   module GoalIndex = MakeIndex(struct
     type t = unit
-    let equal a b = true
-    let hash a = 0
+    let equal () () = true
+    let hash () = 0
   end)
 
   (** Hashtable on clauses *)
@@ -1021,7 +981,7 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
       (* check if some goal unifies with head of clause *)
       let offset = offset clause in
       GoalIndex.retrieve_unify
-        (fun () goal () subst ->
+        (fun () _goal () subst ->
           (* subst(goal) = subst(clause.(0)), so subst(clause.(1)) is a goal *)
           let new_goal = subst_literal subst (clause.(1),0) in
           Queue.push (`AddGoal new_goal) db.db_queue)
@@ -1051,7 +1011,7 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
       GoalIndex.add db.db_goals lit ();
       (* find clauses that may help solving this goal *)
       ClausesIndex.retrieve_unify
-        (fun () head clause subst ->
+        (fun () _head clause subst ->
           (* subst(clause.(0)) = subst(lit), so subst(clause.(1)) is a new goal *)
           let new_goal = subst_literal subst (clause.(1),offset) in
           Queue.push (`AddGoal new_goal) db.db_queue)
@@ -1066,7 +1026,7 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
     let empty = Queue.is_empty db.db_queue in
     Queue.push item db.db_queue;
     (* how to process one queue item *)
-    let process_item item = 
+    let process_item item =
       match item with
       | `AddClause (c, explanation) -> add_clause db c explanation
       | `AddGoal goal -> add_goal db goal
@@ -1100,7 +1060,7 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
       each fact that match (with the corresponding substitution) *)
   let db_match db pattern handler =
     ClausesIndex.retrieve_specializations
-      (fun () fact _ subst -> handler fact)
+      (fun () fact _ _subst -> handler fact)
       () (db.db_facts,0) (pattern,1)
 
   (** Like {!db_match}, but the additional int list is used to select
@@ -1108,12 +1068,12 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
       order, are given to the callback. *)
   let db_query db pattern vars k =
     ClausesIndex.retrieve_specializations
-      (fun () lit _ subst ->
+      (fun () _lit _ subst ->
         let terms = List.map
           (fun i ->
             let v = mk_var i in
             let t, _ = deref subst v 1 in
-            match t with 
+            match t with
             | Var _ -> assert false  (* should be ground *)
             | Const s -> s)
           vars in
@@ -1221,8 +1181,6 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
       tbl_vars : int array;             (* vars labelling columns *)
       tbl_rows : unit RowTable.t;       (* set of rows *)
     } (** A relational table; column are labelled with variables *)
-    and index = (int array, term array list) Hashtbl.t
-      (** Index for a table. It indexes the given list of variables *)
 
     (* union of two sets of variable *)
     let union_vars l1 l2 =
@@ -1251,7 +1209,7 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
           else union_vars q1.q_vars q2.q_vars
       | ProjectJoin (vars, _, _) -> vars
       | Project (vars, _) -> vars
-      | AntiJoin (q1, q2) -> q1.q_vars
+      | AntiJoin (q1, _q2) -> q1.q_vars
       in
       { q_expr = expr; q_table = None; q_vars; }
 
@@ -1279,7 +1237,7 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
 
     (* optimize query (TODO more optimization, e.g. re-balance joins) *)
     let rec optimize q = match q.q_expr with
-      | Project (vars, {q_expr=Join(q1,q2)}) ->
+      | Project (vars, {q_expr=Join(q1,q2);_}) ->
         let q1 = optimize q1 in
         let q2 = optimize q2 in
         mk_query (ProjectJoin (vars, q1, q2))
@@ -1291,7 +1249,7 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
         let q1 = optimize q1 in
         let q2 = optimize q2 in
         mk_query (ProjectJoin (vars, q1, q2))
-      | Join (q1, q2) -> mk_query (Join (optimize q1, optimize q2)) 
+      | Join (q1, q2) -> mk_query (Join (optimize q1, optimize q2))
       | AntiJoin (q1, q2) ->
         let q1 = optimize q1 in
         let q2 = optimize q2 in

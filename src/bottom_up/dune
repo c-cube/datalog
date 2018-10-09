@@ -9,7 +9,7 @@
   (name datalog)
   (public_name datalog)
   (synopsis "An in-memory datalog implementation for OCaml")
-  (libraries unix str num)
+  (libraries)
   (flags :standard -color always -safe-string -warn-error -a+8 -w -50))
 
 (ocamlyacc (modules bottomUpParser))

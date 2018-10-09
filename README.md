@@ -1,5 +1,7 @@
 # Datalog
 
+![build status](https://travis-ci.org/c-cube/datalog.svg?branch=master)
+
 An in-memory datalog implementation for OCaml.
 
 It features two main algorithm:

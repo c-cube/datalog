@@ -11,7 +11,7 @@ module StringSymbol : BottomUp.SymbolType with type t = string
     
     This is a ready-to-use instance of {!BottomUp.Make}, with hashconsed strings
     as symbols. It also features some handy conversion functions from
-    {! BottomUpBottomUpAst}.
+    {! BottomUpAST}.
 *)
 
 include BottomUp.S with type symbol = string
@@ -23,8 +23,8 @@ type vartbl = {
 
 val mk_vartbl : unit -> vartbl
 
-val literal_of_ast : ?tbl:vartbl -> BottomUpAst.literal -> literal
+val literal_of_ast : ?tbl:vartbl -> AST.literal -> literal
 
-val clause_of_ast : BottomUpAst.clause -> clause
+val clause_of_ast : AST.clause -> clause
 
-val query_of_ast : BottomUpAst.query -> (int array * literal list * literal list)
+val query_of_ast : AST.query -> (int array * literal list * literal list)

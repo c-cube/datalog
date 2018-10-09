@@ -12,5 +12,5 @@
   (libraries)
   (flags :standard -color always -safe-string -warn-error -a+8 -w -50))
 
-(ocamlyacc (modules bottomUpParser))
-(ocamllex (modules bottomUpLexer))
+(ocamlyacc (modules Parser))
+(ocamllex (modules Lexer))

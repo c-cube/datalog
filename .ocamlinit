@@ -4,10 +4,10 @@
 #install_printer Datalog.Default.pp_term;;
 #install_printer Datalog.Default.pp_literal;;
 #install_printer Datalog.Default.pp_clause;;
-#install_printer Datalog.TopDown.Default.T.fmt;;
-#install_printer Datalog.TopDown.Default.Lit.fmt;;
-#install_printer Datalog.TopDown.Default.C.fmt;;
-module CI = Datalog.CamlInterface;;
+#install_printer Datalog_top_down.Default.T.fmt;;
+#install_printer Datalog_top_down.Default.Lit.fmt;;
+#install_printer Datalog_top_down.Default.C.fmt;;
+module CI = Datalog_caml_interface;;
 module CI_T = CI.Logic.T;;
 module CI_DB = CI.Logic.DB;;
 #install_printer CI.Rel1.fmt;;

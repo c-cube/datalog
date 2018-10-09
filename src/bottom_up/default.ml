@@ -3,7 +3,7 @@
 
 (** {1 Default literal base, where symbols are just strings} *)
 
-module A = BottomUpAst
+module A = AST
 
 module StringSymbol = BottomUp.Hashcons(struct
   type t = string

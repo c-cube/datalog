@@ -1,7 +1,7 @@
 (* this file is part of datalog. See README for the license *)
 
 {
-open BottomUpParser
+open Parser
 
 let print_location lexbuf =
   let open Lexing in

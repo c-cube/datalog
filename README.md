@@ -54,7 +54,8 @@ then be unified with the goal.
 
 ## CamlInterface
 
-The module `CamlInterface` contains a universal embedding of OCaml's types,
+The module `Datalog_caml_interface` in the library `datalog.caml_interface`
+contains a universal embedding of OCaml's types,
 with helpers to build unary, binary, and ternary atoms that directly relate
 OCaml values.
 
@@ -62,7 +63,7 @@ Small example:
 
 ```ocaml
 
-# module CI = Datalog.CamlInterface;;
+# module CI = Datalog_caml_interface;;
 # let edge = CI.Rel2.create ~k1:CI.Univ.int ~k2:CI.Univ.int "edge";;
 val edge : (int, int) CI.Rel2.t = <abstr>
 # let db = CI.Logic.DB.create();;
@@ -90,7 +91,7 @@ One can also directly load a Datalog file (atoms: ints and strings) and access
 it using (properly typed) relations:
 
 ```ocaml
-# let db = CI.Logic.create ();;
+# let db = CI.Logic.DB.create ();;
 val db : CI.Logic.t = <abstr>
 # CI.Parse.load_file db "tests/clique10.pl";;
 - : bool = true
@@ -128,7 +129,7 @@ It is recommended to use opam: `opam install datalog`.
 
 Manual build:
 
-You need **OCaml >= 4.20** with [dune](https://github.com/ocaml/dune). Just type in the root directory:
+You need **OCaml >= 4.02** with [dune](https://github.com/ocaml/dune). Just type in the root directory:
 
 ```sh
 $ make
@@ -145,14 +146,13 @@ There are two ways to use `datalog`:
 $ datalog_cli <problem_file>
 ```
 
-- The library, that should be in `_build/datalog.a`. It is also registered to
-  OCamlfind (in the `datalog` subdirectory). It exports a `Datalog` packed
-  module. See the `.mli` files for documentation, or the man pages.
-  For both `Datalog.TopDown` and `Datalog.BottomUp`, functors are
+- The libraries `datalog`, `datalog.top_down`, `datalog.unix`, `datalog.caml_interface`.
+  See the `.mli` files for documentation, or the online documentation.
+  For both `Datalog_top_down` and `Datalog.BottomUp`, functors are
   provided to use your own datatype for symbols (constants);
   however, a default implementation with strings as symbols is available as
-  `Datalog.Default` (which is used by the parser `Datalog.BottomUpParser`)
-  for bottom-up and in `Datalog.TopDown.Default` for top-down.
+  `Datalog.Default` (which is used by the parser `Datalog.Parser`)
+  for bottom-up and in `Datalog_top_down.Default` for top-down.
 
 A few example files, suffixed with `.pl`, can be found in `tests/`. For instance, you
 can try:

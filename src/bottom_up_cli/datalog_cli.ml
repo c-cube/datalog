@@ -5,8 +5,8 @@
     their fixpoint *)
 
 module DLogic = Datalog.Default
-module DParser = Datalog.BottomUpParser
-module DLexer = Datalog.BottomUpLexer
+module DParser = Datalog.Parser
+module DLexer = Datalog.Lexer
 
 let progress = ref false
 let print_input = ref false

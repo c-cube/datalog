@@ -17,9 +17,11 @@ build: [
 ]
 depends: [
   "dune"
-  "num"
-  "ocaml" { >= "4.02" }
+  "ocaml" { >= "4.03" }
   "odoc" {with-doc}
+]
+depopts: [
+  "num"
 ]
 dev-repo: "git://github.com/c-cube/datalog"
 bug-reports: "https://github.com/c-cube/datalog/issues"

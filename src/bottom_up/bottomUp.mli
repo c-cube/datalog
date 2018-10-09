@@ -254,9 +254,9 @@ end
 (** {2 Hashconsing of symbols} *)
 
 module Hashcons(S : SymbolType) : sig
-  include SymbolType with type t = S.t
+  include SymbolType with type t = private S.t
 
-  val make : S.t -> S.t
+  val make : S.t -> t
     (** Hashcons the symbol *)
 end
 

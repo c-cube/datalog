@@ -7,6 +7,7 @@
 module DLogic = Datalog.Default
 module DParser = Datalog.Parser
 module DLexer = Datalog.Lexer
+module DSym = DLogic.StringSymbol
 
 let progress = ref false
 let print_input = ref false
@@ -51,11 +52,13 @@ let pp_progress i total =
 let handle_goal db lit =
   (* debug: Format.printf "%% goal %a@." DLogic.pp_literal lit; *)
   let compare a b =
-    try let a = int_of_string a and b = int_of_string b in
-        compare a b
+    try
+      let a = int_of_string (DSym.to_string a)
+      and b = int_of_string (DSym.to_string b) in
+      Pervasives.compare a b
     with Invalid_argument _ -> compare a b
   in
-  match DLogic.open_literal lit with
+  match (DLogic.open_literal lit :> string * DLogic.term list) with
   | "lt", [DLogic.Const a; DLogic.Const b] when compare a b < 0 ->
     DLogic.db_add_fact db lit (* literal is true *)
   | "le", [DLogic.Const a; DLogic.Const b] when compare a b <= 0 ->
@@ -145,7 +148,7 @@ let add_sum symbol =
   (* print result at exit *)
   let printer () = Format.printf "%% number of fact with head %s: %d@." symbol !count in
   let handler _ = incr count in
-  sums := (symbol, handler, printer) :: !sums
+  sums := (DSym.make symbol, handler, printer) :: !sums
 
 (** Handler that prints facts that match the given [pattern] once the
     set is saturated *)

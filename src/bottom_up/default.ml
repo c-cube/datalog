@@ -7,8 +7,8 @@ module A = AST
 
 module StringSymbol = BottomUp.Hashcons(struct
   type t = string
-  let equal a b = a = b
-  let hash x = Hashtbl.hash x
+  let equal (a:t) b = String.equal a b
+  let hash (x:t) = Hashtbl.hash x
   let to_string s = s
 end)
 

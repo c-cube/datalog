@@ -5,7 +5,12 @@
 
 (** {2 Default symbols: hashconsed strings} *)
 
-module StringSymbol : BottomUp.SymbolType with type t = string
+type symbol = private string
+
+module StringSymbol : sig
+  include BottomUp.SymbolType with type t = symbol
+  val make : string -> t
+end
 
 (** {2 Default implementation}
     
@@ -14,7 +19,7 @@ module StringSymbol : BottomUp.SymbolType with type t = string
     {! BottomUpAST}.
 *)
 
-include BottomUp.S with type symbol = string
+include BottomUp.S with type symbol := symbol
 
 type vartbl = {
   mutable vartbl_count : int;

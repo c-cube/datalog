@@ -883,7 +883,7 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
     db_goals : GoalIndex.t;                           (** set of goals *)
     db_selected : ClausesIndex.t;                     (** index on clauses' selected premises *)
     db_heads : ClausesIndex.t;                        (** index on clauses' heads *)
-    db_fact_handlers : fact_handler SymbolHashtbl.t;  (** map symbol -> fact handlers *)
+    db_fact_handlers : fact_handler list SymbolHashtbl.t;  (** map symbol -> fact handlers *)
     mutable db_all_facts : fact_handler list;
     mutable db_goal_handlers : goal_handler list;     (** goal handlers *)
     db_funs : user_fun SymbolHashtbl.t;               (** user-defined functions *)
@@ -951,7 +951,7 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
     ClauseHashtbl.add db.db_all clause explanation;
     if already_present then ()
     (* generate new clauses by resolution *)
-    else if is_fact clause then begin
+    else if is_fact clause then (
       ClausesIndex.add db.db_facts clause.(0) clause;
       (* call handler for this fact, if any *)
       let s = match clause.(0).(0) with Const s -> s | Var _ -> assert false in
@@ -963,7 +963,10 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
             (Symbol.to_string s);
           raise e
       in
-      List.iter call_handler (SymbolHashtbl.find_all db.db_fact_handlers s);
+      begin match SymbolHashtbl.find db.db_fact_handlers s with
+        | l -> List.iter call_handler l
+        | exception Not_found -> ()
+      end;
       List.iter call_handler db.db_all_facts;
       (* insertion of a fact: resolution with all clauses whose
          first body literal matches the fact. No offset is needed, because
@@ -976,7 +979,7 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
           let explanation = Resolution (clause', clause.(0)) in
           Queue.push (`AddClause (clause'', explanation)) db.db_queue)
         () (db.db_selected,0) (clause.(0),0)
-    end else begin
+    ) else (
       assert (Array.length clause > 1);
       (* check if some goal unifies with head of clause *)
       let offset = offset clause in
@@ -998,7 +1001,7 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
           let explanation = Resolution (clause, fact) in
           Queue.push (`AddClause (clause', explanation)) db.db_queue)
         () (db.db_facts,offset) (clause.(1),0)
-    end
+    )
 
   let add_goal db lit =
     try
@@ -1092,12 +1095,14 @@ module Make(Symbol : SymbolType) : S with type symbol = Symbol.t = struct
       db.db_all acc
 
   let db_add_fun db s f =
-    (if SymbolHashtbl.mem db.db_funs s
-      then failwith ("function already defined for symbol " ^ Symbol.to_string s));
+    if SymbolHashtbl.mem db.db_funs s then (
+      failwith ("function already defined for symbol " ^ Symbol.to_string s)
+    );
     SymbolHashtbl.replace db.db_funs s f
 
   let db_subscribe_fact db symbol handler =
-    SymbolHashtbl.add db.db_fact_handlers symbol handler
+    let l = try SymbolHashtbl.find db.db_fact_handlers symbol with Not_found -> [] in
+    SymbolHashtbl.replace db.db_fact_handlers symbol (handler::l)
 
   let db_subscribe_all_facts db handler =
     db.db_all_facts <- handler :: db.db_all_facts
@@ -1500,7 +1505,7 @@ module Hashcons(S : SymbolType) = struct
     let hash x = S.hash x
   end)
 
-  let equal x y = x == y
+  let equal (x:S.t) y = x == y
 
   let hash x = S.hash x
 

@@ -2,4 +2,5 @@
 (library
   (name datalog_unix)
   (public_name datalog.unix)
+  (optional)
   (libraries datalog.top_down unix))

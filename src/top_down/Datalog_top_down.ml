@@ -456,14 +456,18 @@ module Make(Const : CONST) = struct
   type const = Const.t
 
   let _debug_enabled = ref false
-  let _debug format =
-    if !_debug_enabled
-      then
-        Printf.kfprintf
-          (fun oc -> output_char oc '\n'; flush oc)
-          stderr format
-      else
-        Printf.ifprintf stderr format
+
+  let _debug_real k =
+    k (fun fmt ->
+        Format.fprintf Format.err_formatter "@[";
+        Format.kfprintf
+          (fun fmt -> Format.fprintf fmt "@]@.")
+          Format.err_formatter fmt)
+
+  let _debug k =
+    if !_debug_enabled then (
+      _debug_real k
+    )
 
   let set_debug b = _debug_enabled := b
 
@@ -1524,7 +1528,7 @@ module Make(Const : CONST) = struct
     (* solve the [goal] by all possible means. Returns the goal_entry
        for this goal. *)
     and slg_solve ~query goal =
-      _debug "slg_solve with %a" T.pp goal;
+      _debug (fun k->k "slg_solve with %a" T.fmt goal);
       try
         TVariantTbl.find query.forest goal
       with Not_found ->
@@ -1544,7 +1548,7 @@ module Make(Const : CONST) = struct
     (* [goal_entry] is a fresh goal, resolve it with facts and clauses to
        obtain its answers *)
     and slg_subgoal ~query goal_entry =
-      _debug "slg_subgoal with %a" T.pp goal_entry.goal;
+      _debug (fun k->k "slg_subgoal with %a" T.fmt goal_entry.goal);
       DB.find_facts ~oc:query.oc query.db 1 goal_entry.goal 0
         (fun _fact subst ->
           let renaming = _get_renaming ~query in
@@ -1569,7 +1573,7 @@ module Make(Const : CONST) = struct
 
     (* called when a new clause appears in the forest of [goal] *)
     and slg_newclause ~query goal_entry clause =
-      _debug "slg_newclause with %a and clause %a" T.pp goal_entry.goal C.pp clause;
+      _debug (fun k->k "slg_newclause with %a and clause %a" T.fmt goal_entry.goal C.fmt clause);
       match clause.C.body with
       | [] ->
         (* new fact (or clause with only delayed lits) *)
@@ -1590,7 +1594,7 @@ module Make(Const : CONST) = struct
       insert it into the list of answers of [goal], and update
       positive and negative dependencies *)
     and slg_answer ~query goal_entry ans =
-      _debug "slg_answer: %a" T.pp ans;
+      _debug (fun k->k "slg_answer: %a" T.fmt ans);
       assert (T.ground ans);
       if not goal_entry.complete
       && not (T.Tbl.mem goal_entry.answers ans) then begin
@@ -1611,8 +1615,8 @@ module Make(Const : CONST) = struct
 
     (* positive subgoal. *)
     and slg_positive ~query goal_entry clause subgoal =
-      _debug "slg_positive %a with clause %a, subgoal %a"
-        T.pp goal_entry.goal C.pp clause T.pp subgoal;
+      _debug (fun k->k "slg_positive %a with clause %a, subgoal %a"
+        T.fmt goal_entry.goal C.fmt clause T.fmt subgoal);
       let subgoal_entry = slg_solve ~query subgoal in
       (* register for future answers *)
       subgoal_entry.poss <- (goal_entry, clause) :: subgoal_entry.poss;
@@ -1627,8 +1631,8 @@ module Make(Const : CONST) = struct
 
     (* negative subgoal *)
     and slg_negative ~query goal_entry clause neg_subgoal =
-      _debug "slg_negative %a with clause %a, neg_subgoal %a"
-        T.pp goal_entry.goal C.pp clause T.pp neg_subgoal;
+      _debug (fun k->k "slg_negative %a with clause %a, neg_subgoal %a"
+        T.fmt goal_entry.goal C.fmt clause T.fmt neg_subgoal);
       let subgoal_entry = slg_solve ~query neg_subgoal in
       if T.Tbl.length subgoal_entry.answers = 0
         then if subgoal_entry.complete
@@ -1643,8 +1647,8 @@ module Make(Const : CONST) = struct
 
     (* subgoal is the guard of the agregate in [clause] *)
     and slg_aggregate ~query goal_entry clause subgoal =
-      _debug "slg_aggregate %a with clause %a, subgoal %a"
-        T.pp goal_entry.goal C.pp clause T.pp subgoal;
+      _debug (fun k->k "slg_aggregate %a with clause %a, subgoal %a"
+        T.fmt goal_entry.goal C.fmt clause T.fmt subgoal);
       (* before querying subgoal, prepare to gather its results *)
       query.stack <- Aggregate(goal_entry, clause, subgoal, query.stack);
       (* start subquery, and wait for it to complete *)
@@ -1653,8 +1657,8 @@ module Make(Const : CONST) = struct
 
     (* called exactly once, when the subgoal has completed *)
     and slg_complete_aggregate ~query goal_entry clause answers =
-      _debug "slg_complete_aggregate %a with %a (%d ans)"
-        T.pp goal_entry.goal C.pp clause (T.Tbl.length answers);
+      _debug (fun k->k "slg_complete_aggregate %a with %a (%d ans)"
+        T.fmt goal_entry.goal C.fmt clause (T.Tbl.length answers));
       let a = _get_aggr clause in
       (* gather all answers *)
       let renaming = _get_renaming ~query in
@@ -1684,7 +1688,7 @@ module Make(Const : CONST) = struct
 
     (* goal is completely evaluated, no more answers will arrive. *)
     and slg_complete ~query goal_entry =
-      _debug "slg_complete %a" T.pp goal_entry.goal;
+      _debug (fun k->k "slg_complete %a" T.fmt goal_entry.goal);
       assert (not goal_entry.complete);
       goal_entry.complete <- true;
       if T.Tbl.length goal_entry.answers = 0
@@ -1873,7 +1877,7 @@ module Default = struct
 
   let default_interpreters =
     let _less goal =
-      _debug "call less with %a" T.pp goal;
+      _debug (fun k->k "call less with %a" T.fmt goal);
       match goal with
       | T.Apply (_, [| T.Apply (a, [||]); T.Apply (b, [||]) |])
         when a < b -> [ C.mk_fact goal ]

@@ -460,7 +460,7 @@ module Make(Const : CONST) = struct
     if !_debug_enabled
       then
         Printf.kfprintf
-          (fun oc -> output_char oc '\n')
+          (fun oc -> output_char oc '\n'; flush oc)
           stderr format
       else
         Printf.ifprintf stderr format

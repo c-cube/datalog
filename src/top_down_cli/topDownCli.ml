@@ -39,7 +39,7 @@ let eval_query files tuple goals =
     print_endline "interpreted predicates:";
     List.iter (fun s -> print_endline ("  " ^ s)) l;
     exit 0
-    end;
+  end;
   parse_files_into db files;
   let answers = D.ask_lits ~oc:!oc db tuple goals in
   if !print

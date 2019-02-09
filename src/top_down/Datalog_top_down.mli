@@ -168,6 +168,8 @@ module type S = sig
     val eval_lits : t -> renaming:renaming -> Lit.t list -> scope -> Lit.t list
 
     val eval_clause : t -> renaming:renaming -> C.t -> scope -> C.t
+
+    val fmt : Format.formatter -> t -> unit
   end
 
   (** {2 Unification, matching...} *)

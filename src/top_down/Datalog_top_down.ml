@@ -166,6 +166,8 @@ module type S = sig
     val eval_lits : t -> renaming:renaming -> Lit.t list -> scope -> Lit.t list
 
     val eval_clause : t -> renaming:renaming -> C.t -> scope -> C.t
+
+    val fmt : Format.formatter -> t -> unit
   end
 
   (** {2 Unification, matching...} *)
@@ -836,6 +838,15 @@ module Make(Const : CONST) = struct
 
     let eval_clause subst ~renaming c scope =
       C.fmap (fun t -> eval subst ~renaming t scope) c
+
+    let fmt out (s:t) =
+      let rec aux out = function
+        | Nil -> ()
+        | Bind (x1,sc1,t2,sc2,tl) ->
+          Format.fprintf out "@[X%d[%d] ->@ %a[%d]@],@ %a"
+            x1 sc1 T.fmt t2 sc2 aux tl
+      in
+      Format.fprintf out "{@[<hv>%a@]}" aux s
   end
 
   (** {2 Unification, matching...} *)
@@ -1660,31 +1671,58 @@ module Make(Const : CONST) = struct
       _debug (fun k->k "slg_complete_aggregate %a with %a (%d ans)"
         T.fmt goal_entry.goal C.fmt clause (T.Tbl.length answers));
       let a = _get_aggr clause in
-      (* gather all answers *)
+      (* the group by subst on all vars by [a.var], mapping each
+         term (ground except for [a.var] to the set of values for [a.var] *)
+      let groups: T.t list T.Tbl.t = T.Tbl.create 24 in
+      (* gather all answers, grouped by substitution on variables
+         excluding [a.var] *)
       let renaming = _get_renaming ~query in
-      let l = T.Tbl.fold
-        (fun t () acc ->
-          try
-            (* unify a.guard with the answer, and extract the binding of a.var *)
-            let subst = unify a.Lit.guard 0 t 1 in
-            let t' = Subst.eval subst ~renaming a.Lit.var 0 in
-            t' :: acc
-          with UnifFail -> failwith "could not unify with var?!")
-        answers []
+      (* consistent renaming of [a.var] *)
+      let new_var =
+        let subst = Subst.bind Subst.empty a.Lit.var 0 a.Lit.var 2 in
+        Subst.eval subst ~renaming a.Lit.var 0
       in
-      let right = T.mk_apply_l a.Lit.constructor l in
-      (* now unify left with right *)
-      try
-        let subst = unify ~oc:query.oc a.Lit.left 0 right 1 in
-        let renaming = _get_renaming ~query in
-        let answer = Subst.eval subst ~renaming a.Lit.left 0 in
-        (* eval *)
-        let answer = DB.eval query.db answer in
-        (* add answer *)
-        slg_answer ~query goal_entry answer
-      with UnifFail ->
-        (* answer aggregate does not match left *)
-        ()
+      T.Tbl.iter
+        (fun t () ->
+           (* unify a.guard with the answer, and extract the binding of a.var *)
+           let subst =
+             try unify a.Lit.guard 0 t 1
+             with UnifFail -> failwith "could not unify with var?!"
+           in
+           (* the value to aggregate *)
+           let res = Subst.eval subst ~renaming a.Lit.var 0 in
+           assert (T.ground res);
+           (* remap [a.var] to [new_var] in [t'] *)
+           let subst = Subst.bind subst a.Lit.var 0 a.Lit.var 2 in
+           let t' = Subst.eval subst ~renaming a.Lit.guard 0 in
+           let l = try T.Tbl.find groups t' with Not_found -> [] in
+           T.Tbl.replace groups t' (res::l))
+        answers;
+      (* now build [subst(goal)] where [a.var] maps to [f(res1…resn)] for
+         this particular subst *)
+      T.Tbl.iter
+        (fun t res_l ->
+           assert (res_l <> []);
+           let aggr_t_raw = T.mk_apply_l a.Lit.constructor res_l in
+           (* eval aggregate *)
+           let aggr_t = DB.eval query.db aggr_t_raw in
+           _debug (fun k->k "@[slg_aggr.group: t: %a,@ aggr_t: %a,@ eval-into: %a@]"
+                      T.fmt t T.fmt aggr_t_raw T.fmt aggr_t);
+           try
+             let subst = unify ~oc:query.oc a.Lit.guard 0 t 1 in
+             (* add [a.left = aggr_t] *)
+             let subst = unify ~subst ~oc:query.oc a.Lit.left 0 aggr_t 1 in
+             let answer = Subst.eval subst ~renaming goal_entry.goal 0 in
+             _debug (fun k->k "@[<2>slg_aggr.answer: %a@ subst: %a@]" T.fmt answer Subst.fmt subst);
+             (* add answer *)
+             _debug (fun k->k "slg_aggr.yield-answer: %a" T.fmt answer);
+             slg_answer ~query goal_entry answer
+           with UnifFail ->
+             (* answer aggregate does not match left *)
+             ()
+        )
+        groups;
+      ()
 
     (* goal is completely evaluated, no more answers will arrive. *)
     and slg_complete ~query goal_entry =
@@ -1935,7 +1973,8 @@ module Default = struct
     ; String "eval", "eval(*goals): add eval(goals) :- g for each g in goals", _eval
     ]
 
-  let _sum t = match t with
+  let _sum t =
+    match t with
     | T.Apply (_, arr) ->
       begin try
         let x = Array.fold_left

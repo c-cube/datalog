@@ -243,6 +243,24 @@ $ ./datalog_cli.native tests/small.pl --query '(X,Y) :- ancestor(X,john), father
 % max_heap_size: 126976; minor_collections: 0; major collections: 0
 ```
 
+## Aggregates in top-down:
+
+```prolog
+$ cat test.pl
+foo(a, 1).
+foo(a, 2).
+foo(b, 10).
+foo(b, 11).
+foo(c, 0).
+
+bar(A, S) :- S := sum B : foo(A, B).
+
+$ ./topDownCli.exe -load foo.pl -builtin '(X,Y) :- bar(X,Y)'
+  (a, 3).
+  (b, 21).
+  (c, 0).
+```
+
 ## TODOs/ideas
 
 - Goal subsumption

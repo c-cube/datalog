@@ -116,7 +116,7 @@ val reachable : (int, int) CI.Rel2.t = <abstr>
 
 ## Documentation
 
-You can consult the [online documentation](http://cedeela.fr/~simon/software/datalog/)
+You can consult the [online documentation](https://c-cube.github.io/datalog)
 
 ## License
 

@@ -2,12 +2,8 @@
 (alias
  (name runtest)
  (deps (:readme README.md)
-       (:bcli src/bottom_up_cli/datalog_cli.exe)
-       (:tcli src/top_down_cli/topDownCli.exe)
        (source_tree tests))
  (action (progn
-          (run ln -s %{bcli} datalog_cli)
-          (run ln -s %{tcli} topDownCli)
           (run ocaml-mdx test %{readme})
           (diff? %{readme} %{readme}.corrected))))
 

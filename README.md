@@ -63,8 +63,10 @@ OCaml values.
 Small example:
 
 ```ocaml
-
+# #require "datalog";;
+# #require "datalog.caml_interface";;
 # module CI = Datalog_caml_interface;;
+module CI = Datalog_caml_interface
 # let edge = CI.Rel2.create ~k1:CI.Univ.int ~k2:CI.Univ.int "edge";;
 val edge : (int, int) CI.Rel2.t = <abstr>
 # let db = CI.Logic.DB.create();;
@@ -84,8 +86,9 @@ The relation `edge` is really intensional: if we add axioms to it,
 # CI.Rel2.transitive db edge;;
 - : unit = ()
 # CI.Rel2.find db edge;;
-- : (int * int) list = [(1, 3); (2, 4); (1, 4); (4, 1); (3, 1); (4, 2);
-(4, 3); (3, 2); (2, 1); (1, 1); (3, 3); (4, 4); (2, 2); (3, 4); (2, 3); (1, 2)]
+- : (int * int) list =
+[(1, 3); (2, 4); (1, 4); (4, 1); (3, 1); (4, 2); (4, 3); (3, 2); (2, 1);
+ (1, 1); (3, 3); (4, 4); (2, 2); (3, 4); (2, 3); (1, 2)]
 ```
 
 One can also directly load a Datalog file (atoms: ints and strings) and access
@@ -93,7 +96,7 @@ it using (properly typed) relations:
 
 ```ocaml
 # let db = CI.Logic.DB.create ();;
-val db : CI.Logic.t = <abstr>
+val db : CI.Logic.DB.t = <abstr>
 # CI.Parse.load_file db "tests/clique10.pl";;
 - : bool = true
 # let edge = CI.Rel2.create ~k1:CI.Univ.int ~k2:CI.Univ.int "edge";;
@@ -112,7 +115,7 @@ val reachable : (int, int) CI.Rel2.t = <abstr>
  (1, 5); (0, 4); (5, 10); (4, 9); (3, 8); (2, 7); (1, 6); (0, 5); (4, 10);
  (3, 9); (2, 8); (1, 7); (0, 6); (3, 10); (2, 9); (1, 8); (0, 7); (2, 10);
  (1, 9); (0, 8); (1, 10); (0, 9); (0, 10)]
- ```
+```
 
 ## Documentation
 
@@ -132,7 +135,7 @@ Manual build:
 
 You need **OCaml >= 4.02** with [dune](https://github.com/ocaml/dune). Just type in the root directory:
 
-```sh
+```sh non-deterministic
 $ make
 ```
 
@@ -143,7 +146,7 @@ There are two ways to use `datalog`:
 - With the command line tool, `datalog_cli.exe`, or `datalog_cli` if you
   installed it on your system; just type in
 
-```sh
+```sh non-deterministic
 $ datalog_cli <problem_file>
 ```
 
@@ -158,8 +161,9 @@ $ datalog_cli <problem_file>
 A few example files, suffixed with `.pl`, can be found in `tests/`. For instance, you
 can try:
 
-```prolog
+```sh
 $ cat tests/clique10.pl
+% generate problem of size 10
 reachable(X,Y) :- edge(X,Y).
 reachable(X,Y) :- edge(X,Z), reachable(Z,Y).
 same_clique(X,Y) :- reachable(X,Y), reachable(Y,X).
@@ -175,61 +179,60 @@ edge(7, 8).
 edge(8, 9).
 edge(9, 10).
 edge(10, 7).
-
-$ datalog_cli tests/clique10.pl --pattern 'same_clique(1,X)'
+$ ./datalog_cli tests/clique10.pl --pattern 'same_clique(1,X)'
 % start datalog
 % parse file tests/clique10.pl
-% process 15 rules
+% process 15 clauses
 % computing fixpoint...
 % done.
-% facts matching pattern same_clique(1, X1):
-same_clique(1, 0).
-same_clique(1, 1).
-same_clique(1, 3).
-same_clique(1, 2).
-same_clique(1, 5).
-same_clique(1, 4).
-% max_heap_size: 126976; minor_collections: 0; major collections: 0
+% facts matching pattern same_clique(1, X0):
+  same_clique(1, 4).
+  same_clique(1, 5).
+  same_clique(1, 3).
+  same_clique(1, 2).
+  same_clique(1, 1).
+  same_clique(1, 0).
+...
 ```
 
 Or
 
-```prolog
-$ datalog_cli tests/graph200.pl --size --sum reachable
+```sh
+$ ./datalog_cli tests/graph200.pl --size --sum reachable
 % start datalog
 % parse file tests/graph200.pl
-% process 203 rules
+% process 205 clauses
 % computing fixpoint...
 % done.
-% size of saturated set: 40805
+% size of saturated set: 41209
 % number of fact with head reachable: 40401
-% max_heap_size: 1777664; minor_collections: 38; major collections: 9
+...
 ```
 
 Or
 
-```prolog
-$ datalog_cli tests/graph10.pl --goal 'increasing(3,7)' --pattern 'increasing(3,X)'
+```sh
+$ ./datalog_cli tests/graph10.pl --goal 'increasing(3,7)' --pattern 'increasing(3,X)'
 % start datalog
 % parse file tests/graph10.pl
 % process 15 clauses
 % computing fixpoint...
 % done.
-% facts matching pattern increasing(3, X1):
-increasing(3, 5).
-increasing(3, 6).
-increasing(3, 8).
-increasing(3, 7).
-increasing(3, 4).
-increasing(3, 9).
-increasing(3, 10).
-% max_heap_size: 126976; minor_collections: 0; major collections: 0
+% facts matching pattern increasing(3, X0):
+  increasing(3, 10).
+  increasing(3, 7).
+  increasing(3, 6).
+  increasing(3, 4).
+  increasing(3, 5).
+  increasing(3, 8).
+  increasing(3, 9).
+...
 ```
 
 Or
 
-```prolog
-$ ./datalog_cli.native tests/small.pl --query '(X,Y) :- ancestor(X,john), father(X,Y), not mother(Y,Z)'
+```sh
+$ ./datalog_cli tests/small.pl --query '(X,Y) :- ancestor(X,john), father(X,Y), not mother(Y,Z)'
 % start datalog
 % parse file tests/small.pl
 % process 12 clauses
@@ -239,8 +242,7 @@ $ ./datalog_cli.native tests/small.pl --query '(X,Y) :- ancestor(X,john), father
 % query answer:
     'jean-jacques', alphonse
     brad, john
-
-% max_heap_size: 126976; minor_collections: 0; major collections: 0
+...
 ```
 
 ## Aggregates in top-down:
@@ -255,7 +257,7 @@ foo(c, 0).
 
 bar(A, S) :- S := sum B : foo(A, B).
 
-$ ./topDownCli.exe -load foo.pl -builtin '(X,Y) :- bar(X,Y)'
+$ ./topDownCli -load foo.pl -builtin '(X,Y) :- bar(X,Y)'
   (a, 3).
   (b, 21).
   (c, 0).

@@ -12,7 +12,7 @@ top_down:
 	@dune build src/top_down_cli/topDownCli.exe
 	@ln -sf _build/default/src/top_down_cli/topDownCli.exe
 
-test:
+test: build
 	@dune runtest --no-buffer --force
 
 clean:

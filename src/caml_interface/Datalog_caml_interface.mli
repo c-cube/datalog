@@ -26,8 +26,8 @@ module Univ : sig
 
         @param print a printing function to print the content of a
           universal value. Default just returns "opaque".
-        @hash hash values (default: Hashtbl.hash)
-        @eq equality on values (default: structural equality) *)
+        @param hash hash values (default: Hashtbl.hash)
+        @param eq equality on values (default: structural equality) *)
 
   val pack : key:'a key -> 'a -> t
   val unpack : key:'a key -> t -> 'a option

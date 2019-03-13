@@ -1,7 +1,7 @@
 
 (* this file is part of datalog. See README for the license *)
 
-(** {6 Top-Down Computation} *)
+(** {1 Top-Down Computation} *)
 
 (** This module implements top-down computation of Datalog queries
     with non-stratified negation.

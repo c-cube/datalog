@@ -7,7 +7,7 @@
   let print_location lexbuf =
     let open Lexing in
     let pos = lexbuf.lex_curr_p in
-    Format.sprintf "at line %d, column %d" pos.pos_lnum pos.pos_cnum
+    Format.sprintf "at line %d, column %d" pos.pos_lnum (pos.pos_cnum - pos.pos_bol)
     
   let fail () = raise Parsing.Parse_error
 }
@@ -35,7 +35,11 @@ rule token =
                                        token lexbuf } (* skip new lines *)
       | one_line_comment             { Lexing.new_line lexbuf;
                                        token lexbuf } (* skip comment *)
-      | multi_line_comment           { token lexbuf } (* skip comment TODO new_line *)
+      | multi_line_comment           { String.iter (function
+                                         | '\n' -> Lexing.new_line lexbuf
+                                         | _ -> ()
+                                       ) (Lexing.lexeme lexbuf) ;
+                                       token lexbuf } (* skip comment *)
       | multi_line_comment_unclosed  { fail () }
           (* end of input - for channels, strings, ... *)
       | eof                          { EOI }

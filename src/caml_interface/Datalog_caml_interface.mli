@@ -6,7 +6,7 @@
 (** {2 Constants with universal types}
 This module is present to allow the user to pack their own types into Datalog
 constants. It is {b NOT thread-safe}.
-This is largely inspired by {{: https://ocaml.janestreet.com/?q=node/18}this thread}
+This is largely inspired by {{: https://web.archive.org/web/20150907070243/https://blogs.janestreet.com/a-universal-type/}this thread}
 *)
 
 module TopDown = Datalog_top_down

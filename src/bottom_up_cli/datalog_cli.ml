@@ -56,7 +56,7 @@ let handle_goal db lit =
     try
       let a = int_of_string (DSym.to_string a)
       and b = int_of_string (DSym.to_string b) in
-      Pervasives.compare a b
+      Stdlib.compare a b
     with Invalid_argument _ -> compare a b
   in
   match (DLogic.open_literal lit :> string * DLogic.term list) with

@@ -1,5 +1,4 @@
-
 (executable
-  (name datalog_cli)
-  (public_name datalog_cli)
-  (libraries datalog))
+ (name datalog_cli)
+ (public_name datalog_cli)
+ (libraries datalog))

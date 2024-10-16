@@ -137,6 +137,7 @@ You need **OCaml >= 4.02** with [dune](https://github.com/ocaml/dune). Just type
 
 ```sh non-deterministic
 $ make
+$ cp src/bottom_up_cli/datalog_cli.exe ./datalog_cli
 ```
 
 ## How to use it
@@ -147,7 +148,7 @@ There are two ways to use `datalog`:
   installed it on your system; just type in
 
 ```sh non-deterministic
-$ datalog_cli <problem_file>
+$ ./src/datalog_cli <problem_file>
 ```
 
 - The libraries `datalog`, `datalog.top_down`, `datalog.unix`, `datalog.caml_interface`.
@@ -179,7 +180,7 @@ edge(7, 8).
 edge(8, 9).
 edge(9, 10).
 edge(10, 7).
-$ datalog_cli tests/clique10.pl --pattern 'same_clique(1,X)'
+$ ./datalog_cli tests/clique10.pl --pattern 'same_clique(1,X)'
 % start datalog
 % parse file tests/clique10.pl
 % process 15 clauses
@@ -198,7 +199,7 @@ $ datalog_cli tests/clique10.pl --pattern 'same_clique(1,X)'
 Or
 
 ```sh
-$ datalog_cli tests/graph200.pl --size --sum reachable
+$ ./datalog_cli tests/graph200.pl --size --sum reachable
 % start datalog
 % parse file tests/graph200.pl
 % process 205 clauses
@@ -212,7 +213,7 @@ $ datalog_cli tests/graph200.pl --size --sum reachable
 Or
 
 ```sh
-$ datalog_cli tests/graph10.pl --goal 'increasing(3,7)' --pattern 'increasing(3,X)'
+$ ./datalog_cli tests/graph10.pl --goal 'increasing(3,7)' --pattern 'increasing(3,X)'
 % start datalog
 % parse file tests/graph10.pl
 % process 15 clauses
@@ -232,7 +233,7 @@ $ datalog_cli tests/graph10.pl --goal 'increasing(3,7)' --pattern 'increasing(3,
 Or
 
 ```sh
-$ datalog_cli tests/small.pl --query '(X,Y) :- ancestor(X,john), father(X,Y), not mother(Y,Z)'
+$ ./datalog_cli tests/small.pl --query '(X,Y) :- ancestor(X,john), father(X,Y), not mother(Y,Z)'
 % start datalog
 % parse file tests/small.pl
 % process 12 clauses

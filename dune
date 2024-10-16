@@ -1,9 +1,10 @@
-
-(alias
- (name runtest)
- (deps (:readme README.md)
-       (source_tree tests))
- (action (progn
-          (run ocaml-mdx test %{readme})
-          (diff? %{readme} %{readme}.corrected))))
-
+(rule
+ (alias runtest)
+ (deps
+  (:readme README.md)
+  ./src/bottom_up_cli/datalog_cli.exe
+  (source_tree tests))
+ (action
+  (progn
+   (run ocaml-mdx test %{readme})
+   (diff? %{readme} %{readme}.corrected))))

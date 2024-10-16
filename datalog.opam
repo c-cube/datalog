@@ -20,7 +20,7 @@ build: [
 ]
 depends: [
   "dune"
-  "ocaml" { >= "4.03" }
+  "ocaml" { >= "5.2.0" }
   "odoc" {with-doc}
   "mdx" { >= "1.3" & with-test}
 ]

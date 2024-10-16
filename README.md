@@ -1,6 +1,6 @@
 # Datalog
 
-[![build status](https://travis-ci.org/c-cube/datalog.svg?branch=master "build status")](https://travis-ci.org/c-cube/datalog)
+[![build](https://github.com/c-cube/datalog/actions/workflows/main.yml/badge.svg)](https://github.com/c-cube/datalog/actions/workflows/main.yml)
 
 An in-memory datalog implementation for OCaml.
 

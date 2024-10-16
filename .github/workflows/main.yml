@@ -1,0 +1,35 @@
+name: Build and Test
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+
+jobs:
+  run:
+    name: build  # build+test on various versions of OCaml, on linux
+    timeout-minutes: 15
+    strategy:
+      fail-fast: true
+      matrix:
+        os:
+            - ubuntu-latest
+        ocaml-compiler:
+            - '4.08'
+            - '5.2'
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@main
+      - name: Use OCaml ${{ matrix.ocaml-compiler }}
+        uses: ocaml/setup-ocaml@v2
+        with:
+          ocaml-compiler: ${{ matrix.ocaml-compiler }}
+          dune-cache: true
+          allow-prerelease-opam: true
+
+      - run: opam install -t datalog --deps-only
+      - run: opam exec -- dune build @install
+      - run: opam exec -- dune build --profile=release --force @install @runtest
+

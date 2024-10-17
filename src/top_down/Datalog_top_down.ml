@@ -1678,7 +1678,7 @@ module Make(Const : CONST) = struct
          excluding [a.var] *)
       let renaming = _get_renaming ~query in
       (* consistent renaming of [a.var] *)
-      let new_var =
+      let _new_var =
         let subst = Subst.bind Subst.empty a.Lit.var 0 a.Lit.var 2 in
         Subst.eval subst ~renaming a.Lit.var 0
       in

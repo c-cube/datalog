@@ -1,0 +1,11 @@
+
+(rule
+ (alias runtest)
+ (deps
+  (:file reg13.pl)
+  (:bin ../src/top_down_cli/topDownCli.exe))
+ (action
+  (progn
+   (with-stdout-to reg13.out
+    (run %{bin} -load %{file} "(X) :- result(a3, X)"))
+   (diff reg13.out reg13.expected))))

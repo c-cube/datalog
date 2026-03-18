@@ -1465,6 +1465,8 @@ module Make(Const : CONST) = struct
       mutable poss : (goal_entry * C.t) list; (* positive waiters *)
       mutable negs : (goal_entry * C.t) list; (* negative waiters *)
       mutable complete : bool;                (* goal evaluation completed? *)
+      mutable dep_goals : goal_entry list;    (* forward edges: positive subgoals *)
+      mutable exit_fired : bool;              (* Exit frame processed, pending completion *)
     } (** Root of the proof forest *)
 
     (** In a goal entry, [poss] and [negs] are other goals that depend
@@ -1522,7 +1524,7 @@ module Make(Const : CONST) = struct
         query.stack <- stack';
         (* close goal entry *)
         if not goal_entry.complete
-          then slg_complete ~query goal_entry;
+          then slg_exit ~query goal_entry;
         slg_main ~query
       | NewClause (goal_entry, clause, stack') ->
         query.stack <- stack';
@@ -1550,6 +1552,8 @@ module Make(Const : CONST) = struct
           poss = [];
           negs = [];
           complete = false;
+          dep_goals = [];
+          exit_fired = false;
         } in
         TVariantTbl.add query.forest goal goal_entry;
         (* push the goal on stack so that it is solved *)
@@ -1631,6 +1635,10 @@ module Make(Const : CONST) = struct
       let subgoal_entry = slg_solve ~query subgoal in
       (* register for future answers *)
       subgoal_entry.poss <- (goal_entry, clause) :: subgoal_entry.poss;
+      (* record this as a forward dep if subgoal is still incomplete *)
+      if not subgoal_entry.complete
+      && not (List.exists (fun dep -> T.eq dep.goal subgoal) goal_entry.dep_goals) then
+        goal_entry.dep_goals <- subgoal_entry :: goal_entry.dep_goals;
       (* use current answers *)
       T.Tbl.iter
         (fun ans () -> match resolve ~query ans clause with
@@ -1724,6 +1732,19 @@ module Make(Const : CONST) = struct
         groups;
       ()
 
+    (* Exit fires when local clause set is exhausted.
+       Defer actual completion until all positive deps are done. *)
+    and slg_exit ~query goal_entry =
+      goal_entry.exit_fired <- true;
+      try_complete ~query goal_entry
+
+    (* Complete only when Exit has fired AND all dep_goals are complete *)
+    and try_complete ~query goal_entry =
+      if goal_entry.exit_fired
+      && not goal_entry.complete
+      && List.for_all (fun dep -> dep.complete) goal_entry.dep_goals
+      then slg_complete ~query goal_entry
+
     (* goal is completely evaluated, no more answers will arrive. *)
     and slg_complete ~query goal_entry =
       _debug (fun k->k "slg_complete %a" T.fmt goal_entry.goal);
@@ -1736,9 +1757,21 @@ module Make(Const : CONST) = struct
             (fun (goal, clause) -> slg_newclause ~query goal clause)
             goal_entry.negs
         end;
+      (* Notify distinct waiters: decrement their dep count, maybe unblock them *)
+      let seen = Hashtbl.create 4 in
+      List.iter (fun (waiter, _) ->
+        if not (Hashtbl.mem seen waiter.goal) then begin
+          Hashtbl.add seen waiter.goal ();
+          (* Remove completed dep from waiter's dep_goals *)
+          waiter.dep_goals <-
+            List.filter (fun d -> not (d == goal_entry)) waiter.dep_goals;
+          try_complete ~query waiter
+        end
+      ) goal_entry.poss;
       (* reclaim memory *)
       goal_entry.negs <- [];
       goal_entry.poss <- [];
+      goal_entry.dep_goals <- [];
       ()
   end
 

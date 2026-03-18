@@ -1,11 +1,12 @@
-(* this file is part of datalog. See README for the license *)
-
-(** {1 Prolog-like command line tool} *)
+(** Prolog-like command line tool *)
 
 module D = Datalog_top_down.Default
 module DParser = Datalog_top_down.Parser
 module DLexer = Datalog_top_down.Lexer
 module DAst = Datalog_top_down.AST
+module Trace = Trace_core
+
+let ( let@ ) = ( @@ )
 
 (** Options *)
 
@@ -72,6 +73,7 @@ let help =
 let goal = ref ""
 
 let () =
+  let@ () = Trace_tef.with_setup () in
   Arg.parse options (fun s -> goal := s) help;
   if !goal = "" then Arg.usage options help;
   (* parse goal literals *)

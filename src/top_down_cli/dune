@@ -1,3 +1,3 @@
 (executable
  (name topDownCli)
- (libraries datalog datalog.top_down datalog.unix))
+ (libraries datalog datalog.top_down datalog.unix trace.core trace-tef))

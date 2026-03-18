@@ -5,7 +5,7 @@
  (flags :standard -color always -safe-string -warn-error -a+8))
 
 (ocamllex
- (modules Lexer))
+ (modules lexer))
 
 (ocamlyacc
- (modules Parser))
+ (modules parser))

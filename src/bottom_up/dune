@@ -13,7 +13,7 @@
  (flags :standard -color always -safe-string -warn-error -a+8 -w -50))
 
 (ocamlyacc
- (modules Parser))
+ (modules parser))
 
 (ocamllex
- (modules Lexer))
+ (modules lexer))

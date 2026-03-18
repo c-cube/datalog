@@ -51,7 +51,9 @@ let add_file f = files := f :: !files
 
 let options =
   [
-    "-debug", Arg.Unit (fun () -> D.set_debug true), " enable debug";
+    ( "-debug",
+      Arg.Unit (fun () -> Datalog_top_down.set_debug true),
+      " enable debug" );
     "-load", Arg.String add_file, " load given file";
     "-oc", Arg.Set oc, " enable occur-check in unification";
     "-builtin", Arg.Set builtin, " enable some builtin predicates";

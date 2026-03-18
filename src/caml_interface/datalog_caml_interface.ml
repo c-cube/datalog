@@ -1,10 +1,4 @@
-(* this file is part of datalog. See README for the license *)
-
-(** {1 Bridge between Datalog.TopDown and OCaml} *)
-
 module TopDown = Datalog_top_down
-
-(** {2 Constants with universal types} *)
 
 module Univ = struct
   type t = Store : 'a key * 'a * (unit -> unit) -> t
@@ -138,21 +132,30 @@ end
 type const = Univ.t
 (** Datalog constant *)
 
-let _key_query = Univ.new_key ~print:(fun () -> "query") ()
-(* special query symbol: unit, with a specific, hidden embedding *)
+open struct
+  let _key_query = Univ.new_key ~print:(fun () -> "query") ()
+  (* special query symbol: unit, with a specific, hidden embedding *)
+end
 
 let of_string s = Univ.pack ~key:Univ.string s
 let of_int i = Univ.pack ~key:Univ.int i
 
-module Logic = TopDown.Make (struct
-  type t = const
+module Logic_const : TopDown.CONST with type t = const = struct
+  module Base = struct
+    type t = const
 
-  let equal = Univ.eq
-  let hash = Univ.hash
-  let to_string = Univ.print
-  let of_string = of_string
-  let query = Univ.pack ~key:_key_query ()
-end)
+    let equal = Univ.eq
+    let hash = Univ.hash
+    let to_string = Univ.print
+    let of_string = of_string
+    let query = Univ.pack ~key:_key_query ()
+  end
+
+  include Base
+  module Tbl = Hashtbl.Make (Base)
+end
+
+module Logic = TopDown.Make (Logic_const)
 
 (** {2 Typed relations} *)
 

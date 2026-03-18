@@ -1465,8 +1465,8 @@ module Make(Const : CONST) = struct
       mutable poss : (goal_entry * C.t) list; (* positive waiters *)
       mutable negs : (goal_entry * C.t) list; (* negative waiters *)
       mutable complete : bool;                (* goal evaluation completed? *)
-      mutable dep_goals : goal_entry list;    (* forward edges: positive subgoals *)
-      mutable exit_fired : bool;              (* Exit frame processed, pending completion *)
+      dep_goals : goal_entry T.Tbl.t ;        (* forward edges: positive subgoals *)
+      mutable exit_fired : bool;              (* exit frame processed, pending completion (idempotence) *)
     } (** Root of the proof forest *)
 
     (** In a goal entry, [poss] and [negs] are other goals that depend
@@ -1488,6 +1488,14 @@ module Make(Const : CONST) = struct
     let _get_renaming ~query =
       Subst.reset_renaming query.renaming;
       query.renaming
+
+    let[@inline] get_dep_goals (g:goal_entry) : _ T.Tbl.t = g.dep_goals
+
+    let all_deps_complete (g:goal_entry) : bool =
+      try
+        T.Tbl.iter (fun _ dep -> if not dep.complete then raise_notrace Exit) g.dep_goals;
+        true
+      with Exit -> false
 
     (* try to resolve fact with clause's first body literal *)
     let resolve ~query fact clause =
@@ -1548,11 +1556,11 @@ module Make(Const : CONST) = struct
         (* new goal! insert it in the forest, and start solving it *)
         let goal_entry = {
           goal;
-          answers = T.Tbl.create 7;
+          answers = T.Tbl.create 8;
           poss = [];
           negs = [];
           complete = false;
-          dep_goals = [];
+          dep_goals = T.Tbl.create 4;
           exit_fired = false;
         } in
         TVariantTbl.add query.forest goal goal_entry;
@@ -1637,8 +1645,10 @@ module Make(Const : CONST) = struct
       subgoal_entry.poss <- (goal_entry, clause) :: subgoal_entry.poss;
       (* record this as a forward dep if subgoal is still incomplete *)
       if not subgoal_entry.complete
-      && not (List.exists (fun dep -> T.eq dep.goal subgoal) goal_entry.dep_goals) then
-        goal_entry.dep_goals <- subgoal_entry :: goal_entry.dep_goals;
+      && not (T.Tbl.mem (get_dep_goals goal_entry) subgoal) then (
+        let tbl = get_dep_goals goal_entry in
+        T.Tbl.replace tbl subgoal subgoal_entry;
+      );
       (* use current answers *)
       T.Tbl.iter
         (fun ans () -> match resolve ~query ans clause with
@@ -1742,7 +1752,7 @@ module Make(Const : CONST) = struct
     and try_complete ~query goal_entry =
       if goal_entry.exit_fired
       && not goal_entry.complete
-      && List.for_all (fun dep -> dep.complete) goal_entry.dep_goals
+      && all_deps_complete goal_entry
       then slg_complete ~query goal_entry
 
     (* goal is completely evaluated, no more answers will arrive. *)
@@ -1758,20 +1768,20 @@ module Make(Const : CONST) = struct
             goal_entry.negs
         end;
       (* Notify distinct waiters: decrement their dep count, maybe unblock them *)
-      let seen = Hashtbl.create 4 in
+      let seen = T.Tbl.create 4 in
       List.iter (fun (waiter, _) ->
-        if not (Hashtbl.mem seen waiter.goal) then begin
-          Hashtbl.add seen waiter.goal ();
+        if not (T.Tbl.mem seen waiter.goal) then begin
+          T.Tbl.add seen waiter.goal ();
           (* Remove completed dep from waiter's dep_goals *)
-          waiter.dep_goals <-
-            List.filter (fun d -> not (d == goal_entry)) waiter.dep_goals;
+
+          T.Tbl.remove waiter.dep_goals waiter.goal;
           try_complete ~query waiter
         end
       ) goal_entry.poss;
       (* reclaim memory *)
       goal_entry.negs <- [];
       goal_entry.poss <- [];
-      goal_entry.dep_goals <- [];
+      T.Tbl.clear goal_entry.dep_goals;
       ()
   end
 

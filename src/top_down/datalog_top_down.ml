@@ -812,59 +812,12 @@ module Make (Const : CONST) : S with module Const = Const = struct
       Const.Tbl.fold (fun _ t' s -> size t' + s) t.sub s
   end
 
-  (** {Rewriting} *)
-
   module TermIndex = Index (struct
     type t = T.t
 
     let equal = are_alpha_equiv
     let hash = T.hash_novar
   end)
-
-  module Rewriting = struct
-    type rule = T.t * T.t
-    type t = { mutable idx: TermIndex.t }
-
-    let create () = { idx = TermIndex.empty () }
-    let copy trs = { idx = TermIndex.copy trs.idx }
-    let add trs (l, r) = trs.idx <- TermIndex.add trs.idx l r
-
-    let rec add_list trs l =
-      match l with
-      | [] -> ()
-      | hd :: l' ->
-        add trs hd;
-        add_list trs l'
-
-    let to_list trs =
-      let acc = ref [] in
-      TermIndex.iter trs.idx (fun l r -> acc := (l, r) :: !acc);
-      !acc
-
-    exception RewriteInto of T.t * Subst.t * scope
-
-    let rec rewrite_root trs t =
-      match t with
-      | T.Var _ -> t
-      | T.Apply _ ->
-        (try
-           TermIndex.generalizations trs.idx 1 t 0 (fun r subst ->
-               raise (RewriteInto (r, subst, 1)));
-           t (* didn't fire *)
-         with RewriteInto (r, subst, scope) ->
-           let t' = Subst.eval subst ~renaming:Subst.__dummy_renaming r scope in
-           (* rewrite again *)
-           rewrite_root trs t')
-
-    (* TODO: more efficient rewriting *)
-    let rec rewrite trs t =
-      match t with
-      | T.Var _ -> t
-      | T.Apply (_, [||]) -> rewrite_root trs t
-      | T.Apply (s, arr) ->
-        let arr' = Array.map (rewrite trs) arr in
-        rewrite_root trs (T.mk_apply s arr')
-  end
 
   (** {2 DB} *)
 

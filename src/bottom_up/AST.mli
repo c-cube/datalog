@@ -1,5 +1,3 @@
-(* this file is part of datalog. See README for the license *)
-
 type file = clause list
 (** Toplevel statement *)
 

@@ -1,5 +1,3 @@
-(* this file is part of datalog. See README for the license *)
-
 (** {1 Unix Interpreted Predicates} *)
 
 module TopDown = Datalog_top_down

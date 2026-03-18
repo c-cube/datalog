@@ -1,6 +1,4 @@
-(* this file is part of datalog. See README for the license *)
-
-(** {1 AST for TopDown terms} *)
+(** AST for TopDown terms *)
 
 type term =
   | Var of string
@@ -13,9 +11,8 @@ type aggregate = {
   ag_var: string;
   ag_guard: term;
 }
-(* aggregate: ag_left = ag_constructor set
-    where set is the set of bindings to ag_var
-    that satisfy ag_guard *)
+(** aggregate: ag_left = ag_constructor set where set is the set of bindings to
+    ag_var that satisfy ag_guard *)
 
 type literal =
   | LitPos of term

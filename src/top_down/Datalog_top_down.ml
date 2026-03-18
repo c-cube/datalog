@@ -1,13 +1,3 @@
-(* this file is part of datalog. See README for the license *)
-
-(** {1 Top-Down Computation} *)
-
-(** This module implements top-down computation of Datalog queries with
-    non-stratified negation.
-
-    See "efficient top-down computation of queries under the well-founded
-    semantics" *)
-
 module AST = AST
 module Lexer = Lexer
 module Parser = Parser

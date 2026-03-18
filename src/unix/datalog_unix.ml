@@ -1,7 +1,3 @@
-(* this file is part of datalog. See README for the license *)
-
-(** {1 Unix Interpreted Predicates} *)
-
 module TopDown = Datalog_top_down
 
 module type S = sig
@@ -19,20 +15,6 @@ module Make (TD : TopDown.S) = struct
 
   let c2str = TD.Const.to_string
   let str2c = TD.Const.of_string
-
-  let str_split ~by s =
-    let rec next acc i j =
-      if i = String.length s then
-        if i > j then
-          String.sub s j (i - j) :: acc
-        else
-          acc
-      else if s.[i] = by then
-        next (String.sub s j (i - j - 1) :: acc) (i + 1) (i + 1)
-      else
-        next acc (i + 1) j
-    in
-    next [] 0 0
 
   (* list files in directory *)
   let _ls = function
@@ -153,7 +135,7 @@ module Make (TD : TopDown.S) = struct
       let by = c2str by in
       let s = c2str s in
       if String.length by = 1 then (
-        let l = str_split ~by:by.[0] s in
+        let l = String.split_on_char by.[0] s in
         List.map
           (fun tok ->
             C.mk_fact (T.mk_apply head [| t1; t2; T.mk_const (str2c tok) |]))

@@ -9,3 +9,48 @@
    (with-stdout-to reg13.out
     (run %{bin} -load %{file} "(X) :- result(a3, X)"))
    (diff reg13.out reg13.expected))))
+
+(rule
+ (alias runtest)
+ (deps
+  (:file clique10.pl)
+  (:bin ../src/top_down_cli/topDownCli.exe))
+ (action
+  (progn
+   (with-stdout-to clique10.out
+    (run %{bin} -load %{file} "(X) :- reachable(0,X)"))
+   (diff clique10.out clique10.expected))))
+
+(rule
+ (alias runtest)
+ (deps
+  (:file graph10.pl)
+  (:bin ../src/top_down_cli/topDownCli.exe))
+ (action
+  (progn
+   (with-stdout-to graph10.out
+    (run %{bin} -load %{file} "(X) :- increasing(3,X)" -builtin))
+   (diff graph10.out graph10.expected))))
+
+(rule
+ (alias runtest)
+ (deps
+  (:file small.pl)
+  (:bin ../src/top_down_cli/topDownCli.exe))
+ (action
+  (progn
+   (with-stdout-to small.out
+    (run %{bin} -load %{file} "(X) :- ancestor(X,john)"))
+   (diff small.out small.expected))))
+
+(rule
+ (alias runtest)
+ (deps
+  (:file ship.pl)
+  (:bin ../src/top_down_cli/topDownCli.exe))
+ (action
+  (progn
+   (with-stdout-to ship.out
+    (run %{bin} -load %{file} "(P,C) :- ship_to(P,C)"))
+   (diff ship.out ship.expected))))
+

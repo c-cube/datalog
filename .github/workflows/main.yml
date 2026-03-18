@@ -3,7 +3,7 @@ name: Build and Test
 on:
   push:
     branches:
-      - master
+      - main
   pull_request:
 
 jobs:
@@ -17,13 +17,13 @@ jobs:
             - ubuntu-latest
         ocaml-compiler:
             - '4.08'
-            - '5.2'
+            - '5.3'
 
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@main
       - name: Use OCaml ${{ matrix.ocaml-compiler }}
-        uses: ocaml/setup-ocaml@v2
+        uses: ocaml/setup-ocaml@v3
         with:
           ocaml-compiler: ${{ matrix.ocaml-compiler }}
           dune-cache: true

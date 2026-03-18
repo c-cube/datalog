@@ -1,4 +1,4 @@
 (executable
  (name datalog_cli)
- (public_name datalog_cli)
- (libraries datalog))
+ ;(public_name datalog_cli)
+ (libraries datalog containers trace.core trace-tef))

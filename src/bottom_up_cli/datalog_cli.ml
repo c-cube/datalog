@@ -1,5 +1,3 @@
-(* this file is part of datalog. See README for the license *)
-
 (** The main datalog file. It provides a CLI tool to parse clause/fact files and
     compute their fixpoint *)
 
@@ -7,6 +5,7 @@ module DLogic = Datalog.Default
 module DParser = Datalog.Parser
 module DLexer = Datalog.Lexer
 module DSym = DLogic.StringSymbol
+module Trace = Trace_core
 
 let quiet = ref false
 let progress = ref false
@@ -21,16 +20,17 @@ let goals = (ref [] : DLogic.literal list ref)
 let explains = ref []
 let files = ref []
 let queries = ref []
+let ( let@ ) = ( @@ )
 
 (** Parse file and returns the clauses *)
 let parse_file filename =
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "parse-file" in
+  Trace.add_data_to_span _sp [ "file", `String filename ];
+
   if not !quiet then Format.printf "%% parse file %s@." filename;
-  let ic = open_in filename in
+  let@ ic = CCIO.with_in filename in
   let lexbuf = Lexing.from_channel ic in
-  try
-    let clauses = DParser.parse_file DLexer.token lexbuf in
-    close_in ic;
-    clauses
+  try DParser.parse_file DLexer.token lexbuf
   with Parsing.Parse_error ->
     (* error, signal it and return no clause *)
     Format.eprintf "%% error parsing %s (%s)@." filename
@@ -38,13 +38,7 @@ let parse_file filename =
     []
 
 (** Parse files *)
-let parse_files () =
-  let clauses =
-    List.fold_left
-      (fun clauses file -> List.rev_append (parse_file file) clauses)
-      [] !files
-  in
-  List.rev clauses
+let parse_files () = CCList.flat_map parse_file !files
 
 let pp_progress i total =
   Format.printf "\r%% clause %-5d / %-5d  " i total;
@@ -53,7 +47,7 @@ let pp_progress i total =
 (** Simple goal handler (interprets 'lt') *)
 let handle_goal db lit =
   (* debug: Format.printf "%% goal %a@." DLogic.pp_literal lit; *)
-  let compare a b =
+  let compare_int a b =
     try
       let a = int_of_string (DSym.to_string a)
       and b = int_of_string (DSym.to_string b) in
@@ -61,9 +55,9 @@ let handle_goal db lit =
     with Invalid_argument _ -> compare a b
   in
   match (DLogic.open_literal lit :> string * DLogic.term list) with
-  | "lt", [ DLogic.Const a; DLogic.Const b ] when compare a b < 0 ->
+  | "lt", [ DLogic.Const a; DLogic.Const b ] when compare_int a b < 0 ->
     DLogic.db_add_fact db lit (* literal is true *)
-  | "le", [ DLogic.Const a; DLogic.Const b ] when compare a b <= 0 ->
+  | "le", [ DLogic.Const a; DLogic.Const b ] when compare_int a b <= 0 ->
     DLogic.db_add_fact db lit (* literal is true *)
   | "equal", [ DLogic.Const a; DLogic.Const b ] when a = b ->
     DLogic.db_add_fact db lit (* literal is true *)
@@ -71,6 +65,7 @@ let handle_goal db lit =
 
 (** Compute fixpoint of clauses *)
 let process_clauses clauses =
+  let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "process-clauses" in
   if not !quiet then
     Format.printf "%% process %d clauses@." (List.length clauses);
   if !print_input then
@@ -117,6 +112,7 @@ let process_clauses clauses =
   (* run queries *)
   List.iter
     (fun (vars, lits, neg) ->
+      let@ _sp = Trace.with_span ~__FILE__ ~__LINE__ "run-query" in
       let set = DLogic.Query.ask ~neg db vars lits in
       let l = DLogic.Query.to_list set in
       if not !quiet then
@@ -243,6 +239,7 @@ let parse_args () =
     "compute fixpoint of given files"
 
 let () =
+  let@ () = Trace_tef.with_setup () in
   parse_args ();
   if not !quiet then Format.printf "%% start datalog@.";
   if !print_version then

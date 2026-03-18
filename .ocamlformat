@@ -1,0 +1,15 @@
+version = 0.27.0
+profile=conventional
+margin=80
+if-then-else=k-r
+parens-ite=true
+parens-tuple=multi-line-only
+sequence-style=terminator
+type-decl=sparse
+break-cases=toplevel
+cases-exp-indent=2
+field-space=tight-decl
+leading-nested-match-parens=true
+module-item-spacing=compact
+quiet=true
+ocaml-version=4.08.0

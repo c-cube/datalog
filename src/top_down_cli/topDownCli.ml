@@ -1,4 +1,3 @@
-
 (* this file is part of datalog. See README for the license *)
 
 (** {1 Prolog-like command line tool} *)
@@ -25,8 +24,7 @@ let parse_files_into db files =
       | `Error e ->
         print_endline e;
         ()
-      | `Ok clauses ->
-        D.DB.add_clauses db clauses)
+      | `Ok clauses -> D.DB.add_clauses db clauses)
     files
 
 let eval_query files tuple goals =
@@ -34,18 +32,16 @@ let eval_query files tuple goals =
   if !builtin then D.setup_default db;
   if !unix then Datalog_unix.Default.setup_handlers db;
   (* print doc and exit, if asked *)
-  if !doc then begin
+  if !doc then (
     let l = List.sort compare (D.DB.help db) in
     print_endline "interpreted predicates:";
     List.iter (fun s -> print_endline ("  " ^ s)) l;
     exit 0
-  end;
+  );
   parse_files_into db files;
   let answers = D.ask_lits ~oc:!oc db tuple goals in
-  if !print
-  then List.iter
-    (fun ans -> Printf.printf "  %a.\n" D.T.pp ans)
-    answers
+  if !print then
+    List.iter (fun ans -> Printf.printf "  %a.\n" D.T.pp ans) answers
 
 (** Options *)
 
@@ -53,21 +49,26 @@ let files = ref []
 let add_file f = files := f :: !files
 
 let options =
-  [ "-debug", Arg.Unit (fun () -> D.set_debug true), " enable debug"
-  ; "-load", Arg.String add_file, " load given file"
-  ; "-oc", Arg.Set oc, " enable occur-check in unification"
-  ; "-builtin", Arg.Set builtin, " enable some builtin predicates"
-  ; "-quiet", Arg.Clear print, " do not print answer tuples"
-  ; "-unix", Arg.Unit (fun () -> unix := true; builtin:= true),
-      " enable unix predicates (and builtin)"
-  ; "-doc", Arg.Set doc, " print interpreted predicates documentation and exit"
-  ] |> Arg.align
+  [
+    "-debug", Arg.Unit (fun () -> D.set_debug true), " enable debug";
+    "-load", Arg.String add_file, " load given file";
+    "-oc", Arg.Set oc, " enable occur-check in unification";
+    "-builtin", Arg.Set builtin, " enable some builtin predicates";
+    "-quiet", Arg.Clear print, " do not print answer tuples";
+    ( "-unix",
+      Arg.Unit
+        (fun () ->
+          unix := true;
+          builtin := true),
+      " enable unix predicates (and builtin)" );
+    "-doc", Arg.Set doc, " print interpreted predicates documentation and exit";
+  ]
+  |> Arg.align
 
 let help =
-"topDownCli [options] goal: evaluates goal
+  "topDownCli [options] goal: evaluates goal\n\n\
+   Example: topDownCli -load tests/graph10.pl '(X,Y) :- reachable(X,Y)'\n"
 
-Example: topDownCli -load tests/graph10.pl '(X,Y) :- reachable(X,Y)'
-"
 let goal = ref ""
 
 let () =
@@ -76,7 +77,9 @@ let () =
   (* parse goal literals *)
   let lexbuf = Lexing.from_string !goal in
   try
-    let tuple, goals = DParser.parse_query DLexer.token (Lexing.from_string !goal) in
+    let tuple, goals =
+      DParser.parse_query DLexer.token (Lexing.from_string !goal)
+    in
     let ctx = D.create_ctx () in
     let tuple = List.map (D.term_of_ast ~ctx) tuple in
     let goals = List.map (D.lit_of_ast ~ctx) goals in

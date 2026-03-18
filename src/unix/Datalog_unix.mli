@@ -1,4 +1,3 @@
-
 (* this file is part of datalog. See README for the license *)
 
 (** {1 Unix Interpreted Predicates} *)
@@ -11,8 +10,9 @@ module type S = sig
   val setup_handlers : TD.DB.t -> unit
 end
 
-module Make(TD : TopDown.S) : S with module TD = TD
+module Make (TD : TopDown.S) : S with module TD = TD
 
-module Default : S
-  with type TD.DB.t = TopDown.Default.DB.t
-  and module TD.Const = TopDown.Default.Const
+module Default :
+  S
+    with type TD.DB.t = TopDown.Default.DB.t
+     and module TD.Const = TopDown.Default.Const

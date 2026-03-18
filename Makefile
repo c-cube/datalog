@@ -18,6 +18,12 @@ test: build
 clean:
 	@dune clean
 
+format:
+	@dune fmt --auto-promote
+
+format-check:
+	@dune fmt --quiet
+
 doc:
 	@dune build @doc
 
@@ -28,13 +34,9 @@ update_next_tag:
 	sed -i "s/NEXT_VERSION/$(VERSION)/g" src/*.ml src/*.mli
 	sed -i "s/NEXT_RELEASE/$(VERSION)/g" src/*.ml src/*.mli
 
-TO_WATCH ?= all
+WATCH?=@all
 watch:
-	while find src/ -print0 | xargs -0 inotifywait -e delete_self -e modify ; do \
-		echo "============ at `date` ==========" ; \
-		sleep 0.2; \
-		make $(TO_WATCH); \
-	done
+	@dune build $(TO_WATCH) -w
 
 .PHONY: benchs tests update_next_tag watch
 

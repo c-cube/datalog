@@ -1,6 +1,7 @@
 (rule
  (alias runtest)
  (deps
+  (package datalog)
   (:readme README.md)
   ./src/bottom_up_cli/datalog_cli.exe
   (source_tree tests))

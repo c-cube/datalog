@@ -15,6 +15,5 @@
  (depends
   (dune ( >= "2.7" ))
   (ocaml ( >= "4.08" ))
-  (containers ( >= "2.2" ))
   (odoc :with-doc)
   (mdx (and ( >= "1.3" ) :with-test))))

@@ -22,6 +22,6 @@ jobs:
     container: ${{ matrix.container }}
     steps:
       - uses: actions/checkout@v6
-      - run: opam install -t datalog --deps-only
+      - run: opam install -t . --deps-only
       - run: opam exec -- dune build @install
       - run: opam exec -- dune build --profile=release --force @install @runtest
